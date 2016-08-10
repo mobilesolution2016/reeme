@@ -27,13 +27,10 @@ local Response = {
 			local values = { ... }
 			for i = 1, #values do
 				local value = values[i]
-				local tp = type(value)
-				if tp == "string" then
-					if begined then
-						body[#body + 1] = value
-					else
-						ngx.say(value)
-					end
+				if begined then
+					body[#body + 1] = tostring(value)
+				else
+					ngx.say(value)
 				end
 			end
 		end,
