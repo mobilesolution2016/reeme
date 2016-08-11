@@ -1,8 +1,10 @@
 local index = {
 	__index = {
 		index = function(self)
+			self.response.status = self.statusCode.HTTP_FORBIDDEN
+			self.response.headers.coder = "reeme"
 			--self.exec("/login")
-			--self.redirect("/login")
+			--self.responseredirect("/login")
 			--local res = self.capture("/login", { user = "admin" })
 			--self.response:write("capture: ", res.status--[[, res.header, res.body, res.truncated]])
 			--local res1, res2 = self.captureMulti({ { "/login", { user = "admin" } }, { "/login" }} )
@@ -11,32 +13,38 @@ local index = {
 			--end, self.request.serverName)
 			--self.response:write(self.quoteSql('a is "b"'))
 			
-			self.response.status = 403
-			self.response.headers.coder = "reeme"
+			for k, v in pairs(self.request.post.files) do
+				self.response:write("file name", v.name)
+				self.response:write("file type", v.type)
+				self.response:write("file file", v.file)
+				self.response:write("file temp", v.temp)
+				self.response:write("moveFile", v:moveFile("e:/" .. v.file))
+			end
 			
 			self.response:write(self.cookie.id)
 			self.cookie({ key = "id", value = "abcd" })
 			
 			self.response:begin()
 			self.response:write(self.request.get.a)
-			self.response:write(self.request.post.a)
+			self.response:write(self.request.post.b)
+			self.response:write(self.request.request.c)
 			self.response:write(self.request.headers["user-agent"])
 			self.response:write(self.response.headers.Connection)
 			self.response:write(self.request.serverName)
-			self.response:finish("<br/>")
+			self.response:finish()
 			
 			self.response:begin()
 			self.response:write("some thing")
 			self.response:clear()
 			self.response:finish()
 			
-			local view = self.response:useView("error.html")
-			view.message = "hello " .. self.request.remoteAddr
+			local view = self.response:initView("error.html", {
+				message = "hello " .. self.request.remoteAddr
+			})
+			view.message = "message write"
 			view:render()
 			
-			view:render("error.html", { message = "second render" })
-			
-			self.log("index/index")
+			self.log(self.logLevel.WARN, "index/index")
 			
 			--mongodb
 			local mongodb, mongoClient = self("mongodb")
@@ -157,8 +165,9 @@ local index = {
 			end
 			--red:close()
 			
-			return { id = "001", msg = "this is a msg" }
+			--return { id = "001", msg = "this is a msg" }
 			--return "hello reeme"
+			return view
 		end
 	}
 }
