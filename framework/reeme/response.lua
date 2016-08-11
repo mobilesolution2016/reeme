@@ -39,18 +39,22 @@ local Response = {
 			rawset(self, "body", { })
 		end,
 		
-		finish = function(self, split)
+		finish = function(self)
 			local body = rawget(self, "body")
-			local str = table.concat(body, split or "")
-			ngx.say(str)
+			ngx.print(body)
 			
 			rawset(self, "begined", false)
 			rawset(self, "body", { })
 		end,
 		
-		useView = function(self, tpl)
-			local view = require("reeme.response.view")(rawget(self, "R"))
-			view:init(tpl)
+		initView = function(self, tpl, params)
+			local view = rawget(self, "view")
+			if not view then
+				view = require("reeme.response.view")(rawget(self, "R"))
+				rawset(self, "view", view)
+			end
+			
+			view:init(tpl, params)
 			
 			return view
 		end,

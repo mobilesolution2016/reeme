@@ -13,7 +13,7 @@ local var     = ngx.var
 local body    = req.read_body
 local data    = req.get_body_data
 local pargs   = req.get_post_args
-
+		
 local function rightmost(s, sep)
     local p = 1
     local i = find(s, sep, 1, true)
@@ -61,9 +61,10 @@ local function getPostArgsAndFiles(options)
     local post = { }
     local files = { }
     local ct = var.content_type
-    if ct == nil then return get, post, files end
+	if not options then options = { } end
+    if ct == nil then return post, files end
     if sub(ct, 1, 19) == "multipart/form-data" then
-        local chunk   = options.chunk_size or 8192
+        local chunk = options.chunk_size or 8192
         local form, e = upload:new(chunk)
         if not form then return nil, e end
         local h, p, f, o
@@ -86,9 +87,12 @@ local function getPostArgsAndFiles(options)
                                 name = d.name,
                                 type = h["Content-Type"] and h["Content-Type"][1],
                                 file = basename(d.filename),
-                                temp = tmpname()
+                                temp = tmpname(),
+								moveFile = function(self, dstFilename)
+									return os.rename(self.temp, dstFilename)
+								end,
                             }
-                            o, e = open(f.temp, "w+")
+                            o, e = open(f.temp, "wb+")
                             if not o then return nil, e end
                             o:setvbuf("full", chunk)
                         else
@@ -157,10 +161,9 @@ end
 
 return function(reeme)
 	local postArgs, files = getPostArgsAndFiles()
-	
-	local post = { R = reeme, files = files }
+	local post = { __R = reeme, __post = postArgs, files = files or { } }
 	
 	return setmetatable(post, { 
-		__index = postArgs,
+		__index = postArgs or { },
 	})
 end

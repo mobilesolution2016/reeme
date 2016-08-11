@@ -189,7 +189,7 @@ local baseMeta = {
 			end,
 		},
 		
-		timer = {
+		time = {
 			today = function()
 				return ngx.today()
 			end,
@@ -225,7 +225,9 @@ local baseMeta = {
 			parseHttpTime = function(str)
 				return ngx.parse_http_time(str)
 			end,
+		},
 		
+		timer = {
 			set = function(delaySeconds, callback, ...)
 				return ngx.timer.at(delaySeconds, callback, ...)
 			end,
@@ -238,6 +240,84 @@ local baseMeta = {
 				return ngx.timer.pending_count()
 			end,
 		},
+		
+		file = {
+			move = function(source, dest)
+				return os.rename(source, dest)
+			end,
+			
+			exists = function(filename)
+				local f, err = io.open(filename)
+				if f then
+					f:close()
+					return true
+				end
+				return false
+			end,
+			
+			copy = function(source, destination)
+				sourcefile = io.open(source, "rb")
+				if not sourcefile then return false end
+				destinationfile = io.open(destination, "wb+")
+				if not destinationfile then
+					sourcefile:close()
+					return false
+				end
+
+				destinationfile:write(sourcefile:read("*a"))
+
+				sourcefile:close()
+				destinationfile:close()
+			end,
+
+			remove = function(filename)
+				return os.remove(filename)
+			end,
+			
+			readAll = function(filename)
+				local file, err = io_open(filename, "rb")
+				local data = file and file:read("*a") or nil
+				if file then
+					file:close()
+				end
+				return data
+			end
+		},
+		
+		crypt = {
+			rsaEncrypt = function(publicKey, str)
+				local rsa = require("resty.rsa")
+				local base64 = require("resty.base64")
+				
+				local pub, err = rsa:new(publicKey, true)
+				if not pub then
+					return nil, err
+				end
+				
+				local encrypted, err = pub:encrypt(str)
+				if not encrypted then
+					return nil, err
+				end
+				
+				return base64.base64_encode(encrypted)
+			end,
+			
+			rsaDecrypt = function(privateKey, str)
+				local rsa = require("resty.rsa")
+				local base64 = require("resty.base64")
+				
+				local priv, err = rsa:new(privateKey)
+				if not priv then
+					return nil, err
+				end
+				
+				local decrypted = priv:decrypt(base64.base64_decode(str))
+				if not decrypted then
+					return nil, err
+				end
+				return decrypted
+			end,
+		}
 	},
 	__call = function(self, key)
 		local f = configs[key]
@@ -251,7 +331,6 @@ local application = {
 	__index = function(self, key)
 		local dirs = configs.dirs		
 		local r, f = doRequire(string.format('reeme.%s', string.gsub(key, '_', '.')))
-		
 		if type(f) == 'function' then 
 			local r = f(self)
 			rawset(self, key, r)
@@ -331,7 +410,11 @@ return function(cfgs)
 			local tp = type(r)
 			
 			if tp == 'table' then
-				ngx.say(c.jsonEncode(r))
+				if rawget(c.response, "view") == r then
+					r:render()
+				else
+					ngx.say(c.jsonEncode(r))
+				end
 			elseif tp == 'string' then
 				ngx.say(r)
 			end

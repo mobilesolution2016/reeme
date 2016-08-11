@@ -7,32 +7,26 @@ end
 local viewDir = nil 
 local View = {
 	__index = {
-		init = function(self, tpl)
-			local view = template.new(viewDirs .. '/' .. tpl)
-			rawset(self, "view", view)
-		end,
-		render = function(self, tpl, params)
-			if not tpl then
-				local view = rawget(self, "view")
-				if not view then error("tpl has not inited") end
-				return view:render()
-				--tostring(view)
-			end
-			
+		init = function(self, tpl, params)
+			if not tpl then error("template is nil") end
 			local view = template.compile(viewDirs .. '/' .. tpl)
+			rawset(self, "view", view)
+			rawset(self, "params", params or { })
+		end,
+		render = function(self)
+			local view = rawget(self, "view")
+			local params = rawget(self, "params")
 			local ok, ret = pcall(renderWithParams, view, params)
 			if ok then
 				ngx.say(ret)
-				return true
 			else
 				error(ret)
 			end
 		end
 	},
 	__newindex = function(self, key, value)
-		local view = rawget(self, "view")
-		if not view then error("tpl has not inited") end
-		view[key] = value
+		local params = rawget(self, "params")
+		params[key] = value
 	end,
 }
 
@@ -42,7 +36,7 @@ return function(reeme)
 		viewDirs = string.format("%s/%s/%s", dirs.appRootDir, dirs.appBaseDir, dirs.viewsDir)
 	end
 	
-	local view = { R = reeme }
+	local view = { R = reeme, params = { } }
 	
 	return setmetatable(view, View)
 end
