@@ -11,6 +11,8 @@ function error(e)
 	error_old({ msg = e })
 end
 
+--print is use writes argument values into the nginx error.log file with the ngx.NOTICE log level
+		
 local baseMeta = {
 	__index = {
 		statusCode = {
@@ -79,194 +81,163 @@ local baseMeta = {
 			DEBUG = ngx.DEBUG,
 		},
 		
-		log = function(self, value, level)
-			ngx.log(level or ngx.WARN, value)
+		log = function(level, ...)
+			ngx.log(level or ngx.WARN, ...)
 		end,
-		
-		--print()
-		--writes argument values into the nginx error.log file with the ngx.NOTICE log level
-		
+
 		getConfigs = function()
 			return configs
 		end,
 		
-		--internal redirect to uri with args
-		exec = function(self, uri, args)
+		exec = function(uri, args)
 			ngx.exec(uri, args)
 		end,
 		
-		--issue an HTTP 301 or 302 redirection to uri
-		redirect = function(self, uri, status)
+		redirect = function(uri, status)
 			ngx.redirect(uri, status)
 		end,
 		
-		--issues a synchronous but still non-blocking Nginx Subrequest using uri.
-		capture = function(self, uri, options)
+		capture = function(uri, options)
 			return ngx.location.capture(uri)
 		end,
 		
-		--issues several parallel subrequests specified by the input table and returns their results in the same order and will not return until all the subrequests terminate.
-		captureMulti = function(self, captures)
+		captureMulti = function(captures)
 			return ngx.location.capture_multi(captures)
 		end,
 		
-		--sleeps for the specified seconds without blocking
-		sleep = function(self, seconds)
+		sleep = function(seconds)
 			ngx.sleep(seconds)
 		end,
 		
-		--escape str as a URI component.
-		escapeUri = function(str)
+		urlEncode = function(str)
 			return ngx.escape_uri(str)
 		end,
 		
-		--unescape str as an escaped URI component
-		unescapeUri = function(str)
+		urlDecode = function(str)
 			return ngx.unescape_uri(str)
 		end,
 		
-		--encode the Lua table to a query args string according to the URI encoded rules.
-		encodeArgs = function(argsTable)
+		argsEncode = function(argsTable)
 			return ngx.encode_args(argsTable)
 		end,
 		
-		----decodes a URI encoded query-string into a Lua table. This is the inverse function of ngx.encode_args.
-		decodeArgs = function(str, maxArgs)
+		argsDecode = function(str, maxArgs)
 			return ngx.decode_args(str, maxArgs)
 		end,
 		
-		--encodes str to a base64 digest
-		encodeBase64 = function(str, noPadding)
+		base64Encode = function(str, noPadding)
 			return ngx.encode_base64(str, noPadding)
 		end,
 		
-		--decodes the str argument as a base64 digest to the raw form. Returns nil if str is not well formed
-		decodeBase64 = function(str)
+		base64Decode = function(str)
 			return decode_base64(str)
 		end,
 		
-		--calculates the CRC-32 (Cyclic Redundancy Code) digest for the str argument, This method performs better on relatively short str inputs (i.e., less than 30 ~ 60 bytes)
-		crc32Short = function(str)
-			return ngx.crc32_short(str)
+		jsonEncode = require("cjson.safe").encode,
+
+		jsonDecode = require("cjson.safe").decode,
+		
+		crc32 = function(str)
+			if not str or type(str) ~= "string" then return nil end
+			
+			if #str <= 60 then
+				return ngx.crc32_short(str)
+			else
+				return ngx.crc32_long(str)
+			end
 		end,
 		
-		--calculates the CRC-32 (Cyclic Redundancy Code) digest for the str argument. This method performs better on relatively long str inputs (i.e., longer than 30 ~ 60 bytes)
-		crc32Long = function(str)
-			return ngx.crc32_short(str)
+		hmacSha1 = function(secretKey, str, bReturnBin)
+			if not secretKey or type(secretKey) ~= "string" or not str or type(str) ~= "string" then return nil end
+			
+			if not bReturnBin then
+				return ngx.hmac_sha1(secretKey, str)
+			else
+				return ngx.sha1_bin(str)
+			end
 		end,
 		
-		--computes the HMAC-SHA1 digest of the argument str and turns the result using the secret key <secretKey>.
-		hmacSha1 = function(secretKey, str)
-			return ngx.hmac_sha1(secretKey, str)
+		md5 = function(str, bReturnBin)
+			if not str or type(str) ~= "string" then return nil end
+			
+			if not bReturnBin then
+				return ngx.md5(str)
+			else
+				return ngx.md5_bin(str)
+			end
 		end,
 		
-		--returns the hexadecimal representation of the MD5 digest of the str argumen
-		md5 = function(self, str)
-			return ngx.md5(str)
-		end,
-		
-		--returns the binary form of the MD5 digest of the str argument.
-		md5bin = function(self, str)
-			return ngx.md5_bin(str)
-		end,
-		
-		--returns the binary form of the SHA-1 digest of the str argument.
-		sha1bin = function(self, str)
-			return ngx.sha1_bin(str)
-		end,
-		
-		--returns a quoted SQL string literal according to the MySQL quoting rules.
-		quoteSqlStr = function(self, rawValue)
+		quoteSql = function(rawValue)
 			return ngx.quote_sql_str(rawValue)
 		end,
 		
-		--returns current date (in the format yyyy-mm-dd) from the nginx cached time (no syscall involved unlike Lua's date library).
-		today = function(self)
-			return ngx.today()
-		end,
+		regex = {
+			match = function(self, subject, regex, options, ctx, resTable)
+				return ngx.re.match(subject, regex, options, ctx, resTable)
+			end,
+			find = function(self, subject, regex, options, ctx, nth)
+				return ngx.re.find(subject, regex, options, ctx, nth)
+			end,
+			gmatch = function(subject, regex, options)
+				return ngx.re.gmatch(subject, regex, options)
+			end,
+			sub = function(subject, regex, replace, options)
+				return ngx.re.sub(subject, regex, replace, options)
+			end,
+			gsub = function(subject, regex, replace, options)
+				return ngx.re.gsub(subject, regex, replace, options)
+			end,
+		},
 		
-		--returns the elapsed seconds from the epoch for the current time stamp from the nginx cached time (no syscall involved unlike Lua's date library). Updates of the Nginx time cache an be forced by calling ngx.update_time first.
-		time = function()
-			return ngx.time()
-		end,
+		timer = {
+			today = function()
+				return ngx.today()
+			end,
+			
+			time = function()
+				return ngx.time()
+			end,
+			
+			now = function()
+				return ngx.now()
+			end,
+			
+			update = function()
+				ngx.update_time()
+			end,
+			
+			localtime = function()
+				return ngx.localtime()
+			end,
+			
+			utctime = function()
+				return ngx.utctime()
+			end,
+			
+			cookieTime = function(sec)
+				return ngx.cookie_time(sec)
+			end,
+			
+			httpTime = function(sec)
+				return ngx.http_time(sec)
+			end,
+			
+			parseHttpTime = function(str)
+				return ngx.parse_http_time(str)
+			end,
 		
-		--returns a floating-point number for the elapsed time in seconds (including milliseconds as the decimal part) from the epoch for the current time stamp from the nginx cached time (no syscall involved unlike Lua's date library).You can forcibly update the Nginx time cache by calling ngx.update_time first.
-		now = function()
-			return ngx.now()
-		end,
-		
-		--forcibly updates the Nginx current time cache. This call involves a syscall and thus has some overhead, so do not abuse it.
-		updateTime = function()
-			ngx.update_time()
-		end,
-		
-		--returns the current time stamp (in the format yyyy-mm-dd hh:mm:ss) of the nginx cached time (no syscall involved unlike Lua's os.date function). This is the local time.
-		localtime = function()
-			return ngx.localtime()
-		end,
-		
-		--returns the current time stamp (in the format yyyy-mm-dd hh:mm:ss) of the nginx cached time (no syscall involved unlike Lua's os.date function).This is the UTC time.
-		utctime = function()
-			return ngx.utctime()
-		end,
-		
-		--returns a formatted string can be used as the cookie expiration time. The parameter sec is the time stamp in seconds (like those returned from ngx.time).
-		cookieTime = function(sec)
-			return ngx.cookie_time(sec)
-		end,
-		
-		--returns a formated string can be used as the http header time (for example, being used in Last-Modified header). The parameter sec is the time stamp in seconds (like those returned from ngx.time).
-		httpTime = function(sec)
-			return ngx.http_time(sec)
-		end,
-		
-		--parse the http time string (as returned by ngx.http_time) into seconds. Returns the seconds or nil if the input string is in bad forms.
-		parseHttpTime = function(str)
-			return ngx.parse_http_time(str)
-		end,
-		
-		--matches the subject string using the Perl compatible regular expression regex with the optional options.Only the first occurrence of the match is returned, or nil if no match is found. In case of errors, like seeing a bad regular expression or exceeding the PCRE stack limit, nil and a string describing the error will be returned.When a match is found, a Lua table captures is returned, where captures[0] holds the whole substring being matched, and captures[1] holds the first parenthesized sub-pattern's capturing, captures[2] the second, and so on.
-		regexMatch = function(self, subject, regex, options, ctx, resTable)
-			return ngx.re.match(subject, regex, options?, ctx, resTable)
-		end,
-		
-		--similar to ngx.re.match but only returns the beginning index (from) and end index (to) of the matched substring. The returned indexes are 1-based and can be fed directly into the string.sub API function to obtain the matched substring.In case of errors (like bad regexes or any PCRE runtime errors), this API function returns two nil values followed by a string describing the error.If no match is found, this function just returns a nil value.
-		regexFind = function(self, subject, regex, options, ctx, nth)
-			return ngx.re.find(subject, regex, options, ctx, nth)
-		end,
-		
-		--similar to ngx.re.match, but returns a Lua iterator instead, so as to let the user programmer iterate all the matches over the <subject> string argument with the PCRE regex.In case of errors, like seeing an ill-formed regular expression, nil and a string describing the error will be returned.
-		regexGmatch = function(subject, regex, options)
-			return ngx.re.gmatch(subject, regex, options)
-		end,
-		
-		--substitutes the first match of the Perl compatible regular expression regex on the subject argument string with the string or function argument replace. The optional options argument has exactly the same meaning as in ngx.re.match.
-		regexSub = function(subject, regex, replace, options)
-			return ngx.re.sub(subject, regex, replace, options)
-		end,
-		
-		--just like ngx.re.sub, but does global substitution.
-		regexGsub = function(subject, regex, replace, options)
-			return ngx.re.gsub(subject, regex, replace, options)
-		end,
-		
-		--creates an Nginx timer with a user callback function as well as optional user arguments.
-		timerAt = function(delay, callback, ...)
-			return ngx.timer.at(delay, callback, ...)
-		end,
-		
-		--returns the number of timers currently running.
-		timerRunningCount = function()
-			return ngx.timer.running_count()
-		end,
-		
-		--returns the number of pending timers.
-		timerPendingCount = function()
-			return ngx.timer.pending_count()
-		end,
-		
-		jsonEncode = require("cjson.safe").encode,
-		jsonDecode = require("cjson.safe").decode,
+			set = function(delaySeconds, callback, ...)
+				return ngx.timer.at(delaySeconds, callback, ...)
+			end,
+			
+			getRunningCount = function()
+				return ngx.timer.running_count()
+			end,
+			
+			getPendingCount = function()
+				return ngx.timer.pending_count()
+			end,
+		},
 	},
 	__call = function(self, key)
 		local f = configs[key]

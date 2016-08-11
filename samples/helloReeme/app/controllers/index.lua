@@ -1,11 +1,15 @@
 local index = {
 	__index = {
 		index = function(self)
-			--self:exec("/login")
-			--self:redirect("/login")
-			--local res = self:capture("/login", { user = "admin" })
+			--self.exec("/login")
+			--self.redirect("/login")
+			--local res = self.capture("/login", { user = "admin" })
 			--self.response:write("capture: ", res.status--[[, res.header, res.body, res.truncated]])
-			local res1, res2 = self:captureMulti({ { "/login", { user = "admin" } }, { "/login" }} )
+			--local res1, res2 = self.captureMulti({ { "/login", { user = "admin" } }, { "/login" }} )
+			--self.timer.set(5, function(premature, name)
+			--	self.log(nil, "onTimer", name)
+			--end, self.request.serverName)
+			--self.response:write(self.quoteSql('a is "b"'))
 			
 			self.response.status = 403
 			self.response.headers.coder = "reeme"
@@ -32,7 +36,7 @@ local index = {
 			
 			view:render("error.html", { message = "second render" })
 			
-			self:log("index/index")
+			self.log("index/index")
 			
 			--mongodb
 			local mongodb, mongoClient = self("mongodb")
