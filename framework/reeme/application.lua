@@ -199,7 +199,7 @@ return function(cfgs)
 				if rawget(c.response, "view") == r then
 					r:render()
 				else
-					ngx.say(c.jsonEncode(r))
+					ngx.say(c.utils.jsonEncode(r))
 				end
 			elseif tp == 'string' then
 				ngx.say(r)
