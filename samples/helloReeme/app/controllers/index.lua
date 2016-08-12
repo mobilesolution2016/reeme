@@ -8,7 +8,7 @@ local index = {
 			--local res = self.capture("/login", { user = "admin" })
 			--self.response:write("capture: ", res.status--[[, res.header, res.body, res.truncated]])
 			--local res1, res2 = self.captureMulti({ { "/login", { user = "admin" } }, { "/login" }} )
-			--self.timer.set(5, function(premature, name)
+			--self.utils.setTimer(5, function(premature, name)
 			--	self.log(nil, "onTimer", name)
 			--end, self.request.serverName)
 			--self.response:write(self.quoteSql('a is "b"'))
