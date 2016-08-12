@@ -1,11 +1,5 @@
 local configs = nil
 
-local function doRequire(path)
-	return pcall(function(path)
-		return require(path)
-	end, path)
-end
-
 local error_old = error
 function error(e)
 	error_old({ msg = e })
@@ -120,10 +114,9 @@ local baseMeta = {
 local application = {
 	__index = function(self, key)
 		local dirs = configs.dirs		
-		local r, f = doRequire(string.format('reeme.%s', string.gsub(key, '_', '.')))
-
-		if type(f) == 'function' then 
-			local r = f(self)
+		local f = require(string.format('reeme.%s', string.gsub(key, '_', '.')))
+		if type(f) == 'function' then			
+			local r = f(self.__reeme)
 			rawset(self, key, r)
 			return r
 		end
@@ -169,15 +162,7 @@ return function(cfgs)
 		local uri = ngx.var.uri
 		local path, act = router(uri)
 		local dirs = configs.dirs
-		local ok, controlNew = doRequire(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
-
-		if not ok then
-			if configs.devMode then
-				error(controlNew)
-			else
-				error(string.format("controller %s not find", path))
-			end
-		end
+		local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
 		
 		if type(controlNew) ~= 'function' then
 			error(string.format('controller %s must return a function that has action functions', path))
@@ -185,17 +170,27 @@ return function(cfgs)
 		
 		local c = controlNew(act)
 		local cm = getmetatable(c)
+				
+		local metacopy = { __index = { } }
+		local idxcopy = metacopy.__index
+		for k, v in pairs(baseMeta.__index) do
+			idxcopy[k] = v
+		end
+		idxcopy.__reeme = c
+		setmetatable(idxcopy, application)
+
 		if cm then
 			if type(cm.__index) == 'function' then
 				error(string.format("the __index of controller[%s]'s metatable must be a table", path))
 			end
 			
 			cm.__call = baseMeta.__call
-			setmetatable(cm.__index, baseMeta)
+			setmetatable(cm.__index, metacopy)
 		else
-			setmetatable(c, baseMeta)
+			metacopy.__call = baseMeta.__call
+			setmetatable(c, metacopy)
 		end
-		
+
 		local r = c[act](c)
 		if r then
 			local tp = type(r)
@@ -211,6 +206,9 @@ return function(cfgs)
 			end
 		end
 		--require('mobdebug').done()
+		
+		metacopy = nil
+		c = nil
 	end)
 	
 	if not ok then
