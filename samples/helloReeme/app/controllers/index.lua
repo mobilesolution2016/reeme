@@ -13,6 +13,12 @@ local index = {
 			--end, self.request.serverName)
 			--self.response:write(self.quoteSql('a is "b"'))
 			
+			--[[local rets, bOk = self.validator({
+				{ "id", "123", self.validator:number(), nil },
+				{ "id2", "456", self.validator:number(), self.validator:equal(2), 234 }
+			})
+			ngx.say("bOk", bOk, rets.id, rets.id2)]]
+			
 			for k, v in pairs(self.request.post.files) do
 				self.response:write("file name", v.name)
 				self.response:write("file type", v.type)

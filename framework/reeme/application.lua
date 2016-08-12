@@ -121,6 +121,7 @@ local application = {
 	__index = function(self, key)
 		local dirs = configs.dirs		
 		local r, f = doRequire(string.format('reeme.%s', string.gsub(key, '_', '.')))
+
 		if type(f) == 'function' then 
 			local r = f(self)
 			rawset(self, key, r)
