@@ -103,10 +103,10 @@ local baseMeta = {
 			ngx.sleep(seconds)
 		end,
 	},
-	__call = function(self, key)
+	__call = function(self, key, ...)
 		local f = configs[key]
 		if type(f) == 'function' then
-			return f(self)
+			return f(self, ...)
 		end
 	end
 }
@@ -131,24 +131,17 @@ local application = {
 setmetatable(baseMeta.__index, application)
 
 return function(cfgs)
+	local c = nil
+	local metacopy = nil
+	
 	local ok, err = pcall(function()
 		--require('mobdebug').start('192.168.3.13')
 		if not configs then
 			--first in this LuaState
-			local appRootDir = ngx.var.APP_ROOT
-			if not appRootDir then
-				error("APP_ROOT is not definde in app nginx conf")
-			end
 			
-			if package.path and #package.path > 0 then
-				package.path = package.path .. ';' .. appRootDir .. '/?.lua'
-			else
-				package.path = appRootDir .. '/?.lua'
-			end
-
 			if not cfgs then cfgs = { } end
 			if not cfgs.dirs then cfgs.dirs = { } end
-			cfgs.dirs.appRootDir = appRootDir
+			cfgs.dirs.appRootDir = ngx.var.APP_ROOT
 			if cfgs.devMode == nil then cfgs.devMode = true end
 			if not cfgs.dirs.appBaseDir then cfgs.dirs.appBaseDir = 'app' end
 			if not cfgs.dirs.modelsDir then cfgs.dirs.modelsDir = 'models' end
@@ -168,10 +161,10 @@ return function(cfgs)
 			error(string.format('controller %s must return a function that has action functions', path))
 		end
 		
-		local c = controlNew(act)
+		c = controlNew(act)
 		local cm = getmetatable(c)
 				
-		local metacopy = { __index = { } }
+		metacopy = { __index = { } }
 		local idxcopy = metacopy.__index
 		for k, v in pairs(baseMeta.__index) do
 			idxcopy[k] = v
@@ -199,20 +192,29 @@ return function(cfgs)
 				if rawget(c.response, "view") == r then
 					r:render()
 				else
-					ngx.say(c.jsonEncode(r))
+					ngx.say(c.utils.jsonEncode(r))
 				end
 			elseif tp == 'string' then
 				ngx.say(r)
 			end
 		end
 		--require('mobdebug').done()
-		
-		metacopy = nil
-		c = nil
 	end)
 	
 	if not ok then
-		ngx.say(err.msg or err)
+		local msg = err.msg
+		local msgtp = type(msg)
+		if type(msg) == "string" then
+			ngx.say(msg)
+		elseif type(msg) == "table" then
+			ngx.say(c.utils.jsonEncode(msg))
+		elseif type(err) == "string" then
+			ngx.say(err)
+		end
+
 		ngx.eof()
 	end
+	
+	metacopy = nil
+	c = nil
 end
