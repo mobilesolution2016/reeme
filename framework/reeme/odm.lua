@@ -20,8 +20,8 @@ local parseFields = function(m)
 			
 			local maxl = v:match('((%d+))')
 			if maxl then
-				local t = v:sub(1, 1)
-				if not validTypes[t] then
+				local t = validTypes[v:sub(1, 1)]
+				if not t then
 					return false
 				end
 				
