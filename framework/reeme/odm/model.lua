@@ -29,7 +29,7 @@ local processWhereValue = function(field, value)
 			return "''"
 		end
 		if not quoted then
-			return string.format("'%s'", ngx.quote_sql_str(value))
+			return ngx.quote_sql_str(value)
 		end
 		return value
 	end
@@ -157,7 +157,7 @@ queryexecuter.SELECT = function(self, model)
 	--from
 	sqls[#sqls + 1] = 'FROM'
 	sqls[#sqls + 1] = model.__name
-	sqls[#sqls + 1] = 'AS A'
+	sqls[#sqls + 1] = 'A'
 
 	--joins conditions
 	queryexecuter.buildJoinsConds(self, sqls)
@@ -173,17 +173,18 @@ queryexecuter.SELECT = function(self, model)
 	queryexecuter.buildLimits(self, sqls)
 	
 	--end
-	return sqls:concat(' ')
+	return table.concat(sqls, ' ')
 end
 	
 queryexecuter.UPDATE = function(self, model)
 	local sqls = {}
 	sqls[#sqls + 1] = 'UPDATE'
 	sqls[#sqls + 1] = model.__name
-	sqls[#sqls + 1] = 'AS A SET'
 	
 	--all values
-	queryexecuter.buildKeyValuesSet(self, model, sqls, 'A.')
+	if queryexecuter.buildKeyValuesSet(self, model, sqls) > 0 then
+		table.insert(sqls, #sqls, 'SET')
+	end
 	
 	--where
 	queryexecuter.buildWheres(self, sqls, 'WHERE')
@@ -192,20 +193,21 @@ queryexecuter.UPDATE = function(self, model)
 	queryexecuter.buildLimits(self, sqls)
 	
 	--end
-	return sqls:concat(' ')
+	return table.concat(sqls, ' ')
 end
 	
 queryexecuter.INSERT = function(self, model)
 	local sqls = {}
 	sqls[#sqls + 1] = 'INSERT INTO'
 	sqls[#sqls + 1] = model.__name
-	sqls[#sqls + 1] = 'AS A SET'
 	
 	--all values
-	queryexecuter.buildKeyValuesSet(self, model, sqls, 'A.')
+	if queryexecuter.buildKeyValuesSet(self, model, sqls) > 0 then
+		table.insert(sqls, #sqls, 'SET')
+	end
 	
 	--end
-	return sqls:concat(' ')
+	return table.concat(sqls, ' ')
 end
 	
 queryexecuter.DELETE = function(self, model)
@@ -215,18 +217,13 @@ end
 queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	local cols
 	if self.colSelects then
-		--如果colSelects还是一个table，那么就将其合并为一个字符串，以便下一次使用的时候可以加速
-		if type(self.colSelects) == 'table' then
-			local plains = {}
-			for k,v in pairs(self.colSelects) do
-				plains[#plains + 1] = k
-			end
-
-			local s = table.concat(plains, ',A.')
-			self.colSelects = #s > 0 and ('A.' .. s) or ''
+		local plains = {}
+		for k,v in pairs(self.colSelects) do
+			plains[#plains + 1] = k
 		end
-		
-		cols = self.colSelects
+
+		local s = table.concat(plains, ',A.')
+		cols = #s > 0 and ('A.' .. s) or ''
 	else
 		cols = model.__fieldPlain
 	end
@@ -246,25 +243,30 @@ end
 
 queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 	local fieldCfgs = model.__fields
-	local keyvals, full = {}, self.__full	
-	local fields, vals = self.colSelects and self.colSelects or model.fields, self.__vals
-	
-	for i = 1, #fields do
-		local name = fields[i]
-		local cfg = fieldCfgs[name]
-		
-		if cfg then
-			local v, skip, quoteIt = vals[name], false, true
+	local vals, full = self.__vals, self.__full	
+	local keyvals = {}
 
-			if v == nil and full == true then
-				if cfg.ai then
-					skip = true
-				elseif cfg.null then
-					v = 'NULL'
-					quoteIt = false
-				else
-					v = cfg.default
+	if not vals then
+		vals = self
+	end
+
+	for name,v in pairs(self.colSelects == nil and model.fields or self.colSelects) do
+		local cfg = fieldCfgs[name]
+		if cfg then
+			local v, skip, quoteIt = vals[name], false, false
+
+			if cfg.ai then
+				if not full then
+					v = nil
 				end
+			elseif v == nil then
+				if cfg.null then
+					v = 'NULL'
+				elseif cfg.default then
+					v = cfg.type == 1 and '' or '0'
+				end
+			elseif cfg.type == 1 then
+				quoteIt = true
 			end
 
 			if not skip then
@@ -272,18 +274,16 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 					if alias then
 						name = alias .. name
 					end
-					
-					v = tostring(v)
-					keyvals[#keyvals + 1] = string.format("%s='%s'", name, quoteIt and ngx.quote_sql_str(v) or v)
 
-				elseif full then
-					error(string.format("When build model '%s' instance key-value(s) set by full mode but the key '%s' haven't a value", model.__name, name))
+					v = tostring(v)
+					keyvals[#keyvals + 1] = quoteIt and string.format("%s=%s", name, ngx.quote_sql_str(v)) or string.format("%s='%s'", name, v)
 				end
 			end
 		end
 	end
-	
-	sqls[#sqls + 1] = keyvals:concat(',')
+
+	sqls[#sqls + 1] = table.concat(keyvals, ',')
+	return #keyvals
 end
 
 queryexecuter.buildWheres = function(self, sqls, condPre)
@@ -295,7 +295,7 @@ queryexecuter.buildWheres = function(self, sqls, condPre)
 		return
 	end
 
-	if #self.condValues > 0 then
+	if self.condValues and #self.condValues > 0 then
 		local wheres, conds = {}, queryexecuter.conds
 		for i = 1, #self.condValues do
 			local one = self.condValues[i]
@@ -310,6 +310,11 @@ queryexecuter.buildWheres = function(self, sqls, condPre)
 end
 
 queryexecuter.buildJoinsCols = function(self, sqls, indient)
+	local cc = self.joins == nil and 0 or #self.joins
+	if cc < 1 then
+		return
+	end
+	
 	local validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN' }
 	
 	if indient == nil then
@@ -317,7 +322,7 @@ queryexecuter.buildJoinsCols = function(self, sqls, indient)
 	end
 	self.joinIndient = indient
 	
-	for i = 1, #self.joins do
+	for i = 1, cc do
 		local q = self.joins[i].q
 		
 		indient = indient + 1
@@ -332,9 +337,14 @@ queryexecuter.buildJoinsCols = function(self, sqls, indient)
 end
 
 queryexecuter.buildJoinsConds = function(self, sqls)
+	local cc = self.joins == nil and 0 or #self.joins
+	if cc < 1 then
+		return
+	end
+	
 	local validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN' }
 	
-	for i = 1, #self.joins do
+	for i = 1, cc do
 		local join = self.joins[i]
 		local q = join.q
 		
@@ -387,8 +397,6 @@ local queryMeta = {
 		columns = function(self, names)
 			if not self.colSelects then
 				self.colSelects = {}
-			elseif type(self.colSelects) == 'string' then
-				self.colSelects = self.colSelects:split(',', string.SPLIT_ASKEY, true)
 			end
 			
 			local tp = type(names)
@@ -534,29 +542,31 @@ local queryMeta = {
 				if not db then 
 					db = self.__reeme('mysqldb')
 				end
+			end			
+			if not db then
+				return nil
 			end
 			
-			if db then
-				local model = self.__m
-				local sqls = queryexecuter[self.op](self, model, db)
-				local r = require('reeme.odm.result')(result, db, model)
-				ngx.say(sqls)
-				do return end
-				if not r:query(sqls) then
-					error(string.format("ODM Query execute failed:\n\tSql = %s\n\tError = [%d]%s", sqls, r.lastErrCode, r.lastErr))
+			if result then
+				self.__vals = result:getValues()
+			end
+			
+			local model = self.__m
+			local sqls = queryexecuter[self.op](self, model, db)
+			
+			result = require('reeme.odm.result')(result, model)
+			local res = result:query(db, sqls, self.limitTotal or 10)
+			
+			self.__vals = nil
+			if res then
+				if self.op == 'SELECT' then
+					if result:next() then
+						return result
+					end
 					return nil
 				end
 				
-				if self.op == 'SELECT' then
-					return r
-				end
-				
-				local result = r:first("SELECT ROW_COUNT() AS C")
-				if result then
-					return result['C']
-				end
-				
-				return false
+				return { rows = res.affected_rows, insertid = res.insert_id }
 			end
 		end,
 	}
@@ -566,8 +576,14 @@ local queryMeta = {
 --model的原型表，提供了所有的model功能函数
 local modelMeta = {
 	__index = {
-		new = function(self)
-			return require('reeme.odm.result')(nil, nil, self)
+		new = function(self, vals)
+			local r = require('reeme.odm.result')(nil, self)
+			if vals then
+				for k,v in pairs(vals) do
+					r[k] = v
+				end
+			end
+			return r
 		end,
 		
 		find = function(self, name, val)
