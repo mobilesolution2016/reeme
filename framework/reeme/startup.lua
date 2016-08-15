@@ -25,7 +25,7 @@ function require(name)
 
 	local searchPrefix = ffi.abi('win') and "?.lua;?/init.lua" or "/?.lua;/?/init.lua"
 	local moduleName = nil
-	if package.searchpath(appName, "?.lua;?/init.lua") ~= nil then
+	if package.searchpath(appName, searchPrefix) ~= nil then
         moduleName = appName
     else
         moduleName = name
