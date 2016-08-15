@@ -75,6 +75,8 @@ local baseMeta = {
 			DEBUG = ngx.DEBUG,
 		},
 		
+		null = ngx.null,
+		
 		log = function(level, ...)
 			ngx.log(level or ngx.WARN, ...)
 		end,
