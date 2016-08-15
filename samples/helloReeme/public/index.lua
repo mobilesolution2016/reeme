@@ -11,7 +11,7 @@ require("reeme.application")({
 		return testDb, client
 	end,
 	
-	mysqldb = function(reeme)
+	mysqldb = function(reeme)	
 		--https://github.com/openresty/lua-resty-mysql
 		local mysql = require "resty.mysql"
 		local db, err = mysql:new()
