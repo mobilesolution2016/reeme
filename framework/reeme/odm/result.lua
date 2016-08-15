@@ -78,7 +78,7 @@ local resultMeta = {
 		insertInto = function(self, db)
 			if not db then db = self.db
 			else self.db = db end
-			
+
 			return execModelInstance(self, db == nil and self.db or db, 'INSERT', false, false)
 		end,
 		fullInsertInto = function(self, db)
