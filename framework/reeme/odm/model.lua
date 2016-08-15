@@ -65,7 +65,7 @@ local addWhere = function(self, condType, name, value)
 	local fields, valok = self.__m.__fields, false
 	
 	if value == nil then
-		local t1, t2 = name:split('=', string.SPLIT_MULTI + string.SPLIT_TRIM + 2)
+		local t1, t2 = name:split('=', string.string.SPLIT_TRIM + 2)
 		if t2 then
 			local f = fields[t1]
 			if f then
@@ -427,14 +427,14 @@ local queryMeta = {
 					if bindValue(self, fields, name, values) == false then
 						failed = name
 					end
-				elseif bindValue(self, fields, name:split('=', string.SPLIT_MULTI + string.SPLIT_TRIM + 2)) == false then
+				elseif bindValue(self, fields, name:split('=', string.SPLIT_TRIM + 2)) == false then
 					failed = name
 				end							
 				
 			elseif tp == 'table' then
 				if #name > 0 then
 					for k = 1, #name do
-						local t1, t2 = name[k]:split('=', string.SPLIT_MULTI + string.SPLIT_TRIM + 2)
+						local t1, t2 = name[k]:split('=', string.SPLIT_TRIM + 2)
 						if t2 then
 							if bindValue(self, fields, t1, t2) == false then
 								failed = t1
@@ -484,7 +484,7 @@ local queryMeta = {
 		--设置排序
 		order = function(self, field, asc)
 			if not asc then
-				field, asc = field:split('=', string.SPLIT_MULTI + string.SPLIT_TRIM)
+				field, asc = field:split('=', string.SPLIT_TRIM)
 			end
 			
 			if field and self.__m.fields[field] and asc then
@@ -529,15 +529,19 @@ local queryMeta = {
 				if type(db) == 'string' then
 					db = self.__reeme(db)
 				end
-			else				
+			else
 				db = self.__reeme('maindb')
-				if not db then db = self.__reeme('mysqldb') end
+				if not db then 
+					db = self.__reeme('mysqldb')
+				end
 			end
 			
 			if db then
 				local model = self.__m
 				local sqls = queryexecuter[self.op](self, model, db)
 				local r = require('reeme.odm.result')(result, db, model)
+				ngx.say(sqls)
+				do return end
 				if not r:query(sqls) then
 					error(string.format("ODM Query execute failed:\n\tSql = %s\n\tError = [%d]%s", sqls, r.lastErrCode, r.lastErr))
 					return nil
@@ -563,7 +567,7 @@ local queryMeta = {
 local modelMeta = {
 	__index = {
 		new = function(self)
-			return require('reeme.odm.result')(nil, nil, self.__m)
+			return require('reeme.odm.result')(nil, nil, self)
 		end,
 		
 		find = function(self, name, val)
