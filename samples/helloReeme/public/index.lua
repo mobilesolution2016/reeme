@@ -1,3 +1,4 @@
+return function()
 require("reeme.application")({
 	mongodb = function(reeme)
 		--https://github.com/LuaDist2/lua-resty-mongol3
@@ -66,3 +67,4 @@ require("reeme.application")({
 		return red
 	end
 })
+end
