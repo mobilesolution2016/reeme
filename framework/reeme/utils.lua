@@ -59,6 +59,16 @@ local Utils = {
 			end
 		end,
 		
+		--random
+		randomNumber = function(min, max, reseed)
+			return require("resty.randoms").number(min, max, reseed)
+		end,
+		
+		randomToken = function(len, chars, sep)
+			return require("resty.randoms").token(len, chars, sep)
+		end,
+		
+		--en/decrypt
 		rsaEncrypt = function(publicKey, str)
 			local rsa = require("resty.rsa")
 			local base64 = require("resty.base64")

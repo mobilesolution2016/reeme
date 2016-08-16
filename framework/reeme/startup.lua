@@ -34,4 +34,9 @@ function require(name)
     return oldRequire(moduleName)
 end
 
-require("public.index")()
+local ok, err = pcall(function()
+	require("public.index")()
+end)
+if not ok then
+	ngx.say(err)
+end
