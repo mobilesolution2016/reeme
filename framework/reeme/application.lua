@@ -157,6 +157,7 @@ return function(cfgs)
 		local uri = ngx.var.uri
 		local path, act = router(uri)
 		local dirs = configs.dirs
+		
 		local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
 		
 		if type(controlNew) ~= 'function' then
@@ -164,6 +165,10 @@ return function(cfgs)
 		end
 		
 		c = controlNew(act)
+		if not c[act] then
+			error(string.format("the action %s of controller %s undefined", act, path))
+		end
+		
 		local cm = getmetatable(c)
 				
 		metacopy = { __index = { } }
