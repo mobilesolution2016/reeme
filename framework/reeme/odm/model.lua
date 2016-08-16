@@ -23,7 +23,7 @@ local processWhereValue = function(field, value)
 		quoted = true
 	end
 	
-	if file.type == 1 then
+	if field.type == 1 then
 		--字符串/Binary型的字段
 		if l == 0 then
 			return "''"
@@ -64,23 +64,14 @@ end
 local addWhere = function(self, condType, name, value)
 	local fields, valok = self.__m.__fields, false
 	
-	if value == nil then
-		local t1, t2 = name:split('=', string.string.SPLIT_TRIM + 2)
-		if t2 then
-			local f = fields[t1]
-			if f then
-				name, value = t1, processWhereValue(f, t2)
-				if value ~= nil then valok = true end
-			end
-		else
-			valok = true
-		end	
-	else
+	if value then
 		local f = fields[name]
 		if f then
 			value = processWhereValue(f, value)
 			if value ~= nil then valok = true end
 		end
+	else
+		valok = true
 	end
 	
 	if not valok then
@@ -91,7 +82,7 @@ local addWhere = function(self, condType, name, value)
 	if not self.condValues then
 		self.condValues = {}
 	end
-	
+
 	self.condValues[#self.condValues + 1] = { n = name, v = value, c = condType }
 	return true
 end
@@ -99,7 +90,7 @@ end
 local processWhere = function(self, condType, k, v)
 	local tp = type(k)
 	if tp == 'string' then
-		addWhere(self, condType, one, type(v) == 'string' and v or nil)
+		addWhere(self, condType, k, v)
 
 	elseif tp == 'table' then
 		if #k > 0 then
@@ -163,11 +154,11 @@ queryexecuter.SELECT = function(self, model)
 	queryexecuter.buildJoinsConds(self, sqls)
 	
 	--where
-	queryexecuter.buildWheres(self, sqls, 'WHERE')
+	queryexecuter.buildWheres(self, sqls, 'WHERE', 'A.')
 	
 	--order by
-	if self.orderSql then
-		sqls[#sqls + 1] = self.orderSql
+	if self.orderBy then
+		sqls[#sqls + 1] = string.format('ORDER BY %s %s', self.orderBy.name, self.orderBy.order)
 	end
 	--limit
 	queryexecuter.buildLimits(self, sqls)
@@ -189,6 +180,10 @@ queryexecuter.UPDATE = function(self, model)
 	--where
 	queryexecuter.buildWheres(self, sqls, 'WHERE')
 	
+	--order by
+	if self.orderBy then
+		sqls[#sqls + 1] = string.format('ORDER BY %s %s', self.orderBy.name, self.orderBy.order)
+	end
 	--limit
 	queryexecuter.buildLimits(self, sqls)
 	
@@ -286,7 +281,7 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 	return #keyvals
 end
 
-queryexecuter.buildWheres = function(self, sqls, condPre)
+queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 	if self.condString then
 		if condPre then
 			sqls[#sqls + 1] = condPre
@@ -297,15 +292,24 @@ queryexecuter.buildWheres = function(self, sqls, condPre)
 
 	if self.condValues and #self.condValues > 0 then
 		local wheres, conds = {}, queryexecuter.conds
+		
+		if not alias then
+			alias = ''
+		end
+		
 		for i = 1, #self.condValues do
 			local one = self.condValues[i]
-			wheres[#wheres + 1] = string.format("%s%s=%s", conds[one.c], one.n, one.v)
+			if one.v then
+				wheres[#wheres + 1] = string.format("%s%s%s=%s", conds[one.c], alias, one.n, one.v)
+			else
+				wheres[#wheres + 1] = string.format("%s%s", conds[one.c], one.n)
+			end
 		end
 		
 		if condPre then
 			sqls[#sqls + 1] = condPre
 		end
-		sqls[#sqls + 1] = wheres:concat(' ')
+		sqls[#sqls + 1] = table.concat(wheres, ' ')
 	end
 end
 
@@ -347,10 +351,13 @@ queryexecuter.buildJoinsConds = function(self, sqls)
 	for i = 1, cc do
 		local join = self.joins[i]
 		local q = join.q
+		local alias = string.char(65 + q.joinIndient)
 		
 		sqls[#sqls + 1] = validJoins[join.type]
+		sqls[#sqls + 1] = q.query.__m.__name
+		sqls[#sqls + 1] = alias
 		sqls[#sqls + 1] = 'ON('
-		queryexecuter.buildWheres(self, sqls)
+		queryexecuter.buildWheres(self, sqls, alias .. '.')
 		sqls[#sqls + 1] = ')'
 	end
 end
@@ -378,19 +385,19 @@ local queryMeta = {
 		
 		--设置条件
 		where = function(self, name, val)
-			return processWhere(self, 0, name, val)
+			return processWhere(self, 1, name, val)
 		end,		
 		andWhere = function(self, name, val)
-			return processWhere(self, 1, name, val)
-		end,
-		orWhere = function(self, name, val)
 			return processWhere(self, 2, name, val)
 		end,
-		xorWhere = function(self, name, val)
+		orWhere = function(self, name, val)
 			return processWhere(self, 3, name, val)
 		end,
-		notWhere = function(self, name, val)
+		xorWhere = function(self, name, val)
 			return processWhere(self, 4, name, val)
+		end,
+		notWhere = function(self, name, val)
+			return processWhere(self, 5, name, val)
 		end,
 		
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列
@@ -435,14 +442,14 @@ local queryMeta = {
 					if bindValue(self, fields, name, values) == false then
 						failed = name
 					end
-				elseif bindValue(self, fields, name:split('=', string.SPLIT_TRIM + 2)) == false then
+				elseif bindValue(self, fields, string.split(name, '=', string.SPLIT_TRIM + 2)) == false then
 					failed = name
 				end							
 				
 			elseif tp == 'table' then
 				if #name > 0 then
 					for k = 1, #name do
-						local t1, t2 = name[k]:split('=', string.SPLIT_TRIM + 2)
+						local t1, t2 = string.split(name[k], '=', string.SPLIT_TRIM + 2)
 						if t2 then
 							if bindValue(self, fields, t1, t2) == false then
 								failed = t1
@@ -492,13 +499,14 @@ local queryMeta = {
 		--设置排序
 		order = function(self, field, asc)
 			if not asc then
-				field, asc = field:split('=', string.SPLIT_TRIM)
+				field, asc = string.split(field, ' ', string.SPLIT_TRIM)
+				if asc == nil then asc = 'asc' end
 			end
 			
 			if field and self.__m.fields[field] and asc then
 				asc = asc:lower()
 				if asc == 'asc' or asc == 'desc' then
-					self.orderSql = string.format('ORDER BY %s %s', field, asc)
+					self.orderBy = { name = field, order = asc }
 				end
 			end
 			
@@ -553,17 +561,14 @@ local queryMeta = {
 			
 			local model = self.__m
 			local sqls = queryexecuter[self.op](self, model, db)
-			
+			ngx.say(sqls, '<br/>')
 			result = require('reeme.odm.result')(result, model)
 			local res = result:query(db, sqls, self.limitTotal or 10)
 			
 			self.__vals = nil
 			if res then
 				if self.op == 'SELECT' then
-					if result:next() then
-						return result
-					end
-					return nil
+					return result
 				end
 				
 				return { rows = res.affected_rows, insertid = res.insert_id }
@@ -586,10 +591,18 @@ local modelMeta = {
 			return r
 		end,
 		
-		find = function(self, name, val)
+		find = function(self, p1, p2)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)
-			if name then q:where(name, val) end
+			
+			if p1 then
+				if type(p1) == 'number' then 
+					q:limit(p1, p2)
+				else
+					q:where(p1, p2)
+				end
+			end
+			
 			return q:exec()
 		end,		
 		findFirst = function(self, name, val)

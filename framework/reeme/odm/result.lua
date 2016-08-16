@@ -27,7 +27,7 @@ resultMeta.__index = {
 
 		return false
 	end,
-	next = function(self)
+	nextRow = function(self)
 		local curr = rawget(self, '__currentRow')
 		if resultMeta.__index.gotoRowId(self, curr + 1) then
 			rawset(self, '__currentRow', curr + 1)
@@ -37,18 +37,16 @@ resultMeta.__index = {
 	end,
 	gotoRowId = function(self, rowId)
 		local total = rawget(self, '__totalRows')
-		if rowId < 1 or rowId >= total then
+		if not total or rowId < 1 or rowId > total then
 			return false
 		end
 		
 		local rows = rawget(self, '__allRows')
 		local meta = getmetatable(self)
 		
-		meta.__index = rows[1]
-		meta.__newindex = rows[1]
-		
+		meta.__index, meta.__newindex = rows[rowId], rows[rowId]
+
 		setmetatable(meta.__index, resultMeta)
-		setmetatable(self, meta)
 		
 		return true
 	end,
@@ -74,18 +72,30 @@ resultMeta.__index = {
 local getRowsLen = function(self)
 	return rawget(self, '__totalRows') or 0
 end
-local getRowPairs = function(self, _1, _2)
+local getRowPairs = function(self)
 	local vals = getmetatable(self).__index
 	return function(t, k)
-		local k, v = next(vals, k)
-		return k, v
+		return next(vals, k)
 	end
+end
+local setRowTable = function(self, tbl)
+	if type(tbl) == 'table' then
+		local fs = rawget(self, '__model').__fields
+		local vals = getmetatable(self).__index
+		for k,v in pairs(tbl) do
+			local cfg = fs[k]
+			if cfg then
+				vals[k] = v
+			end
+		end
+	end
+	return self
 end
 
 return function(r, m)
 	if r == nil then
 		local rVals = {}
-		local valsMeta = { __index = rVals, __newindex = rVals, __len = getRowsLen, __pairs = getRowPairs }
+		local valsMeta = { __index = rVals, __newindex = rVals, __len = getRowsLen, __pairs = getRowPairs, __call = setRowTable }
 		
 		setmetatable(rVals, resultMeta)
 		r = setmetatable({}, valsMeta)

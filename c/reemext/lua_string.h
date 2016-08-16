@@ -3,15 +3,15 @@ static int lua_string_split(lua_State* L)
 	bool retAsTable = false;
 	int top = lua_gettop(L);
 	uint8_t maskBits[32] = { 0 }, ch;
-	size_t byLen = 0, srcLen = 0, start = 0, pos;
+	size_t byLen = 0, srcLen = 0, start = 0;
 
 	const uint8_t* src = (const uint8_t*)luaL_checklstring(L, 1, &srcLen);
 	const uint8_t* by = (const uint8_t*)luaL_checklstring(L, 2, &byLen);
 
-	uint32_t nFlags = lua_tointeger(L, 2);
+	uint32_t nFlags = luaL_checklong(L, 3);
 	uint32_t maxSplits = nFlags & 0x0FFFFFFF, cc = 0;
 
-	if (top >= 3 && lua_toboolean(L, 3))
+	if (top >= 4 && lua_toboolean(L, 4))
 	{
 		retAsTable = true;
 		lua_newtable(L);
@@ -29,7 +29,8 @@ static int lua_string_split(lua_State* L)
 	if (maxSplits == 0)
 		maxSplits = 0x0FFFFFFF;
 	
-	for (size_t i = 0, endpos; i < srcLen; ++ i)
+	size_t i, endpos;
+	for (i = endpos = 0; i < srcLen; ++ i)
 	{
 		ch = src[i];
 		if (!(maskBits[ch >> 3] & (1 << (ch & 7))))
@@ -55,6 +56,7 @@ static int lua_string_split(lua_State* L)
 
 		if (start < endpos)
 		{
+_lastseg:
 			// push result
 			if (retAsTable)
 			{
@@ -82,6 +84,13 @@ static int lua_string_split(lua_State* L)
 		}
 
 		start = i + 1;
+	}
+
+	if (maxSplits && start < srcLen)
+	{
+		endpos = srcLen;
+		maxSplits = 0;
+		goto _lastseg;
 	}
 
 	if (cc == 0)
@@ -120,10 +129,12 @@ static void luaext_string(lua_State *L)
 	lua_rawset(L, -3);
 
 	lua_pushliteral(L, "SPLIT_ASKEY");
-	lua_rawseti(L, -2, 0x40000000);
+	lua_pushinteger(L, 0x40000000);
+	lua_rawset(L, -3);
 
 	lua_pushliteral(L, "SPLIT_TRIM");
-	lua_rawseti(L, -2, 0x20000000);
+	lua_pushinteger(L, 0x20000000);
+	lua_rawset(L, -3);
 
 	lua_pop(L, 1);
 }
