@@ -175,6 +175,7 @@
     <ClInclude Include="lua_string.h" />
     <ClInclude Include="preheader.h" />
     <ClInclude Include="reeme.h" />
+    <ClInclude Include="sql.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="reeme.cpp" />

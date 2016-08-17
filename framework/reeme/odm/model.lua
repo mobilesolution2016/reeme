@@ -14,6 +14,8 @@
 
 --处理where条件的值，与field字段的配置类型做比对，然后根据是否有左右引号来决定是否要做反斜杠处理
 local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
+local removeColFromExpWhen = { distinct = 1 }
+
 local processWhereValue = function(field, value)
 	local tp = type(value)
 	value = tostring(value)
@@ -60,33 +62,42 @@ local processWhereValue = function(field, value)
 	return booleanValids[value]
 end
 
---添加一个where条件
+--添加一个where条件，本函数被processWhere调用
 local addWhere = function(self, condType, name, value)
 	local fields, valok = self.__m.__fields, false
-	
-	if value then
+
+	self.condString = nil	--condString和condValues同一时间只会存在一个，只有一个是可以有效的
+	if not self.condValues then
+		self.condValues = {}
+	end
+		
+	if value == nil then
+		--name就是整个表达式
+		local tokens, poses = self.__reeme.odm.parseExpression(name)
+		if not tokens then
+			error(string.format('Some error syntax(s) in where("%s")', k))
+			return self
+		end
+		
+		self.condValues[#self.condValues + 1] = { n = name, c = condType, tokens = tokens, poses = poses}
+	else
+		--key=value这种表达式
 		local f = fields[name]
 		if f then
 			value = processWhereValue(f, value)
 			if value ~= nil then valok = true end
 		end
-	else
-		valok = true
-	end
-	
-	if not valok then
-		return false
-	end
-	
-	self.condString = nil	--condString和condValues同一时间只会存在一个，只有一个是可以有效的
-	if not self.condValues then
-		self.condValues = {}
-	end
 
-	self.condValues[#self.condValues + 1] = { n = name, v = value, c = condType }
-	return true
+		if valok then
+			self.condValues[#self.condValues + 1] = { n = name, v = value, c = condType }
+			return true
+		end
+	end
+	
+	return false
 end
 
+--处理where函数带来的条件
 local processWhere = function(self, condType, k, v)
 	local tp = type(k)
 	if tp == 'string' then
@@ -111,6 +122,33 @@ local processWhere = function(self, condType, k, v)
 	return self
 end
 
+--解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
+local processWhereFullString = function(self, alias, src)
+	local fields = self.__m.__fields
+	local sql, tokens, poses = src.n, src.tokens, src.poses
+	local adjust = 0
+	
+	for i=1, #tokens do
+		local one, newone = tokens[i], nil
+
+		if one:byte(1) == 39 then
+			--这是一个字符串
+			newone = ngx.quote_sql_str(one:sub(2, -2))				
+		elseif fields[one] then
+			--这是一个字段的名称
+			newone = alias .. one
+		end
+
+		if newone then
+			--替换掉最终的表达式
+			sql = sql:subreplace(newone, poses[i] + adjust, #one)
+			adjust = adjust + #one - #newone
+		end
+	end
+	
+	return sql
+end
+
 --根据已经添加的where条件绑定值
 local bindValue = function(self, fields, name, value)
 	local cv = self.condValues
@@ -133,14 +171,15 @@ local bindValue = function(self, fields, name, value)
 end
 
 --将query设置的条件合并为SQL语句
-local queryexecuter = { conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' } }
+local queryexecuter = { conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }, validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN' } }
 
 queryexecuter.SELECT = function(self, model)
 	local sqls = {}
 	sqls[#sqls + 1] = 'SELECT'
 	
-	--main fields
-	queryexecuter.buildColumns(self, model, sqls)
+	--main
+	local alias = string.char(65 + (self.joinIndient or 0))
+	queryexecuter.buildColumns(self, model, sqls, alias .. '.')
 	
 	--joins fields
 	queryexecuter.buildJoinsCols(self, sqls)
@@ -154,11 +193,11 @@ queryexecuter.SELECT = function(self, model)
 	queryexecuter.buildJoinsConds(self, sqls)
 	
 	--where
-	queryexecuter.buildWheres(self, sqls, 'WHERE', 'A.')
+	queryexecuter.buildWheres(self, sqls, 'WHERE', alias .. '.')
 	
 	--order by
 	if self.orderBy then
-		sqls[#sqls + 1] = string.format('ORDER BY %s %s', self.orderBy.name, self.orderBy.order)
+		sqls[#sqls + 1] = string.format('ORDER BY %s.%s %s', alias, self.orderBy.name, self.orderBy.order)
 	end
 	--limit
 	queryexecuter.buildLimits(self, sqls)
@@ -210,24 +249,90 @@ end
 
 
 queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
+	--加入所有的表达式
+	local excepts, express = nil, nil
+	if self.expressions then
+		local fields, func = self.__m.__fields, self.__reeme.odm.parseExpression
+		
+		for i=1, #self.expressions do
+			local expr = self.expressions[i]
+			
+			if type(expr) == 'string' then
+				local adjust = 0
+				local tokens, poses = func(expr)
+				if tokens then
+					local removeCol = false
+					for k=1,#tokens do
+						local one, newone = tokens[k], nil
+
+						if one:byte(1) == 39 then
+							--这是一个字符串
+							newone = ngx.quote_sql_str(one:sub(2, -2))				
+						elseif fields[one] then
+							--这是一个字段的名称
+							if removeCol then
+								if not excepts then
+									excepts = {}
+								end
+								excepts[one] = true
+							end
+							
+							newone = alias .. one
+							
+						elseif removeColFromExpWhen[one:lower()] then
+							--遇到这些定义的表达式，这个表达式所关联的字段就不会再在字段列表中出现
+							removeCol = true
+						end
+
+						if newone then
+							expr = expr:subreplace(newone, poses[k] + adjust, #one)
+							adjust = adjust + #one - #newone
+						end
+					end
+
+					self.expressions[i] = expr
+				end
+			else
+				self.expressions[i] = tostring(expr)
+			end
+		end
+		
+		express = table.concat(self.expressions, ',')
+	end
+
+	--如果imde指定只获取哪些列，那么就获取所有的列，当然，要去掉表达式中已经使用了的列
 	local cols
 	if self.colSelects then
 		local plains = {}
 		for k,v in pairs(self.colSelects) do
-			plains[#plains + 1] = k
+			if not excepts[k] then
+				plains[#plains + 1] = k
+			end
 		end
 
-		local s = table.concat(plains, ',A.')
-		cols = #s > 0 and ('A.' .. s) or ''
+		local s = table.concat(plains, ',' .. alias)
+		cols = #s > 0 and (alias .. s) or ''
 	else
-		cols = model.__fieldPlain
-	end
-
-	if #cols > 2 then
-		if alias then
-			cols = cols:gsub('A.', alias)
+		local fieldPlain = model.__fieldPlain
+		if excepts then
+			local fps = {}
+			local i = 1, #fieldPlain do
+				local n = fieldPlain[i]
+				if not excepts[n] then
+					fps[#fps + 1] = n
+				end
+			end
+			fieldPlain = fps
 		end
 		
+		cols = alias .. table.concat(fieldPlain, ',' .. alias)
+	end
+	
+	if express then
+		cols = #cols > 0 and string.format('%s,%s', express, cols) or express
+	end
+	
+	if #cols > 2 then
 		if returnCols == true then
 			return cols
 		end
@@ -248,10 +353,10 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 	for name,v in pairs(self.colSelects == nil and model.fields or self.colSelects) do
 		local cfg = fieldCfgs[name]
 		if cfg then
-			local v, skip, quoteIt = vals[name], false, false
+			local v = vals[name]
 
 			if cfg.ai then
-				if not full then
+				if not full or not string.checkinteger(v) then
 					v = nil
 				end
 			elseif v == nil then
@@ -260,19 +365,25 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 				elseif cfg.default then
 					v = cfg.type == 1 and '' or '0'
 				end
+			elseif v == ngx.null then
+				v = 'NULL'
 			elseif cfg.type == 1 then
-				quoteIt = true
+				v = ngx.quote_sql_str(v)
+			elseif cfg.type == 3 then
+				if not string.checknumeric(v) then
+					v = nil
+				end
+			elseif not string.checkinteger(v) then
+				v = nil
 			end
 
-			if not skip then
-				if v ~= nil then
-					if alias then
-						name = alias .. name
-					end
-
-					v = tostring(v)
-					keyvals[#keyvals + 1] = quoteIt and string.format("%s=%s", name, ngx.quote_sql_str(v)) or string.format("%s='%s'", name, v)
+			if v ~= nil then
+				if alias then
+					name = alias .. name
 				end
+
+				v = tostring(v)
+				keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
 			end
 		end
 	end
@@ -301,6 +412,8 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 			local one = self.condValues[i]
 			if one.v then
 				wheres[#wheres + 1] = string.format("%s%s%s=%s", conds[one.c], alias, one.n, one.v)
+			elseif one.tokens then
+				wheres[#wheres + 1] = string.format("%s%s", conds[one.c], processWhereFullString(self, alias, one))
 			else
 				wheres[#wheres + 1] = string.format("%s%s", conds[one.c], one.n)
 			end
@@ -310,7 +423,11 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 			sqls[#sqls + 1] = condPre
 		end
 		sqls[#sqls + 1] = table.concat(wheres, ' ')
+		
+		return true
 	end
+	
+	return false
 end
 
 queryexecuter.buildJoinsCols = function(self, sqls, indient)
@@ -319,25 +436,25 @@ queryexecuter.buildJoinsCols = function(self, sqls, indient)
 		return
 	end
 	
-	local validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN' }
-	
 	if indient == nil then
 		indient = 1
 	end
-	self.joinIndient = indient
 	
 	for i = 1, cc do
 		local q = self.joins[i].q
-		
-		indient = indient + 1
 		q.joinIndient = indient
-		
-		local cols = queryexecuter.buildColumns(q, q.__m, sqls, string.format('%s.', string.char(65 + indient)), true)
+
+		local cols = queryexecuter.buildColumns(q, q.__m, sqls, string.char(65 + indient) .. '.', true)
 		if cols then
 			sqls[#sqls + 1] = ','
 			sqls[#sqls + 1] = cols
 		end
+		
+		local newIndient = queryexecuter.buildJoinsCols(q, sqls, indient + 1)
+		indient = newIndient or (indient + 1)
 	end
+	
+	return indient
 end
 
 queryexecuter.buildJoinsConds = function(self, sqls)
@@ -346,7 +463,7 @@ queryexecuter.buildJoinsConds = function(self, sqls)
 		return
 	end
 	
-	local validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN' }
+	local validJoins = queryexecuter.validJoins
 	
 	for i = 1, cc do
 		local join = self.joins[i]
@@ -354,11 +471,15 @@ queryexecuter.buildJoinsConds = function(self, sqls)
 		local alias = string.char(65 + q.joinIndient)
 		
 		sqls[#sqls + 1] = validJoins[join.type]
-		sqls[#sqls + 1] = q.query.__m.__name
+		sqls[#sqls + 1] = q.__m.__name
 		sqls[#sqls + 1] = alias
 		sqls[#sqls + 1] = 'ON('
-		queryexecuter.buildWheres(self, sqls, alias .. '.')
+		if not queryexecuter.buildWheres(q, sqls, alias .. '.') then
+			sqls[#sqls + 1] = '1'
+		end
 		sqls[#sqls + 1] = ')'
+		
+		queryexecuter.buildJoinsConds(q, sqls)
 	end
 end
 
@@ -386,7 +507,7 @@ local queryMeta = {
 		--设置条件
 		where = function(self, name, val)
 			return processWhere(self, 1, name, val)
-		end,		
+		end,
 		andWhere = function(self, name, val)
 			return processWhere(self, 2, name, val)
 		end,
@@ -408,7 +529,7 @@ local queryMeta = {
 			
 			local tp = type(names)
 			if tp == 'string' then
-				for str in string.gmatch(names, "([^,]+)") do
+				for str in names:gmatch("([^,]+)") do
 					self.colSelects[name] = true
 				end
 			elseif tp == 'table' then
@@ -420,8 +541,14 @@ local queryMeta = {
 		--设置列的别名
 		alias = function(self, names, alias)
 		end,
-		--使用列函数
-		proc = function(self, name, val)
+		--使用列表达式
+		expr = function(self, expr)
+			if not self.expressions then
+				self.expressions = {}
+			end
+			
+			self.expressions[#self.expressions + 1] = expr
+			return self
 		end,
 		
 		--直接设置where条件语句
@@ -442,14 +569,14 @@ local queryMeta = {
 					if bindValue(self, fields, name, values) == false then
 						failed = name
 					end
-				elseif bindValue(self, fields, string.split(name, '=', string.SPLIT_TRIM + 2)) == false then
+				elseif bindValue(self, fields, name:split('=', string.SPLIT_TRIM + 2)) == false then
 					failed = name
 				end							
 				
 			elseif tp == 'table' then
 				if #name > 0 then
 					for k = 1, #name do
-						local t1, t2 = string.split(name[k], '=', string.SPLIT_TRIM + 2)
+						local t1, t2 = name[k]:split('=', string.SPLIT_TRIM + 2)
 						if t2 then
 							if bindValue(self, fields, t1, t2) == false then
 								failed = t1
@@ -479,17 +606,17 @@ local queryMeta = {
 		
 		--两个Query进行联接
 		join = function(self, query, joinType)			
-			local validJoins, jt = { inner = 1, left = 1, right = 1 }, joinType
-			if jt == nil then jt = 'inner' end
-			jt = validJoins[jt]
-			if jt == nil then
-				error("error join type '%s' for query join", tostring(joinType))
+			local validJoins = { inner = 1, left = 1, right = 1 }
+			local jt = joinType == nil and 'inner' or joinType:lower()
+			
+			if validJoins[jt] == nil then
+				error("error join type '%s' for join", tostring(joinType))
 				return self
 			end
-			
+
 			local j = { q = query, type = jt }
 			if not self.joins then
-				self.joins = j
+				self.joins = { j }
 			else
 				self.joins[#self.joins + 1] = j
 			end
@@ -499,14 +626,14 @@ local queryMeta = {
 		--设置排序
 		order = function(self, field, asc)
 			if not asc then
-				field, asc = string.split(field, ' ', string.SPLIT_TRIM)
+				field, asc = field:split(' ', string.SPLIT_TRIM)
 				if asc == nil then asc = 'asc' end
 			end
 			
 			if field and self.__m.fields[field] and asc then
 				asc = asc:lower()
 				if asc == 'asc' or asc == 'desc' then
-					self.orderBy = { name = field, order = asc }
+					self.orderBy = { name = field, order = asc:upper() }
 				end
 			end
 			
@@ -609,7 +736,11 @@ local modelMeta = {
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)
 			if name then where(q, name, val) end
-			return q:limit(1):exec()
+			local r = q:limit(1):exec()
+			if r and r:nextRow() then
+				return r
+			end
+			r, q = nil, nil
 		end,
 		
 		query = function(self)
