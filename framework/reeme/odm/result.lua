@@ -1,5 +1,32 @@
+--[[
+	结果集封装
+	
+	这样就可以得到一个结果集
+	local r = reeme.odm.use('mytable'):query():exec()
+	
+	在r这个变量上可以执行下列操作：
+	
+	1、+ N 或 - N，可以控制结果集的游标向后或向前移动，如果移动成功，则返回true否则返回false。+1就相当于r:next()，-1就相当于r:prev()
+		当然，实际上r类型并没有next和prev函数，所以只能使用+N和-N来完成
+	while r + 1 do
+	end
+	
+	2、r()，即将r当成一个函数一样的调用，可以返回当前行的原始记录的table。这种操作方式一般只在一种情况下需要使用：那就是当r中的函数名与
+		结果集中的字段名冲突的时候，就可以采用这种方式越过r的metatable直接访问字段，就不用担心函数名称与字段名称冲突了。比如r中有一个函数
+		名为saveTo，如果数据表中也有一个字段叫做saveTo(尽管这种可能性其实很小而且也不应该)，那么r().saveTo就可以操作这个字段了
+		
+	3、for k,v in pairs(r) do这样可以迭代出r当前行的所有字段，不会将r中的函数迭代出来
+	
+	4、#r可以得到结果集的总行数
+	
+	5、r = -r可以让结果集当前行归零，即游标回到结果集的第一行，然后又可以使用+N或-N来移动游标了
+	
+	之所以对结果集类型使用了好几个算术运算符号，也没有采用函数来完成，目的是为了减少函数的数量。因为对结果集中字段的操作也是通过索引来完成的，
+	如果结果集带的函数越多，那么名称冲突的可能性就越高。所以目前结果集这个类型中，一共也只有4个函数save、fullSave、create、fullCreate
+]]
+
 local execModelInstance = function(self, db, op, limit, full)
-	local q = rawget(self, '__model'):query()
+	local q = rawget(self, -10000):query()
 
 	q.op = op
 	q.__full = full
@@ -11,66 +38,9 @@ local execModelInstance = function(self, db, op, limit, full)
 end
 
 local resultMeta = {}
-resultMeta.__index = {
-	query = function(self, db, sql, maxrows)
-		local res, err, code = db:query(sql, maxrows)
-		if res then
-			rawset(self, '__totalRows', #res)
-			rawset(self, '__currentRow', 0)
-			rawset(self, '__allRows', res)
-			return res
-		end
-
-		if err then
-			error(string.format("ODM Query execute failed:<br/>&nbsp;&nbsp;Sql = %s<br/>&nbsp;&nbsp;Error = %s", sqls, err))
-		end
-
-		return false
-	end,
-	nextRow = function(self)
-		local curr = rawget(self, '__currentRow')
-		if resultMeta.__index.gotoRowId(self, curr + 1) then
-			rawset(self, '__currentRow', curr + 1)
-			return true
-		end
-		return false
-	end,
-	gotoRowId = function(self, rowId)
-		local total = rawget(self, '__totalRows')
-		if not total or rowId < 1 or rowId > total then
-			return false
-		end
-		
-		local rows = rawget(self, '__allRows')
-		local meta = getmetatable(self)
-		
-		meta.__index, meta.__newindex = rows[rowId], rows[rowId]
-
-		setmetatable(meta.__index, resultMeta)
-		
-		return true
-	end,
-	
-	getValues = function(self)
-		return getmetatable(self).__index
-	end,
-	
-	saveTo = function(self, db)
-		return execModelInstance(self, db, 'UPDATE', true, false)
-	end,
-	fullSaveTo = function(self, db)
-		return execModelInstance(self, db, 'UPDATE', true, true)
-	end,
-	insertInto = function(self, db)
-		return execModelInstance(self, db, 'INSERT', false, false)
-	end,
-	fullInsertInto = function(self, db)
-		return execModelInstance(self, db, 'INSERT', false, true)
-	end
-}
 
 local getRowsLen = function(self)
-	return rawget(self, '__totalRows') or 0
+	return rawget(self, -10001) or 0
 end
 local getRowPairs = function(self)
 	local vals = getmetatable(self).__index
@@ -79,6 +49,9 @@ local getRowPairs = function(self)
 	end
 end
 local setRowTable = function(self, tbl)
+	if tbl == nil then
+		return getmetatable(self).__index
+	end	
 	if type(tbl) == 'table' then
 		local fs = rawget(self, '__model').__fields
 		local vals = getmetatable(self).__index
@@ -91,16 +64,97 @@ local setRowTable = function(self, tbl)
 	end
 	return self
 end
-
-return function(r, m)
-	if r == nil then
-		local rVals = {}
-		local valsMeta = { __index = rVals, __newindex = rVals, __len = getRowsLen, __pairs = getRowPairs, __call = setRowTable }
-		
-		setmetatable(rVals, resultMeta)
-		r = setmetatable({}, valsMeta)
+local setResultRow = function(self, rowId)
+	local total = rawget(self, -10001)
+	if not total or rowId < 1 or rowId > total then
+		return false
 	end
 	
-	rawset(r, '__model', m)
-	return r
+	local rows = rawget(self, -10003)
+	local meta = getmetatable(self)
+	
+	meta.__index, meta.__newindex = rows[rowId], rows[rowId]
+
+	setmetatable(meta.__index, resultMeta)
+	
+	return true
 end
+local addOffsetRow = function(self, cc)
+	local curr = rawget(self, -10002)
+	if setResultRow(self, curr + cc) then
+		rawset(self, -10002, curr + cc)
+		return true
+	end
+	return false
+end
+local subOffsetRow = function(self, cc)
+	local curr = rawget(self, -10002)
+	if setResultRow(self, curr - cc) then
+		rawset(self, -10002, curr - cc)
+		return true
+	end
+	return false
+end
+local resetRow = function(self)
+	setResultRow(self, 1)
+	rawset(self, -10002, 1)
+	
+	return self
+end
+
+local pub = {
+	init = function(r, m)
+		if r == nil then
+			local rVals = {}
+			local valsMeta = { 
+				__index = rVals, 
+				__newindex = rVals, 
+				__len = getRowsLen, 
+				__pairs = getRowPairs, 
+				__call = setRowTable, 
+				__add = addOffsetRow, 
+				__sub = subOffsetRow,
+				__unm = resetRow
+			}
+			
+			setmetatable(rVals, resultMeta)
+			r = setmetatable({}, valsMeta)
+		end
+		
+		rawset(r, -10000, m)
+		return r
+	end,
+	query = function(self, db, sql, maxrows)
+		local res, err, code = db:query(sql, maxrows)
+		if res then
+			rawset(self, -10001, #res)
+			rawset(self, -10002, 0)
+			rawset(self, -10003, res)
+			return res
+		end
+
+		if err then
+			error(string.format("ODM Query execute failed:<br/>&nbsp;&nbsp;Sql = %s<br/>&nbsp;&nbsp;Error = %s", sql, err))
+		end
+
+		return false
+	end,
+}
+
+resultMeta.__index = {
+	save = function(self, db)
+		return execModelInstance(self, db, 'UPDATE', true, false)
+	end,
+	fullSave = function(self, db)
+		return execModelInstance(self, db, 'UPDATE', true, true)
+	end,
+	create = function(self, db)
+		return execModelInstance(self, db, 'INSERT', false, false)
+	end,
+	fullCreate = function(self, db)
+		return execModelInstance(self, db, 'INSERT', false, true)
+	end
+}
+
+
+return pub

@@ -1,6 +1,8 @@
 #include "reeme.h"
 #include "lua.hpp"
 #include "lua_string.h"
+#include "lua_table.h"
+#include "lua_utf8str.h"
 #include "sql.h"
 
 static luaL_Reg cExtProcs[] = {
@@ -21,6 +23,8 @@ static int lua_findmetatable(lua_State* L)
 REEME_API int luaopen_reemext(lua_State* L)
 {
 	luaext_string(L);
+	luaext_table(L);
+	luaext_utf8str(L);
 
 	lua_pushcfunction(L, &lua_findmetatable);
 	lua_setglobal(L, "findmetatable");

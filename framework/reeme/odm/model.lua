@@ -217,19 +217,31 @@ queryexecuter.UPDATE = function(self, model)
 	end
 	
 	--where
-	queryexecuter.buildWheres(self, sqls, 'WHERE')
+	if not queryexecuter.buildWheres(self, sqls, 'WHERE') then
+		--find primary or unique
+		local idx, vals = model.__fieldIndices, self.__vals
+		if vals then		
+			for k,v in pairs(idx) do
+				if (v.type == 1 or v.type == 2) and vals[k] then
+					processWhere(self, 1, k, vals[k])				
+					queryexecuter.buildWheres(self, sqls, 'WHERE')
+					break
+				end
+			end
+		end
+	end
 	
 	--order by
 	if self.orderBy then
 		sqls[#sqls + 1] = string.format('ORDER BY %s %s', self.orderBy.name, self.orderBy.order)
 	end
 	--limit
-	queryexecuter.buildLimits(self, sqls)
+	queryexecuter.buildLimits(self, sqls, true)
 	
 	--end
 	return table.concat(sqls, ' ')
 end
-	
+
 queryexecuter.INSERT = function(self, model)
 	local sqls = {}
 	sqls[#sqls + 1] = 'INSERT INTO'
@@ -274,6 +286,12 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 								if not excepts then
 									excepts = {}
 								end
+								if self.colExcepts then
+									for en,_ in pairs(self.colExcepts) do
+										excepts[en] = true
+									end
+								end
+								
 								excepts[one] = true
 							end
 							
@@ -299,6 +317,10 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 		
 		express = table.concat(self.expressions, ',')
 	end
+	
+	if not excepts then
+		excepts = self.colExcepts
+	end
 
 	--如果imde指定只获取哪些列，那么就获取所有的列，当然，要去掉表达式中已经使用了的列
 	local cols
@@ -313,10 +335,10 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 		local s = table.concat(plains, ',' .. alias)
 		cols = #s > 0 and (alias .. s) or ''
 	else
-		local fieldPlain = model.__fieldPlain
+		local fieldPlain = model.__fieldsPlain
 		if excepts then
 			local fps = {}
-			local i = 1, #fieldPlain do
+			for i = 1, #fieldPlain do
 				local n = fieldPlain[i]
 				if not excepts[n] then
 					fps[#fps + 1] = n
@@ -363,7 +385,7 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 				if cfg.null then
 					v = 'NULL'
 				elseif cfg.default then
-					v = cfg.type == 1 and '' or '0'
+					v = cfg.type == 1 and "''" or '0'
 				end
 			elseif v == ngx.null then
 				v = 'NULL'
@@ -483,9 +505,13 @@ queryexecuter.buildJoinsConds = function(self, sqls)
 	end
 end
 
-queryexecuter.buildLimits = function(self, sqls)
+queryexecuter.buildLimits = function(self, sqls, ignoreStart)
 	if self.limitTotal and self.limitTotal > 0 then
-		sqls[#sqls + 1] = string.format('LIMIT %u,%u', self.limitStart, self.limitTotal)
+		if ignoreStart then
+			sqls[#sqls + 1] = string.format('LIMIT %u', self.limitTotal)
+		else
+			sqls[#sqls + 1] = string.format('LIMIT %u,%u', self.limitStart, self.limitTotal)
+		end
 	end
 end
 
@@ -495,7 +521,7 @@ local queryMeta = {
 	__index = {
 		--全部清空
 		reset = function(self)
-			local ignores = { __m = 1, op = 1 }
+			local ignores = { __m = 1, op = 1, __reeme = 1 }
 			for k,_ in pairs(self) do
 				if not ignores[k] then
 					self[k] = nil
@@ -530,13 +556,32 @@ local queryMeta = {
 			local tp = type(names)
 			if tp == 'string' then
 				for str in names:gmatch("([^,]+)") do
-					self.colSelects[name] = true
+					self.colSelects[str] = true
 				end
 			elseif tp == 'table' then
 				for i = 1, #names do
 					self.colSelects[names[i]] = true
 				end
 			end
+		end,
+		--设置只排除哪些列
+		excepts = function(self, names)
+			if not self.colExcepts then
+				self.colExcepts = {}
+			end
+			
+			local tp = type(names)
+			if tp == 'string' then
+				for str in names:gmatch("([^,]+)") do
+					self.colExcepts[str] = true
+				end
+			elseif tp == 'table' then
+				for i = 1, #names do
+					self.colExcepts[names[i]] = true
+				end
+			end
+			
+			return self
 		end,
 		--设置列的别名
 		alias = function(self, names, alias)
@@ -677,25 +722,26 @@ local queryMeta = {
 				if not db then 
 					db = self.__reeme('mysqldb')
 				end
-			end			
+			end
 			if not db then
 				return nil
 			end
 			
-			if result then
-				self.__vals = result:getValues()
+			if result then				
+				self.__vals = result()
 			end
 			
 			local model = self.__m
+			local odmr = require('reeme.odm.result')
 			local sqls = queryexecuter[self.op](self, model, db)
-			ngx.say(sqls, '<br/>')
-			result = require('reeme.odm.result')(result, model)
-			local res = result:query(db, sqls, self.limitTotal or 10)
-			
+
+			result = odmr.init(result, model)
+			local res = odmr.query(result, db, sqls, self.limitTotal or 10)
+
 			self.__vals = nil
 			if res then
 				if self.op == 'SELECT' then
-					return result
+					return result + 1 and result or nil
 				end
 				
 				return { rows = res.affected_rows, insertid = res.insert_id }
@@ -709,7 +755,7 @@ local queryMeta = {
 local modelMeta = {
 	__index = {
 		new = function(self, vals)
-			local r = require('reeme.odm.result')(nil, self)
+			local r = require('reeme.odm.result').init(nil, self)
 			if vals then
 				for k,v in pairs(vals) do
 					r[k] = v
@@ -736,30 +782,12 @@ local modelMeta = {
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)
 			if name then where(q, name, val) end
-			local r = q:limit(1):exec()
-			if r and r:nextRow() then
-				return r
-			end
-			r, q = nil, nil
+			return q:limit(1):exec()
 		end,
 		
 		query = function(self)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			return setmetatable(q, queryMeta)
-		end,
-		
-		update = function(self)
-			local q = { __m = self, __reeme = self.__reeme, op = 'UPDATE' }
-			return setmetatable(q, queryMeta)
-		end,
-		
-		delete = function(self)
-			local q = { __m = self, __reeme = self.__reeme, op = 'DELETE' }
-			return setmetatable(q, queryMeta)
-		end,
-		deleteFirst = function(self)
-			local q = { __m = self, __reeme = self.__reeme, op = 'DELETE' }
-			return setmetatable(q, queryMeta):limit(1)
 		end,
 		
 		getField = function(self, name)
@@ -781,7 +809,23 @@ local modelMeta = {
 			local f = self.__fields[name]
 			if f then return f.ai end
 			return false
-		end,	
+		end,
+		findPrimaryKey = function(self)
+			local idx = self.__fieldIndices
+			for k,v in pairs(idx) do
+				if v.type == 1 then
+					return k
+				end
+			end
+		end,
+		findUniqueKey = function(self)
+			local idx = self.__fieldIndices
+			for k,v in pairs(idx) do
+				if v.type == 1 or v.type == 2 then
+					return k
+				end
+			end
+		end,
 	}
 }
 

@@ -1,9 +1,10 @@
 local models = {}
 local validTypes = { s = 1, i = 2, n = 3, b = 4 }
+local validIndex = { primary = 1, unique = 2, index = 3 }
 local modelmeta = require('reeme.odm.model')
 
 local parseFields = function(m)
-	local fields, plains = {}, {}
+	local fields, plains, indices = {}, {}, {}
 	
 	for k,v in pairs(m.fields) do
 		if type(k) == 'string' then
@@ -40,9 +41,26 @@ local parseFields = function(m)
 		end
 	end
 	
+	if m.indices then
+		for k,v in pairs(m.indices) do
+			local tp = validIndex[v]
+			if tp ~= nil then
+				local cfg = fields[k]				
+				local idx = { type = tp }
+				
+				if cfg and cfg.ai then
+					idx.autoInc = true
+				end
+				
+				indices[k] = idx
+			end
+		end
+	end
+	
 	if #plains > 0 then
 		m.__fields = fields
-		m.__fieldPlain = 'A.' .. table.concat(plains, ',A.')
+		m.__fieldsPlain = plains
+		m.__fieldIndices = indices
 		return true
 	end
 	
@@ -105,10 +123,17 @@ local ODM = {
 			if models[name] then
 				models[name] = nil
 				return self:use(name)
-			end		
+			end
 		end,
-	}
+	},
+	
+	__call = function(self, p1)
+		return self:use(p1)
+	end
 }
+
+local cLib = findmetatable('REEME_C_EXTLIB')
+ODM.__index.parseExpression = cLib.sql_expression_parse
 
 return function(reeme)
 	local odm = { R = reeme }

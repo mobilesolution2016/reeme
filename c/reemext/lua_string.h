@@ -1,8 +1,23 @@
+// 下面是ASCII字符属性表，1表示符号，2表示大小写字母，3表示数字，4表示可以用于组合整数或小数的符号
+static uint8_t sql_where_splits[128] = 
+{
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	1,		// 0~32
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1,	// 33~47
+	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,	// 48~57
+	1, 1, 1, 1, 1, 1, 1,	// 58~64
+	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,	// 65~92
+	1, 1, 1, 1, 2, 1,	// 91~96
+	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,	// 97~122
+	1, 1, 1, 1, 1,
+};
+
+
+//////////////////////////////////////////////////////////////////////////
 static int lua_string_split(lua_State* L)
 {	
 	bool retAsTable = false;
 	int top = lua_gettop(L);
-	uint8_t maskBits[32] = { 0 }, ch;
+	uint8_t checker[256] = { 0 }, ch;
 	size_t byLen = 0, srcLen = 0, start = 0;
 
 	const uint8_t* src = (const uint8_t*)luaL_checklstring(L, 1, &srcLen);
@@ -22,7 +37,7 @@ static int lua_string_split(lua_State* L)
 
 	while ((ch = *by) != 0)
 	{
-		maskBits[ch >> 3] |= 1 << (ch & 7);
+		checker[ch] = 1;
 		by ++;
 	}
 
@@ -33,7 +48,7 @@ static int lua_string_split(lua_State* L)
 	for (i = endpos = 0; i < srcLen; ++ i)
 	{
 		ch = src[i];
-		if (!(maskBits[ch >> 3] & (1 << (ch & 7))))
+		if (!checker[ch])
 			continue;
 
 		endpos = i;
@@ -322,15 +337,156 @@ static int lua_string_checkinteger(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_string_template(lua_State* L)
+{	
+	luaL_Buffer buf;
+	luaL_Buffer* pBuf = &buf;
+	size_t srcLen = 0;
+	char ch, *endpos;
+	int idx, n = lua_gettop(L);
+	int hasTable = lua_istable(L, 2), tostringIdx = 0;
+	const char* src = luaL_checklstring(L, 1, &srcLen), *val;
+
+	if (srcLen < 3)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+
+	luaL_buffinit(L, pBuf);
+
+	size_t i = 0, pos = 0, len, nums = 0, chars = 0, bracketOpened = -1;
+	for (i = 0, pos = 0; i < srcLen; ++ i)
+	{
+		ch = src[i];
+		if (bracketOpened != -1)
+		{
+			if (ch != '}')
+			{
+				chars ++;
+				if (ch >= '0' && ch <= '9')
+					nums ++;
+
+				continue;
+			}
+
+			bool getVal = false;
+
+			val = 0;
+			if (chars == 0)
+			{
+				// 空引用
+			}
+			else if (chars == nums)
+			{
+				// 纯数字，引用后面相应位置的变量
+				idx = strtol(src + bracketOpened, &endpos, 10);
+				assert(endpos == src + i);
+
+				if (hasTable)
+				{
+					lua_rawgeti(L, 2, idx);
+					idx = -2;
+				}
+
+				val = lua_tolstring(L, idx + 1, &chars);
+				getVal = true;
+			}
+			else if (hasTable)
+			{
+				// 按照变量名来引用
+				lua_pushlstring(L, src + bracketOpened, i - bracketOpened);
+				lua_rawget(L, 2);
+
+				val = lua_tolstring(L, -1, &chars);
+				getVal = true;
+			}
+
+			if (getVal)
+			{
+				if (!val)
+				{
+					// 非字符串类型的值，使用tostring函数来做转换，然后再获取转换后的值
+					if (!tostringIdx)
+					{
+						idx = lua_gettop(L);
+						lua_getglobal(L, "tostring");
+						tostringIdx = idx + 1;	
+					}
+					else
+					{
+						idx = -3;
+					}
+
+					lua_pushvalue(L, tostringIdx);
+					lua_pushvalue(L, idx);
+					lua_call(L, 1, 1);
+					val = lua_tolstring(L, -1, &chars);
+				}
+
+				if (chars)
+					lua_string_addbuf(pBuf, val, chars);
+			}
+
+			pos = i + 1;
+			continue;
+		}
+
+		if (ch == '{')
+		{
+			_found:
+			len = i - pos;
+			if (len)
+				lua_string_addbuf(pBuf, src + pos, len);
+
+			if (src[i + 1] == '{')
+			{
+				// 转义，非变量或关键字	
+				luaL_addchar(pBuf, '{');
+
+				++ i;
+				pos = i + 1;
+
+				continue;
+			}
+
+			bracketOpened = i + 1;
+		}
+	}
+
+	if (pos < srcLen)
+		lua_string_addbuf(pBuf, src + pos, srcLen - pos);
+
+	luaL_pushresult(pBuf);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void luaext_string(lua_State *L)
 {
+	const luaL_Reg procs[] = {
+		// 字符串切分
+		{ "split", &lua_string_split },
+		// 字符串快速替换
+		{ "replace", &lua_string_replace },
+		// 字符串指定位置+结束位置替换
+		{ "subreplaceto", &lua_string_subreplaceto },
+		// 字符串指定位置+长度替换
+		{ "subreplace", &lua_string_subreplace },
+		// 数值+浮点数字符串检测
+		{ "checknumeric", &lua_string_checknumeric },
+		// 整数字符串检测
+		{ "checkinteger", &lua_string_checkinteger },
+		// 模板解析（不支持语法和关键字，只能按照变量名来进行替换，速度快）
+		{ "template", &lua_string_template },
+
+		{ NULL, NULL }
+	};
+
+
 	lua_getglobal(L, "string");
 
-	// 字符串切分
-	lua_pushlstring(L, "split", 5);
-	lua_pushcfunction(L, &lua_string_split);
-	lua_rawset(L, -3);
-
+	// 字符串切分时可用的标志位
 	lua_pushliteral(L, "SPLIT_ASKEY");
 	lua_pushinteger(L, 0x40000000);
 	lua_rawset(L, -3);
@@ -339,28 +495,8 @@ static void luaext_string(lua_State *L)
 	lua_pushinteger(L, 0x20000000);
 	lua_rawset(L, -3);
 
-	// 字符串快速替换
-	lua_pushlstring(L, "replace", 7);
-	lua_pushcfunction(L, &lua_string_replace);
-	lua_rawset(L, -3);
-
-	// 字符串指定位置替换
-	lua_pushlstring(L, "subreplaceto", 12);
-	lua_pushcfunction(L, &lua_string_subreplaceto);
-	lua_rawset(L, -3);
-
-	lua_pushlstring(L, "subreplace", 10);
-	lua_pushcfunction(L, &lua_string_subreplace);
-	lua_rawset(L, -3);
-
-	// 字符串是否是数字类型的检测
-	lua_pushlstring(L, "checknumeric", 12);
-	lua_pushcfunction(L, &lua_string_checknumeric);
-	lua_rawset(L, -3);
-
-	lua_pushlstring(L, "checkinteger", 12);
-	lua_pushcfunction(L, &lua_string_checkinteger);
-	lua_rawset(L, -3);
+	// 所有扩展的函数
+	luaL_register(L, NULL, procs);
 
 	lua_pop(L, 1);
 }

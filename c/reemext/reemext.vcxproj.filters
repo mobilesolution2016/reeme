@@ -27,6 +27,12 @@
     <ClInclude Include="sql.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="lua_table.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="lua_utf8str.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="reeme.cpp">
