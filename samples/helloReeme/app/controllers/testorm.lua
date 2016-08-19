@@ -10,11 +10,6 @@ local index = {
 		index = function(self)
 			local m = self.orm('testTable')
 			local m2 = self.orm('mytable')
-			
-			local v = '中华人民共和国'
-			ngx.say('utf=', u8string.det3(v), '<br/>')
-			ngx.say('len=', u8string.len(v), '<br/>')
-			ngx.say('sub=', u8string.sub(v, 3, 3), '<br/>')
 --[[
 			local q = m:new()
 			q({f = '23424ADFSDCXVSDF@#4@#$#@$@#$@#$', b = 'test123'})
@@ -23,18 +18,14 @@ local index = {
 ]]
 			local r2 = m2:query():where('sex=1')
 			local r = m:query()
-				:expr('DISTINCT a')
-				:excepts('b')
-				:where({ a = { '=1' }, { "f LIKE '%nn%'" } } )
-				:join(r2, 'left')
-				:limit(10)
-				:order('a')
+				:expr('count(*) as c')
+				:excepts('id, a , b , d , f')
 				:exec()
 
 			if r then
-				r.f = 'SDLkfjKSDFJ'
-				r:save()
-				r:create()
+				--r.f = 'SDLkfjKSDFJ'
+				--r:save()
+				--r:create()
 				
 				repeat
 					printRow(r)

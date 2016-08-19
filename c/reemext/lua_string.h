@@ -134,6 +134,88 @@ _lastseg:
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_string_trim(lua_State* L)
+{
+	size_t len = 0;
+	int triml = 1, trimr = 1;
+	const uint8_t* src = (const uint8_t*)luaL_checklstring(L, 1, &len);
+	
+	if (lua_isboolean(L, 2))
+		triml = lua_toboolean(L, 2);
+	if (lua_isboolean(L, 3))
+		trimr = lua_toboolean(L, 3);
+
+	const uint8_t* left = src;
+	const uint8_t* right = src + len;
+	if (triml)
+	{
+		while(left < right)
+		{
+			if (left[0] > 32)
+				break;
+			left ++;
+		}
+	}
+	if (trimr)
+	{
+		while (left < right)
+		{
+			if (*(right - 1) > 32)
+				break;
+			right --;
+		}
+	}
+
+	if (right - left == len)
+		lua_pushvalue(L, 1);
+	else
+		lua_pushlstring(L, (const char*)left, right - left);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
+static int lua_string_cmp(lua_State* L)
+{	
+	int ignoreCase = 0, r = 0;
+	size_t alen = 0, blen = 0, cmplen = -1;
+	const char* a = luaL_checklstring(L, 1, &alen);
+	const char* b = luaL_checklstring(L, 2, &blen);
+
+	if (lua_isnumber(L, 3))
+	{
+		cmplen = luaL_checklong(L, 3);
+		if (lua_isboolean(L, 4))
+			ignoreCase = lua_toboolean(L, 4);
+	}
+	else if (lua_isboolean(L, 3))
+	{
+		ignoreCase = lua_toboolean(L, 3);
+	}
+
+	if (ignoreCase)
+	{
+		if (cmplen == -1)
+			r = alen == blen ? stricmp(a, b) == 0 : 0;
+		else if (cmplen > alen || cmplen > blen)
+			r = 0;
+		else
+			r = strnicmp(a, b, cmplen) == 0;
+	}
+	else
+	{
+		if (cmplen == -1)
+			r = alen == blen ? strcmp(a, b) == 0 : 0;
+		else if (cmplen > alen || cmplen > blen)
+			r = 0;
+		else
+			r = strncmp(a, b, cmplen) == 0;
+	}
+
+	lua_pushboolean(L, r);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void lua_string_addbuf(luaL_Buffer* buf, const char* str, size_t len)
 {
 	size_t lenleft = len, copy;
@@ -467,6 +549,10 @@ static void luaext_string(lua_State *L)
 	const luaL_Reg procs[] = {
 		// ×Ö·û´®ÇÐ·Ö
 		{ "split", &lua_string_split },
+		// trimº¯Êý
+		{ "trim", &lua_string_trim },
+		// ×Ö·û´®±È½Ï
+		{ "cmp", &lua_string_cmp },
 		// ×Ö·û´®¿ìËÙÌæ»»
 		{ "replace", &lua_string_replace },
 		// ×Ö·û´®Ö¸¶¨Î»ÖÃ+½áÊøÎ»ÖÃÌæ»»
