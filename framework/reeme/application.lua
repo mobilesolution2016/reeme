@@ -9,6 +9,7 @@ end
 		
 local baseMeta = {
 	__index = {
+		
 		statusCode = {
 			HTTP_CONTINUE = ngx.HTTP_CONTINUE, --100
 			HTTP_SWITCHING_PROTOCOLS = ngx.HTTP_SWITCHING_PROTOCOLS, --101
@@ -132,96 +133,107 @@ local application = {
 
 setmetatable(baseMeta.__index, application)
 
-return function(cfgs)
-	local c = nil
-	local metacopy = nil
-	
-	local ok, err = pcall(function()
-		--require('mobdebug').start('192.168.3.13')
-		if not configs then
-			--first in this LuaState
-			
-			if not cfgs then cfgs = { } end
-			if not cfgs.dirs then cfgs.dirs = { } end
-			cfgs.dirs.appRootDir = ngx.var.APP_ROOT
-			if cfgs.devMode == nil then cfgs.devMode = true end
-			if not cfgs.dirs.appBaseDir then cfgs.dirs.appBaseDir = 'app' end
-			if not cfgs.dirs.modelsDir then cfgs.dirs.modelsDir = 'models' end
-			if not cfgs.dirs.viewsDir then cfgs.dirs.viewsDir = "views" end
-			if not cfgs.dirs.controllersDir then cfgs.dirs.controllersDir = 'controllers' end
-			
-			configs = cfgs
-		end
-		
-		local router = cfgs.router or require("reeme.router")
-		local uri = ngx.var.uri
-		local path, act = router(uri)
-		local dirs = configs.dirs
-		
-		local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
-		
-		if type(controlNew) ~= 'function' then
-			error(string.format('controller %s must return a function that has action functions', path))
-		end
-		
-		c = controlNew(act)
-		if not c[act] then
-			error(string.format("the action %s of controller %s undefined", act, path))
-		end
-		
-		local cm = getmetatable(c)
+local appMeta = {
+	__index = {
+		init = function(self, cfgs)
+			if not configs then
+				--first in this LuaState
 				
-		metacopy = { __index = { } }
-		local idxcopy = metacopy.__index
-		for k, v in pairs(baseMeta.__index) do
-			idxcopy[k] = v
-		end
-		idxcopy.__reeme = c
-		setmetatable(idxcopy, application)
-
-		if cm then
-			if type(cm.__index) == 'function' then
-				error(string.format("the __index of controller[%s]'s metatable must be a table", path))
+				if not cfgs then cfgs = { } end
+				if not cfgs.dirs then cfgs.dirs = { } end
+				cfgs.dirs.appRootDir = ngx.var.APP_ROOT
+				if cfgs.devMode == nil then cfgs.devMode = true end
+				if not cfgs.dirs.appBaseDir then cfgs.dirs.appBaseDir = 'app' end
+				if not cfgs.dirs.modelsDir then cfgs.dirs.modelsDir = 'models' end
+				if not cfgs.dirs.viewsDir then cfgs.dirs.viewsDir = "views" end
+				if not cfgs.dirs.controllersDir then cfgs.dirs.controllersDir = 'controllers' end
+				
+				configs = cfgs
 			end
-			
-			cm.__call = baseMeta.__call
-			setmetatable(cm.__index, metacopy)
-		else
-			metacopy.__call = baseMeta.__call
-			setmetatable(c, metacopy)
-		end
-
-		local r = c[act](c)
-		if r then
-			local tp = type(r)
-			
-			if tp == 'table' then
-				if rawget(c.response, "view") == r then
-					r:render()
-				else
-					ngx.say(c.utils.jsonEncode(r))
+		end,
+		
+		run = function(self)
+			--require('mobdebug').start('192.168.3.13')
+			local ok, err = pcall(function()
+				local router = configs.router or require("reeme.router")
+				local uri = ngx.var.uri
+				local path, act = router(uri)
+				local dirs = configs.dirs
+				
+				local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
+				
+				if type(controlNew) ~= 'function' then
+					error(string.format('controller %s must return a function that has action functions', path))
 				end
-			elseif tp == 'string' then
-				ngx.say(r)
-			end
-		end
-		--require('mobdebug').done()
-	end)
-	
-	if not ok then
-		local msg = err.msg
-		local msgtp = type(msg)
-		if type(msg) == "string" then
-			ngx.say(msg)
-		elseif type(msg) == "table" then
-			ngx.say(c.utils.jsonEncode(msg))
-		elseif type(err) == "string" then
-			ngx.say(err)
-		end
+				
+				c = controlNew(act)
+				if not c[act] then
+					error(string.format("the action %s of controller %s undefined", act, path))
+				end
+				
+				local cm = getmetatable(c)
+						
+				metacopy = { __index = { } }
+				local idxcopy = metacopy.__index
+				for k, v in pairs(baseMeta.__index) do
+					idxcopy[k] = v
+				end
+				idxcopy.__reeme = c
+				setmetatable(idxcopy, application)
 
-		ngx.eof()
-	end
-	
-	metacopy = nil
-	c = nil
+				if cm then
+					if type(cm.__index) == 'function' then
+						error(string.format("the __index of controller[%s]'s metatable must be a table", path))
+					end
+					
+					cm.__call = baseMeta.__call
+					setmetatable(cm.__index, metacopy)
+				else
+					metacopy.__call = baseMeta.__call
+					setmetatable(c, metacopy)
+				end
+
+				if type(self.pre.response) == "function" then
+					self.pre.response(c)
+				end
+				
+				local r = c[act](c)
+				if r then
+					local tp = type(r)
+					
+					if tp == 'table' then
+						if rawget(c.response, "view") == r then
+							r:render()
+						else
+							ngx.say(c.utils.jsonEncode(r))
+						end
+					elseif tp == 'string' then
+						ngx.say(r)
+					end
+				end
+				--require('mobdebug').done()
+			end)
+			
+			if not ok then
+				local msg = err.msg
+				local msgtp = type(msg)
+				if type(msg) == "string" then
+					ngx.say(msg)
+				elseif type(msg) == "table" then
+					ngx.say(c.utils.jsonEncode(msg))
+				elseif type(err) == "string" then
+					ngx.say(err)
+				end
+
+				ngx.eof()
+			end
+			
+			metacopy = nil
+			c = nil
+		end,
+	}
+}
+
+return function()
+	return setmetatable({ pre = { }, post = { } }, appMeta)
 end
