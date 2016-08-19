@@ -16,8 +16,17 @@
 local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
 local removeColFromExpWhen = { distinct = 1 }
 
-local processWhereValue = function(field, value)
+local processWhereValue = function(self, field, value)
 	local tp = type(value)
+	
+	if tp == 'table' then
+		local tokens, poses = self.__reeme.orm.parseExpression(value[1])
+		if not tokens then
+			return nil
+		end		
+		return value, tokens, poses
+	end
+	
 	value = tostring(value)
 
 	local l, quoted = #value, false
@@ -64,34 +73,42 @@ end
 
 --添加一个where条件，本函数被processWhere调用
 local addWhere = function(self, condType, name, value)
+	local tokens, poses = nil, nil
 	local fields, valok = self.__m.__fields, false
 
 	self.condString = nil	--condString和condValues同一时间只会存在一个，只有一个是可以有效的
 	if not self.condValues then
 		self.condValues = {}
 	end
-		
+
 	if value == nil then
 		--name就是整个表达式
-		local tokens, poses = self.__reeme.odm.parseExpression(name)
-		if not tokens then
-			error(string.format('Some error syntax(s) in where("%s")', k))
-			return self
+		if type(name) == 'string' then
+			tokens, poses = self.__reeme.orm.parseExpression(name)
 		end
 		
-		self.condValues[#self.condValues + 1] = { n = name, c = condType, tokens = tokens, poses = poses}
-	else
-		--key=value这种表达式
+		self.condValues[#self.condValues + 1] = { n = name, c = condType, tokens = tokens, poses = poses }
+		
+	elseif type(name) == 'string' then
+		--key=value或key={value}这种表达式
 		local f = fields[name]
+		
 		if f then
-			value = processWhereValue(f, value)
-			if value ~= nil then valok = true end
+			value, tokens, poses = processWhereValue(self, f, value)
+		else
+			value = nil
 		end
-
-		if valok then
-			self.condValues[#self.condValues + 1] = { n = name, v = value, c = condType }
+		
+		if value then
+			self.condValues[#self.condValues + 1] = { n = name, v = value, c = condType, tokens = tokens, poses = poses }
 			return true
 		end
+		
+	else
+		--{value}这种表达式
+		tokens, poses = self.__reeme.orm.parseExpression(value[1])
+		self.condValues[#self.condValues + 1] = { n = name, v = value, c = condType, tokens = tokens, poses = poses }
+		return true
 	end
 	
 	return false
@@ -104,17 +121,9 @@ local processWhere = function(self, condType, k, v)
 		addWhere(self, condType, k, v)
 
 	elseif tp == 'table' then
-		if #k > 0 then
-			for i = 1, #k do
-				if addWhere(self, condType, k[i]) == false then
-					error("process where(%s) function call failed: illegal value or confilict with declaration of model fields", k[i])
-				end
-			end	
-		else
-			for name,val in pairs(k) do
-				if addWhere(self, condType, name, val) == false then
-					error("process where(%s) function call failed: illegal value or confilict with declaration of model fields", name)
-				end
+		for name,val in pairs(k) do
+			if addWhere(self, condType, name, val) == false then
+				error(string.format("process where(%s) function call failed: illegal value or confilict with declaration of model fields", name))
 			end
 		end
 	end
@@ -127,13 +136,20 @@ local processWhereFullString = function(self, alias, src)
 	local fields = self.__m.__fields
 	local sql, tokens, poses = src.n, src.tokens, src.poses
 	local adjust = 0
+
+	if type(sql) == 'number' then
+		sql = src.v[1]
+	end
+	if not tokens or not poses then
+		return sql
+	end
 	
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
 
 		if one:byte(1) == 39 then
 			--这是一个字符串
-			newone = ngx.quote_sql_str(one:sub(2, -2))				
+			newone = ngx.quote_sql_str(one:sub(2, -2))
 		elseif fields[one] then
 			--这是一个字段的名称
 			newone = alias .. one
@@ -142,7 +158,7 @@ local processWhereFullString = function(self, alias, src)
 		if newone then
 			--替换掉最终的表达式
 			sql = sql:subreplace(newone, poses[i] + adjust, #one)
-			adjust = adjust + #one - #newone
+			adjust = adjust + #newone - #one
 		end
 	end
 	
@@ -153,13 +169,17 @@ end
 local bindValue = function(self, fields, name, value)
 	local cv = self.condValues
 	local field = fields[name]
+	local tokens, poses
 
 	if field and cv and value then
-		value = processWhereValue(field, value)
+		value, tokens, poses = processWhereValue(self, field, value)
 		if value ~= nil then
 			for i = 1, #cv do
-				if cv[i].n == name then
-					cv[i].v = value
+				local cvi = cv[i]
+				if cvi.n == name then
+					cvi.v = value
+					cvi.tokens = tokens
+					cvi.poses = poses
 				end
 			end
 			
@@ -178,8 +198,8 @@ queryexecuter.SELECT = function(self, model)
 	sqls[#sqls + 1] = 'SELECT'
 	
 	--main
-	local alias = string.char(65 + (self.joinIndient or 0))
-	queryexecuter.buildColumns(self, model, sqls, alias .. '.')
+	self.alias = 'A'
+	queryexecuter.buildColumns(self, model, sqls, self.alias .. '.')
 	
 	--joins fields
 	queryexecuter.buildJoinsCols(self, sqls)
@@ -193,11 +213,12 @@ queryexecuter.SELECT = function(self, model)
 	queryexecuter.buildJoinsConds(self, sqls)
 	
 	--where
-	queryexecuter.buildWheres(self, sqls, 'WHERE', alias .. '.')
+	queryexecuter.buildWheres(self, sqls, 'WHERE', self.alias .. '.')
+	queryexecuter.buildWhereJoins(self, sqls)
 	
 	--order by
 	if self.orderBy then
-		sqls[#sqls + 1] = string.format('ORDER BY %s.%s %s', alias, self.orderBy.name, self.orderBy.order)
+		sqls[#sqls + 1] = string.format('ORDER BY %s.%s %s', self.alias, self.orderBy.name, self.orderBy.order)
 	end
 	--limit
 	queryexecuter.buildLimits(self, sqls)
@@ -264,7 +285,7 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	--加入所有的表达式
 	local excepts, express = nil, nil
 	if self.expressions then
-		local fields, func = self.__m.__fields, self.__reeme.odm.parseExpression
+		local fields, func = self.__m.__fields, self.__reeme.orm.parseExpression
 		
 		for i=1, #self.expressions do
 			local expr = self.expressions[i]
@@ -304,7 +325,7 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 
 						if newone then
 							expr = expr:subreplace(newone, poses[k] + adjust, #one)
-							adjust = adjust + #one - #newone
+							adjust = adjust + #newone - #one
 						end
 					end
 
@@ -420,7 +441,7 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 			sqls[#sqls + 1] = condPre
 		end
 		sqls[#sqls + 1] = self.condString
-		return
+		return true
 	end
 
 	if self.condValues and #self.condValues > 0 then
@@ -432,7 +453,19 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 		
 		for i = 1, #self.condValues do
 			local one = self.condValues[i]
-			if one.v then
+			local tp = type(one.v)
+			
+			if i > 1 and one.c == 1 then
+				one.c = 2
+			end
+
+			if tp == 'table' then
+				if type(one.n) == 'number' then
+					wheres[#wheres + 1] = processWhereFullString(self, alias, one)
+				else
+					wheres[#wheres + 1] = string.format("%s%s%s %s", conds[one.c], alias, one.n, one.v[1])
+				end
+			elseif tp ~= 'nil' then
 				wheres[#wheres + 1] = string.format("%s%s%s=%s", conds[one.c], alias, one.n, one.v)
 			elseif one.tokens then
 				wheres[#wheres + 1] = string.format("%s%s", conds[one.c], processWhereFullString(self, alias, one))
@@ -452,6 +485,18 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 	return false
 end
 
+queryexecuter.buildWhereJoins = function(self, sqls)
+	local cc = self.joins == nil and 0 or #self.joins
+	if cc < 1 then
+		return
+	end
+	
+	for i = 1, cc do
+		local q = self.joins[i].q
+		queryexecuter.buildWheres(q, sqls, 'AND', q.alias .. '.')
+	end
+end
+
 queryexecuter.buildJoinsCols = function(self, sqls, indient)
 	local cc = self.joins == nil and 0 or #self.joins
 	if cc < 1 then
@@ -464,9 +509,9 @@ queryexecuter.buildJoinsCols = function(self, sqls, indient)
 	
 	for i = 1, cc do
 		local q = self.joins[i].q
-		q.joinIndient = indient
+		q.alias = string.char(65 + indient)
 
-		local cols = queryexecuter.buildColumns(q, q.__m, sqls, string.char(65 + indient) .. '.', true)
+		local cols = queryexecuter.buildColumns(q, q.__m, sqls, q.alias .. '.', true)
 		if cols then
 			sqls[#sqls + 1] = ','
 			sqls[#sqls + 1] = cols
@@ -490,13 +535,12 @@ queryexecuter.buildJoinsConds = function(self, sqls)
 	for i = 1, cc do
 		local join = self.joins[i]
 		local q = join.q
-		local alias = string.char(65 + q.joinIndient)
 		
 		sqls[#sqls + 1] = validJoins[join.type]
 		sqls[#sqls + 1] = q.__m.__name
-		sqls[#sqls + 1] = alias
+		sqls[#sqls + 1] = q.alias
 		sqls[#sqls + 1] = 'ON('
-		if not queryexecuter.buildWheres(q, sqls, alias .. '.') then
+		if not queryexecuter.buildWheres(q, sqls, q.alias .. '.') then
 			sqls[#sqls + 1] = '1'
 		end
 		sqls[#sqls + 1] = ')'
@@ -527,6 +571,8 @@ local queryMeta = {
 					self[k] = nil
 				end
 			end
+			
+			self.limitStart, self.limitTotal = 0, 50
 			return self
 		end,
 		
@@ -732,11 +778,11 @@ local queryMeta = {
 			end
 			
 			local model = self.__m
-			local odmr = require('reeme.odm.result')
+			local ormr = require('reeme.orm.result')
 			local sqls = queryexecuter[self.op](self, model, db)
-
-			result = odmr.init(result, model)
-			local res = odmr.query(result, db, sqls, self.limitTotal or 10)
+ngx.say(sqls)
+			result = ormr.init(result, model)
+			local res = ormr.query(result, db, sqls, self.limitTotal or 10)
 
 			self.__vals = nil
 			if res then
@@ -755,7 +801,7 @@ local queryMeta = {
 local modelMeta = {
 	__index = {
 		new = function(self, vals)
-			local r = require('reeme.odm.result').init(nil, self)
+			local r = require('reeme.orm.result').init(nil, self)
 			if vals then
 				for k,v in pairs(vals) do
 					r[k] = v
@@ -764,16 +810,28 @@ local modelMeta = {
 			return r
 		end,
 		
-		find = function(self, p1, p2)
+		find = function(self, p1, p2, p3, p4)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)
 			
 			if p1 then
-				if type(p1) == 'number' then 
+				local tp = type(p1)
+				if tp == 'number' then 
 					q:limit(p1, p2)
+				elseif tp == 'table' then
+					q:where(p1)
+					
+					if type(p2) == 'number' then
+						q:limit(p2, p3)
+						p3, p4 = nil, nil
+					end
 				else
 					q:where(p1, p2)
 				end
+			end
+			
+			if type(p3) == 'number' then
+				q:limit(p3, p4)
 			end
 			
 			return q:exec()
@@ -786,7 +844,7 @@ local modelMeta = {
 		end,
 		
 		query = function(self)
-			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
+			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT', limitStart = 0, limitTotal = 50 }
 			return setmetatable(q, queryMeta)
 		end,
 		
@@ -810,14 +868,6 @@ local modelMeta = {
 			if f then return f.ai end
 			return false
 		end,
-		findPrimaryKey = function(self)
-			local idx = self.__fieldIndices
-			for k,v in pairs(idx) do
-				if v.type == 1 then
-					return k
-				end
-			end
-		end,
 		findUniqueKey = function(self)
 			local idx = self.__fieldIndices
 			for k,v in pairs(idx) do
@@ -832,9 +882,9 @@ local modelMeta = {
 --当mode:findByXXXX或者model:findFirstByXXXX被调用的时候，只要XXXX是一个合法的字段名称，就可以按照该字段进行索引。下面的两个meta table一个用于模拟
 --函数调用，一个用于生成一个模拟器
 local simFindFuncMeta = {
-	__call = function(self, value)
+	__call = function(self, value, p1, p2)
 		local func = modelMeta.__index[self.onlyFirst and 'find' or 'findFirst']		
-		return func(self.model, self.field, value)
+		return func(self.model, self.field, value, p1, p2)
 	end
 }
 

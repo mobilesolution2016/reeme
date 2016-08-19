@@ -58,7 +58,7 @@ static int lua_sql_expression_parse(lua_State* L)
 				slashes = 1;
 			else if (ch == '\'')
 			{
-				lua_pushlstring(L, sql + prevpos, i - prevpos);
+				lua_pushlstring(L, sql + prevpos, i - prevpos + 1);
 				lua_rawseti(L, r1, ++ cc);
 
 				lua_pushinteger(L, prevpos + 1);

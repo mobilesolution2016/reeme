@@ -1,7 +1,7 @@
 local models = {}
 local validTypes = { s = 1, i = 2, n = 3, b = 4 }
 local validIndex = { primary = 1, unique = 2, index = 3 }
-local modelmeta = require('reeme.odm.model')
+local modelmeta = require('reeme.orm.model')
 
 local parseFields = function(m)
 	local fields, plains, indices = {}, {}, {}
@@ -67,7 +67,7 @@ local parseFields = function(m)
 	return false
 end
 
-local ODM = {
+local ORM = {
 	__index = {
 		--使用一个定义的模型
 		--不能使用require直接引用一个模型定义的Lua文件来进行使用，必须通过本函数来引用
@@ -133,13 +133,13 @@ local ODM = {
 }
 
 local cLib = findmetatable('REEME_C_EXTLIB')
-ODM.__index.parseExpression = cLib.sql_expression_parse
+ORM.__index.parseExpression = cLib.sql_expression_parse
 
 return function(reeme)
-	local odm = { R = reeme }
+	local orm = { R = reeme }
 	
-	setmetatable(odm, ODM)
-	rawset(reeme, 'odm', odm)
+	setmetatable(orm, ORM)
+	rawset(reeme, 'orm', orm)
 
-	return odm
+	return orm
 end
