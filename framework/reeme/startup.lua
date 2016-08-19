@@ -35,7 +35,8 @@ function require(name)
 end
 
 local ok, err = pcall(function()
-	require("public.index")()
+	local app = require("reeme.application")()
+	require("public.index")(app)
 end)
 if not ok then
 	ngx.say(err)
