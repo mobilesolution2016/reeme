@@ -68,10 +68,12 @@ return function(app)
 		end
 	})
 	
-	app.pre.response = function(reeme)
-		reeme.response.headers['Content-type'] = 'text/html;charset=utf-8'
-		reeme.response.headers["Access-Control-Allow-Origin"] = "*"
-	end
+	app:forever({
+		preResponse = function(reeme)
+			reeme.response.headers['Content-type'] = 'text/html;charset=utf-8'
+			reeme.response.headers["Access-Control-Allow-Origin"] = "*"
+		end,
+	})
 	
 	app:run()
 end

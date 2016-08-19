@@ -9,7 +9,6 @@ end
 		
 local baseMeta = {
 	__index = {
-		
 		statusCode = {
 			HTTP_CONTINUE = ngx.HTTP_CONTINUE, --100
 			HTTP_SWITCHING_PROTOCOLS = ngx.HTTP_SWITCHING_PROTOCOLS, --101
@@ -107,9 +106,21 @@ local baseMeta = {
 		end,
 	},
 	__call = function(self, key, ...)
-		local f = configs[key]
-		if type(f) == 'function' then
-			return f(self, ...)
+		local t = configs[key]
+		local tp = type(t)
+		if tp == 'table' then
+			local fget = t.get
+			if type(fget) == "function" then
+				local instance = fget(self, ...)
+				local ffree = t.free
+				if instance and type(ffree) == "function" then
+					local lazyLoaders = rawget(self, "__lazyLoaders")
+					lazyLoaders[ffree] = instance
+				end
+				return instance
+			end
+		elseif tp == "function" then
+			return t(self, ...)
 		end
 	end
 }
@@ -133,6 +144,7 @@ local application = {
 
 setmetatable(baseMeta.__index, application)
 
+local foreverProcess = nil
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
@@ -142,6 +154,10 @@ local appMeta = {
 				if not cfgs then cfgs = { } end
 				if not cfgs.dirs then cfgs.dirs = { } end
 				cfgs.dirs.appRootDir = ngx.var.APP_ROOT
+				local last = string.sub(cfgs.dirs.appRootDir, -1)
+				if last == "/" or last == "\\" then
+					cfgs.dirs.appRootDir = string.sub(cfgs.dirs.appRootDir, 1, -2)
+				end
 				if cfgs.devMode == nil then cfgs.devMode = true end
 				if not cfgs.dirs.appBaseDir then cfgs.dirs.appBaseDir = 'app' end
 				if not cfgs.dirs.modelsDir then cfgs.dirs.modelsDir = 'models' end
@@ -152,8 +168,21 @@ local appMeta = {
 			end
 		end,
 		
+		once = function(self, funcs)
+			self.once = funcs
+		end,
+		
+		forever = function(self, funcs)
+			if not foreverProcess then
+				foreverProcess = funcs
+			end
+		end,
+		
 		run = function(self)
 			--require('mobdebug').start('192.168.3.13')
+			local metacopy = nil
+			local c = nil
+			
 			local ok, err = pcall(function()
 				local router = configs.router or require("reeme.router")
 				local uri = ngx.var.uri
@@ -193,8 +222,10 @@ local appMeta = {
 					setmetatable(c, metacopy)
 				end
 
-				if type(self.pre.response) == "function" then
-					self.pre.response(c)
+				rawset(c, "__lazyLoaders", { })
+				local func = self.once.preResponse or foreverProcess.preResponse
+				if type(func) == "function" then
+					func(c)
 				end
 				
 				local r = c[act](c)
@@ -224,8 +255,13 @@ local appMeta = {
 				elseif type(err) == "string" then
 					ngx.say(err)
 				end
-
+				
 				ngx.eof()
+			end
+			
+			local lazyLoaders = rawget(c, "__lazyLoaders")
+			for k, v in pairs(lazyLoaders) do
+				k(c, v)
 			end
 			
 			metacopy = nil
@@ -235,5 +271,5 @@ local appMeta = {
 }
 
 return function()
-	return setmetatable({ pre = { }, post = { } }, appMeta)
+	return setmetatable({ once = { } }, appMeta)
 end

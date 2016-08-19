@@ -47,7 +47,7 @@ local getRowsLen = function(self)
 	return rawget(self, -10001) or 0
 end
 local getRowPairs = function(self)
-	local vals = getmetatable(self).__index
+	local vals = getmetatable(self).__index	
 	return function(t, k)
 		return next(vals, k)
 	end
@@ -59,7 +59,7 @@ local callRowTable = function(self, tbl)
 	
 	local tp = type(tbl)
 	if tp == 'boolean' then
-		return tbl and getmetatable(self).__index or rawget(self, -10003)
+		return tbl and rawget(self, -10003) or getmetatable(self).__index
 
 	elseif type(tbl) == 'table' then
 		local fs = rawget(self, '__model').__fields

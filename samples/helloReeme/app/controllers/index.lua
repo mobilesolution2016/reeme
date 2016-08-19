@@ -1,6 +1,8 @@
 local index = {
 	__index = {
 		index = function(self)
+			self.response:write("is working")
+			do return end
 			self.response.status = self.statusCode.HTTP_FORBIDDEN
 			self.response.headers.coder = "reeme"
 			--self.exec("/login")

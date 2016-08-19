@@ -1,6 +1,6 @@
 printRow = function(r)
 	for k,v in pairs(r) do
-		ngx.say(k, '=', v)
+		ngx.say(k, '=', tostring(v), "&nbsp; &nbsp; ")
 	end
 	ngx.say('<br/>')
 end
@@ -10,6 +10,7 @@ local index = {
 		index = function(self)
 			local m = self.orm('testTable')
 			local m2 = self.orm('mytable')
+
 --[[
 			local q = m:new()
 			q({f = '23424ADFSDCXVSDF@#4@#$#@$@#$@#$', b = 'test123'})
@@ -18,23 +19,15 @@ local index = {
 ]]
 			local r2 = m2:query():where('sex=1')
 			local r = m:query()
-				:expr('count(*) as c')
-				:excepts('id, a , b , d , f')
+				:limit(10)
 				:exec()
 
 			if r then
-				--r.f = 'SDLkfjKSDFJ'
-				--r:save()
-				--r:create()
-				
-				repeat
-					printRow(r)
-				until not (r + 1)
-				
-				r = -r
-				repeat
-					printRow(r)
-				until not (r + 1)
+				if r + 1 then
+					for k,v in pairs(r()) do
+						ngx.say(k, '=', tostring(v), '<br/>')
+					end
+				end
 			end
 --[[
 			local v1, v2 = '', ''

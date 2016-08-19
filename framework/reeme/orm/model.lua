@@ -92,13 +92,13 @@ local addWhere = function(self, condType, name, value)
 	elseif type(name) == 'string' then
 		--key=value或key={value}这种表达式
 		local f = fields[name]
-		
+
 		if f then
 			value, tokens, poses = processWhereValue(self, f, value)
 		else
 			value = nil
 		end
-		
+
 		if value then
 			self.condValues[#self.condValues + 1] = { n = name, v = value, c = condType, tokens = tokens, poses = poses }
 			return true
@@ -240,15 +240,21 @@ queryexecuter.UPDATE = function(self, model)
 	--where
 	if not queryexecuter.buildWheres(self, sqls, 'WHERE') then
 		--find primary or unique
+		local haveWheres = false
 		local idx, vals = model.__fieldIndices, self.__vals
 		if vals then		
 			for k,v in pairs(idx) do
 				if (v.type == 1 or v.type == 2) and vals[k] then
 					processWhere(self, 1, k, vals[k])				
-					queryexecuter.buildWheres(self, sqls, 'WHERE')
+					haveWheres = queryexecuter.buildWheres(self, sqls, 'WHERE')
 					break
 				end
 			end
+		end
+
+		if not haveWheres then
+			error("Cannot save a model without any conditions")
+			return false
 		end
 	end
 	
@@ -782,7 +788,12 @@ local queryMeta = {
 			local model = self.__m
 			local ormr = require('reeme.orm.result')
 			local sqls = queryexecuter[self.op](self, model, db)
-
+			
+			if not sqls then
+				return nil
+			end
+			--ngx.say(sqls, '<br/>')
+			
 			result = ormr.init(result, model)
 			local res = ormr.query(result, db, sqls, self.limitTotal or 10)
 
@@ -808,7 +819,7 @@ local modelMeta = {
 				for k,v in pairs(vals) do
 					r[k] = v
 				end
-			end
+			end 
 			return r
 		end,
 		
@@ -841,12 +852,17 @@ local modelMeta = {
 		findFirst = function(self, name, val)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)
-			if name then where(q, name, val) end
+			if name then q:where(name, val) end
 			return q:limit(1):exec()
 		end,
 		
 		query = function(self)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT', limitStart = 0, limitTotal = 50 }
+			return setmetatable(q, queryMeta)
+		end,
+		
+		update = function(self)
+			local q = { __m = self, __reeme = self.__reeme, op = 'UPDATE', limitStart = 0, limitTotal = 50 }
 			return setmetatable(q, queryMeta)
 		end,
 		
