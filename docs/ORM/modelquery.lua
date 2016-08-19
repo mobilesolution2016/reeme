@@ -83,12 +83,20 @@
 module('model')
 
 function new()
+	--title 使用模型创建一个新的实例
+	--
 end
 
 function find()
 end
 
 function findFirst()
+end
+
+function find_()
+end
+
+function findFirst_()
 end
 
 function query()

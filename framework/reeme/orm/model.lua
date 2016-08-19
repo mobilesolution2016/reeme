@@ -197,9 +197,16 @@ queryexecuter.SELECT = function(self, model)
 	local sqls = {}
 	sqls[#sqls + 1] = 'SELECT'
 	
-	--main
-	self.alias = 'A'
-	queryexecuter.buildColumns(self, model, sqls, self.alias .. '.')
+	local alias2 = ''
+	if self.joins then
+		self.alias = 'A'
+		alias2 = 'A.'
+	else
+		self.alias = ''
+	end
+	
+	--main	
+	queryexecuter.buildColumns(self, model, sqls, alias2)
 	
 	--joins fields
 	queryexecuter.buildJoinsCols(self, sqls)
@@ -207,13 +214,13 @@ queryexecuter.SELECT = function(self, model)
 	--from
 	sqls[#sqls + 1] = 'FROM'
 	sqls[#sqls + 1] = model.__name
-	sqls[#sqls + 1] = 'A'
+	sqls[#sqls + 1] = self.alias
 
 	--joins conditions
 	queryexecuter.buildJoinsConds(self, sqls)
 	
 	--where
-	queryexecuter.buildWheres(self, sqls, 'WHERE', self.alias .. '.')
+	queryexecuter.buildWheres(self, sqls, 'WHERE', alias2)
 	queryexecuter.buildWhereJoins(self, sqls)
 	
 	--order by
@@ -232,20 +239,28 @@ queryexecuter.UPDATE = function(self, model)
 	sqls[#sqls + 1] = 'UPDATE'
 	sqls[#sqls + 1] = model.__name
 	
+	local alias2 = ''
+	if self.joins then
+		self.alias = 'A'
+		alias2 = 'A.'
+	else
+		self.alias = ''
+	end
+	
 	--all values
-	if queryexecuter.buildKeyValuesSet(self, model, sqls) > 0 then
+	if queryexecuter.buildKeyValuesSet(self, model, sqls, self.alias) > 0 then
 		table.insert(sqls, #sqls, 'SET')
 	end
 	
 	--where
-	if not queryexecuter.buildWheres(self, sqls, 'WHERE') then
+	if not queryexecuter.buildWheres(self, sqls, 'WHERE', self.alias) then
 		--find primary or unique
 		local idx, vals = model.__fieldIndices, self.__vals
 		if vals then		
 			for k,v in pairs(idx) do
 				if (v.type == 1 or v.type == 2) and vals[k] then
-					processWhere(self, 1, k, vals[k])				
-					queryexecuter.buildWheres(self, sqls, 'WHERE')
+					processWhere(self, 1, k, vals[k])
+					queryexecuter.buildWheres(self, sqls, 'WHERE', self.alias)
 					break
 				end
 			end
@@ -269,7 +284,7 @@ queryexecuter.INSERT = function(self, model)
 	sqls[#sqls + 1] = model.__name
 	
 	--all values
-	if queryexecuter.buildKeyValuesSet(self, model, sqls) > 0 then
+	if queryexecuter.buildKeyValuesSet(self, model, sqls, '') > 0 then
 		table.insert(sqls, #sqls, 'SET')
 	end
 	
@@ -285,54 +300,56 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	--加入所有的表达式
 	local excepts, express = nil, nil
 	if self.expressions then
-		local fields, func = self.__m.__fields, self.__reeme.orm.parseExpression
-		
-		for i=1, #self.expressions do
-			local expr = self.expressions[i]
+		if #alias > 0 then
+			local fields, func = self.__m.__fields, self.__reeme.orm.parseExpression
 			
-			if type(expr) == 'string' then
-				local adjust = 0
-				local tokens, poses = func(expr)
-				if tokens then
-					local removeCol = false
-					for k=1,#tokens do
-						local one, newone = tokens[k], nil
+			for i=1, #self.expressions do
+				local expr = self.expressions[i]
+				
+				if type(expr) == 'string' then
+					local adjust = 0
+					local tokens, poses = func(expr)
+					if tokens then
+						local removeCol = false
+						for k=1,#tokens do
+							local one, newone = tokens[k], nil
 
-						if one:byte(1) == 39 then
-							--这是一个字符串
-							newone = ngx.quote_sql_str(one:sub(2, -2))				
-						elseif fields[one] then
-							--这是一个字段的名称
-							if removeCol then
-								if not excepts then
-									excepts = {}
-								end
-								if self.colExcepts then
-									for en,_ in pairs(self.colExcepts) do
-										excepts[en] = true
+							if one:byte(1) == 39 then
+								--这是一个字符串
+								newone = ngx.quote_sql_str(one:sub(2, -2))				
+							elseif fields[one] then
+								--这是一个字段的名称
+								if removeCol then
+									if not excepts then
+										excepts = {}
 									end
+									if self.colExcepts then
+										for en,_ in pairs(self.colExcepts) do
+											excepts[en] = true
+										end
+									end
+									
+									excepts[one] = true
 								end
 								
-								excepts[one] = true
+								newone = alias .. one
+								
+							elseif removeColFromExpWhen[one:lower()] then
+								--遇到这些定义的表达式，这个表达式所关联的字段就不会再在字段列表中出现
+								removeCol = true
 							end
-							
-							newone = alias .. one
-							
-						elseif removeColFromExpWhen[one:lower()] then
-							--遇到这些定义的表达式，这个表达式所关联的字段就不会再在字段列表中出现
-							removeCol = true
+
+							if newone then
+								expr = expr:subreplace(newone, poses[k] + adjust, #one)
+								adjust = adjust + #newone - #one
+							end
 						end
 
-						if newone then
-							expr = expr:subreplace(newone, poses[k] + adjust, #one)
-							adjust = adjust + #newone - #one
-						end
+						self.expressions[i] = expr
 					end
-
-					self.expressions[i] = expr
+				else
+					self.expressions[i] = tostring(expr)
 				end
-			else
-				self.expressions[i] = tostring(expr)
 			end
 		end
 		
@@ -347,13 +364,19 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	local cols
 	if self.colSelects then
 		local plains = {}
-		for k,v in pairs(self.colSelects) do
-			if not excepts[k] then
+		if excepts then			
+			for k,v in pairs(self.colSelects) do
+				if not excepts[k] then
+					plains[#plains + 1] = k
+				end
+			end			
+		else
+			for k,v in pairs(self.colSelects) do
 				plains[#plains + 1] = k
 			end
 		end
-
-		cols = table.concat(plains, ',' .. alias)		
+		
+		cols = table.concat(plains, ',' .. alias)
 	else
 		local fieldPlain = model.__fieldsPlain
 		if excepts then
@@ -370,7 +393,10 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 		cols = table.concat(fieldPlain, ',' .. alias)
 	end
 	
-	cols = #cols > 0 and (alias .. cols) or ''
+	if #alias > 0 then
+		cols = #cols > 0 and (alias .. cols) or ''
+	end
+	
 	if express then
 		cols = #cols > 0 and string.format('%s,%s', express, cols) or express
 	end
@@ -421,7 +447,7 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 			end
 
 			if v ~= nil then
-				if alias then
+				if #alias > 0 then
 					name = alias .. name
 				end
 
@@ -446,10 +472,6 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 
 	if self.condValues and #self.condValues > 0 then
 		local wheres, conds = {}, queryexecuter.conds
-		
-		if not alias then
-			alias = ''
-		end
 		
 		for i = 1, #self.condValues do
 			local one = self.condValues[i]
@@ -493,7 +515,11 @@ queryexecuter.buildWhereJoins = function(self, sqls)
 	
 	for i = 1, cc do
 		local q = self.joins[i].q
-		queryexecuter.buildWheres(q, sqls, 'AND', q.alias .. '.')
+		if #q.alias > 0 then
+			queryexecuter.buildWheres(q, sqls, 'AND', q.alias .. '.')
+		else
+			queryexecuter.buildWheres(q, sqls, 'AND', '')
+		end
 	end
 end
 

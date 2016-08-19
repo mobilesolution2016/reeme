@@ -19,7 +19,7 @@ local index = {
 			local r2 = m2:query():where('sex=1')
 			local r = m:query()
 				:expr('count(*) as c')
-				:excepts('id, a , b , d , f')
+				:columns('a,b')
 				:exec()
 
 			if r then
