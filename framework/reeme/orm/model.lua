@@ -353,8 +353,7 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 			end
 		end
 
-		local s = table.concat(plains, ',' .. alias)
-		cols = #s > 0 and (alias .. s) or ''
+		cols = table.concat(plains, ',' .. alias)		
 	else
 		local fieldPlain = model.__fieldsPlain
 		if excepts then
@@ -368,9 +367,10 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 			fieldPlain = fps
 		end
 		
-		cols = alias .. table.concat(fieldPlain, ',' .. alias)
+		cols = table.concat(fieldPlain, ',' .. alias)
 	end
 	
+	cols = #cols > 0 and (alias .. cols) or ''
 	if express then
 		cols = #cols > 0 and string.format('%s,%s', express, cols) or express
 	end
@@ -609,6 +609,8 @@ local queryMeta = {
 					self.colSelects[names[i]] = true
 				end
 			end
+			
+			return self
 		end,
 		--设置只排除哪些列
 		excepts = function(self, names)
@@ -619,7 +621,7 @@ local queryMeta = {
 			local tp = type(names)
 			if tp == 'string' then
 				for str in names:gmatch("([^,]+)") do
-					self.colExcepts[str] = true
+					self.colExcepts[str:trim()] = true
 				end
 			elseif tp == 'table' then
 				for i = 1, #names do
@@ -780,7 +782,7 @@ local queryMeta = {
 			local model = self.__m
 			local ormr = require('reeme.orm.result')
 			local sqls = queryexecuter[self.op](self, model, db)
-ngx.say(sqls)
+
 			result = ormr.init(result, model)
 			local res = ormr.query(result, db, sqls, self.limitTotal or 10)
 
