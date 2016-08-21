@@ -85,7 +85,7 @@ _lastseg:
 				else
 				{
 					// as array element
-					lua_rawseti(L, top + 1, cc);
+					lua_rawseti(L, top + 1, cc + 1);
 				}
 			}
 			else
@@ -123,7 +123,7 @@ _lastseg:
 			else
 			{
 				// as array element
-				lua_rawseti(L, top + 1, cc);
+				lua_rawseti(L, top + 1, cc + 1);
 			}
 		}
 

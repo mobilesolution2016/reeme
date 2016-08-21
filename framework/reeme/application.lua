@@ -107,9 +107,21 @@ local baseMeta = {
 		end,
 	},
 	__call = function(self, key, ...)
-		local f = configs[key]
-		if type(f) == 'function' then
-			return f(self, ...)
+		local lazyLoader = configs[key]
+		local tp = type(lazyLoader)
+		if tp == "table" then
+			local fget = lazyLoader.get
+			local ffree = lazyLoader.free
+			if type(fget) == "function" then
+				local r = fget(self, ...)
+				if r and type(ffree) == "function" then
+					local lazyLoaders = rawget(self, "_lazyLoaders")
+					lazyLoaders[ffree] = r
+				end
+				return r
+			end
+		elseif tp == 'function' then
+			return lazyLoader(self, ...)
 		end
 	end
 }
@@ -133,6 +145,7 @@ local application = {
 
 setmetatable(baseMeta.__index, application)
 
+local foreverProcessor = nil
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
@@ -149,6 +162,16 @@ local appMeta = {
 				if not cfgs.dirs.controllersDir then cfgs.dirs.controllersDir = 'controllers' end
 				
 				configs = cfgs
+			end
+		end,
+		
+		once = function(self, funcs)
+			self.once = funcs
+		end,
+		
+		forever = function(self, funcs)
+			if not foreverProcessor then
+				foreverProcessor = funcs
 			end
 		end,
 		
@@ -192,9 +215,12 @@ local appMeta = {
 					metacopy.__call = baseMeta.__call
 					setmetatable(c, metacopy)
 				end
-
-				if type(self.pre.response) == "function" then
-					self.pre.response(c)
+				
+				rawset(c, "_lazyLoaders", { })
+				
+				local fPreResponse = self.once.preResponse or foreverProcessor.preResponse
+				if type(fPreResponse) == "function" then
+					fPreResponse(c)
 				end
 				
 				local r = c[act](c)
@@ -228,6 +254,11 @@ local appMeta = {
 				ngx.eof()
 			end
 			
+			local lazyLoaders = rawget(c, "_lazyLoaders")
+			for k, v in pairs(lazyLoaders) do
+				k(c, v)
+			end
+			
 			metacopy = nil
 			c = nil
 		end,
@@ -235,5 +266,5 @@ local appMeta = {
 }
 
 return function()
-	return setmetatable({ pre = { }, post = { } }, appMeta)
+	return setmetatable({ once = { } }, appMeta)
 end
