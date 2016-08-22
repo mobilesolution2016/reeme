@@ -1,4 +1,4 @@
-void doTableClone(lua_State* L, int src, int dst, int deepClone)
+static void doTableClone(lua_State* L, int src, int dst, int deepClone)
 {
 	if (dst == -1)
 	{
