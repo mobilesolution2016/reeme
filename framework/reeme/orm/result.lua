@@ -19,6 +19,8 @@
 	   就是一个二维的table。当为table时，可以将该table中的所有的key=>value覆盖到当前的结果集中，相当于一次性设置结果集中当前行中列的值
 		
 	3、for k,v in pairs(r) do这样可以迭代出r当前行的所有字段，不会将r中的函数迭代出来
+	   如果您的luajit在编译的时候没有加上过LUAJIT_ENABLE_LUA52COMPAT这个选项（参考：http://luajit.org/extensions.html拉到最后面基本上就可以看到）
+	   那么要迭代出所有的选项就需要这样写：for k,v in pairs(r()) do。注意pairs(r)中的那个r打了括号，这就是上面一条说的()返回了结果集当前行
 	
 	4、#r可以得到结果集的总行数
 	
