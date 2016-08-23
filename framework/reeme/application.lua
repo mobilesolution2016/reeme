@@ -228,11 +228,7 @@ local appMeta = {
 					local tp = type(r)
 					
 					if tp == 'table' then
-						if rawget(c.response, "view") == r then
-							r:render()
-						else
-							ngx.say(c.utils.jsonEncode(r))
-						end
+						ngx.say(c.utils.jsonEncode(r))
 					elseif tp == 'string' then
 						ngx.say(r)
 					end

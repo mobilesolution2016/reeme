@@ -47,16 +47,9 @@ local Response = {
 			rawset(self, "body", { })
 		end,
 		
-		initView = function(self, tpl, params)
-			local view = rawget(self, "view")
-			if not view then
-				view = require("reeme.response.view")(rawget(self, "R"))
-				rawset(self, "view", view)
-			end
-			
-			view:init(tpl, params)
-			
-			return view
+		view = function(self, tpl, env)
+			local view = require("reeme.response.view")(rawget(self, "R"))
+			return view:render(tpl, env)
 		end,
 	},
 	__newindex = function(self, key, value)
