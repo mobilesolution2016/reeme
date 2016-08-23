@@ -403,6 +403,7 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 		local cfg = fieldCfgs[name]
 		if cfg then
 			local v = vals[name]
+			local tp = type(v)
 
 			if cfg.ai then
 				if not full or not string.checkinteger(v) then
@@ -416,6 +417,8 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 				end
 			elseif v == ngx.null then
 				v = 'NULL'
+			elseif tp == 'table' then
+				v = v[1]
 			elseif cfg.type == 1 then
 				v = ngx.quote_sql_str(v)
 			elseif cfg.type == 3 then
@@ -440,6 +443,7 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 	sqls[#sqls + 1] = table.concat(keyvals, ',')
 	return #keyvals
 end
+
 
 queryexecuter.buildWheres = function(self, sqls, condPre, alias)
 	if self.condString then
