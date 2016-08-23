@@ -72,7 +72,8 @@ local ORM = {
 		--使用一个定义的模型
 		--不能使用require直接引用一个模型定义的Lua文件来进行使用，必须通过本函数来引用
 		use = function(self, name)
-			local m = models[name]
+			local idxName = string.format('%s-%s', ngx.var.APP_NAME or ngx.var.APP_ROOT, name)
+			local m = models[idxName]
 			local reeme = self.R
 			
 			if not m then			
@@ -98,7 +99,7 @@ local ORM = {
 				end
 
 				setmetatable(oldm and oldm.__index or m, modelmeta)
-				models[name] = m
+				models[idxName] = m
 			end
 			
 			m.__reeme = reeme
@@ -120,9 +121,10 @@ local ORM = {
 		
 		--重新加载指定的Model
 		reload = function(self, name)
-			if models[name] then
-				models[name] = nil
-				return self:use(name)
+			local idxName = string.format('%s-%s', ngx.var.APP_NAME or ngx.var.APP_ROOT, name)
+			if models[idxName] then
+				models[idxName] = nil
+				return self:use(idxName)
 			end
 		end,
 	},
