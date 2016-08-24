@@ -39,7 +39,7 @@ static int lua_sql_expression_parse(lua_State* L)
 
 		case TName:
 			m = sql_where_splits[ch];
-			if (m != 2 && m != 3)
+			if (m != 2 && m != 3 && ch != '.')
 			{
 				lua_pushlstring(L, sql + prevpos, i - prevpos);
 				lua_rawseti(L, r1, ++ cc);

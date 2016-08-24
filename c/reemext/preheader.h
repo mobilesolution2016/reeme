@@ -15,8 +15,12 @@
 #include <list>
 
 #ifdef _WINDOWS
+#	include <windows.h>
 #	include <boost/unordered_map.hpp>
 #	include <boost/unordered_set.hpp>
+
+#	undef min
+#	undef max
 
 #	define MAP_CLASS_NAME boost::unordered_map
 #	define SET_CLASS_NAME boost::unordered_set

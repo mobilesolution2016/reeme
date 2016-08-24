@@ -617,6 +617,57 @@ static int lua_string_subreplace(lua_State* L)
 	return 1;
 }
 
+static int lua_string_subto(lua_State* L)
+{
+	size_t srcLen, toLen = 0;
+	int top = std::min(3, lua_gettop(L));
+	const char* src = luaL_checklstring(L, 1, &srcLen), *to = 0;
+	long start = 0, endp = srcLen;	
+
+	if (top == 3)
+		start = luaL_checklong(L, 2) - 1;
+	if (start < 0 || srcLen < 1)
+		return 0;
+
+	if (lua_isnumber(L, top))
+	{
+		endp = luaL_checklong(L, top);
+		if (endp < 0)
+			endp = (long)srcLen + endp;
+	}
+	else if (lua_isstring(L, top))
+	{
+		to = luaL_checklstring(L, top, &toLen);
+		if (!to || toLen < 1)
+			return 0;
+
+		const char* findStart = src + start;
+		const char* pos = toLen == 1 ? strchr(findStart, to[0]) : strstr(findStart, to);
+		if (!pos)
+			return 0;
+		
+		if (pos == findStart)
+		{
+			lua_pushlstring(L, "", 0);
+			return 1;
+		}
+
+		endp = pos - src - 1;
+	}
+	else if (lua_isnil(L, top))
+	{
+		endp = (long)srcLen - 1;
+	}
+	else
+		return 0;
+
+	if (endp < start)
+		return 0;
+
+	lua_pushlstring(L, src + start, endp - start + 1);
+	return 1;
+}
+
 //////////////////////////////////////////////////////////////////////////
 static int lua_string_checknumeric(lua_State* L)
 {
@@ -905,6 +956,8 @@ static void luaext_string(lua_State *L)
 		{ "subreplaceto", &lua_string_subreplaceto },
 		// ×Ö·û´®Ö¸¶¨Î»ÖÃ+³¤¶ÈÌæ»»
 		{ "subreplace", &lua_string_subreplace },
+		// ×Ö·û´®²éÕÒ´ø½ØÈ¡
+		{ "subto", &lua_string_subto },
 		// ÊýÖµ+¸¡µãÊý×Ö·û´®¼ì²â
 		{ "checknumeric", &lua_string_checknumeric },
 		// ÕûÊý×Ö·û´®¼ì²â
