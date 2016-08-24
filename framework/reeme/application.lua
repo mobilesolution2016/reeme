@@ -7,143 +7,143 @@ end
 
 --print is use writes argument values into the nginx error.log file with the ngx.NOTICE log level
 		
-local baseMeta = {
-	__index = {
-		
-		statusCode = {
-			HTTP_CONTINUE = ngx.HTTP_CONTINUE, --100
-			HTTP_SWITCHING_PROTOCOLS = ngx.HTTP_SWITCHING_PROTOCOLS, --101
-			HTTP_OK = ngx.HTTP_OK, --200
-			HTTP_CREATED = ngx.HTTP_CREATED, --201
-			HTTP_ACCEPTED = ngx.HTTP_ACCEPTED, --202
-			HTTP_NO_CONTENT = ngx.HTTP_NO_CONTENT, --204
-			HTTP_PARTIAL_CONTENT = ngx.HTTP_PARTIAL_CONTENT, --206
-			HTTP_SPECIAL_RESPONSE = ngx.HTTP_SPECIAL_RESPONSE, --300
-			HTTP_MOVED_PERMANENTLY = ngx.HTTP_MOVED_PERMANENTLY, --301
-			HTTP_MOVED_TEMPORARILY = ngx.HTTP_MOVED_TEMPORARILY, --302
-			HTTP_SEE_OTHER = ngx.HTTP_SEE_OTHER, --303
-			HTTP_NOT_MODIFIED = ngx.HTTP_NOT_MODIFIED, --304
-			HTTP_TEMPORARY_REDIRECT = ngx.HTTP_TEMPORARY_REDIRECT, --307
-			HTTP_BAD_REQUEST = ngx.HTTP_BAD_REQUEST, --400
-			HTTP_UNAUTHORIZED = ngx.HTTP_UNAUTHORIZED, --401
-			HTTP_PAYMENT_REQUIRED = ngx.HTTP_PAYMENT_REQUIRED, --402
-			HTTP_FORBIDDEN = ngx.HTTP_FORBIDDEN, --403
-			HTTP_NOT_FOUND = ngx.HTTP_NOT_FOUND, --404
-			HTTP_NOT_ALLOWED = ngx.HTTP_NOT_ALLOWED, --405
-			HTTP_NOT_ACCEPTABLE = ngx.HTTP_NOT_ACCEPTABLE, --406
-			HTTP_REQUEST_TIMEOUT = ngx.HTTP_REQUEST_TIMEOUT, --408
-			HTTP_CONFLICT = ngx.HTTP_CONFLICT, --409
-			HTTP_GONE = ngx.HTTP_GONE, --410
-			HTTP_UPGRADE_REQUIRED = ngx.HTTP_UPGRADE_REQUIRED, --426
-			HTTP_TOO_MANY_REQUESTS = ngx.HTTP_TOO_MANY_REQUESTS, --429
-			HTTP_CLOSE = ngx.HTTP_CLOSE, --444
-			HTTP_ILLEGAL = ngx.HTTP_ILLEGAL, --451
-			HTTP_INTERNAL_SERVER_ERROR = ngx.HTTP_INTERNAL_SERVER_ERROR, --500
-			HTTP_METHOD_NOT_IMPLEMENTED = ngx.HTTP_METHOD_NOT_IMPLEMENTED, --501
-			HTTP_BAD_GATEWAY = ngx.HTTP_BAD_GATEWAY, --502
-			HTTP_GATEWAY_TIMEOUT = ngx.HTTP_GATEWAY_TIMEOUT, --504
-			HTTP_VERSION_NOT_SUPPORTED = ngx.HTTP_SERVICE_UNAVAILABLE, --505
-			HTTP_INSUFFICIENT_STORAGE = ngx.HTTP_INSUFFICIENT_STORAGE, --507
-		},
-		
-		method = {
-			HTTP_GET = ngx.HTTP_GET,
-			HTTP_HEAD = ngx.HTTP_HEAD,
-			HTTP_PUT = ngx.HTTP_PUT,
-			HTTP_POST = ngx.HTTP_POST,
-			HTTP_DELETE = ngx.HTTP_DELETE,
-			HTTP_OPTIONS = ngx.HTTP_OPTIONS,
-			HTTP_MKCOL = ngx.HTTP_MKCOL,
-			HTTP_COPY = ngx.HTTP_COPY,
-			HTTP_MOVE = ngx.HTTP_MOVE,
-			HTTP_PROPFIND = ngx.HTTP_PROPFIND,
-			HTTP_PROPPATCH = ngx.HTTP_PROPPATCH,
-			HTTP_LOCK = ngx.HTTP_LOCK,
-			HTTP_UNLOCK = ngx.HTTP_UNLOCK,
-			HTTP_PATCH = ngx.HTTP_PATCH,
-			HTTP_TRACE = ngx.HTTP_TRACE,
-		},
-		
-		logLevel = {
-			STDERR = ngx.STDERR,
-			EMERG = ngx.EMERG,
-			ALERT = ngx.ALERT,
-			CRIT = ngx.CRIT,
-			ERR = ngx.ERR,
-			WARN = ngx.WARN,
-			NOTICE = ngx.NOTICE,
-			INFO = ngx.INFO,
-			DEBUG = ngx.DEBUG,
-		},
-		
-		null = ngx.null,
-		
-		log = function(level, ...)
-			ngx.log(level or ngx.WARN, ...)
-		end,
-
-		getConfigs = function()
-			return configs
-		end,
-		
-		exec = function(uri, args)
-			ngx.exec(uri, args)
-		end,
-		
-		redirect = function(uri, status)
-			ngx.redirect(uri, status)
-		end,
-		
-		capture = function(uri, options)
-			return ngx.location.capture(uri)
-		end,
-		
-		captureMulti = function(captures)
-			return ngx.location.capture_multi(captures)
-		end,
-		
-		sleep = function(seconds)
-			ngx.sleep(seconds)
-		end,
+local baseapi = {
+	statusCode = {
+		HTTP_CONTINUE = ngx.HTTP_CONTINUE, --100
+		HTTP_SWITCHING_PROTOCOLS = ngx.HTTP_SWITCHING_PROTOCOLS, --101
+		HTTP_OK = ngx.HTTP_OK, --200
+		HTTP_CREATED = ngx.HTTP_CREATED, --201
+		HTTP_ACCEPTED = ngx.HTTP_ACCEPTED, --202
+		HTTP_NO_CONTENT = ngx.HTTP_NO_CONTENT, --204
+		HTTP_PARTIAL_CONTENT = ngx.HTTP_PARTIAL_CONTENT, --206
+		HTTP_SPECIAL_RESPONSE = ngx.HTTP_SPECIAL_RESPONSE, --300
+		HTTP_MOVED_PERMANENTLY = ngx.HTTP_MOVED_PERMANENTLY, --301
+		HTTP_MOVED_TEMPORARILY = ngx.HTTP_MOVED_TEMPORARILY, --302
+		HTTP_SEE_OTHER = ngx.HTTP_SEE_OTHER, --303
+		HTTP_NOT_MODIFIED = ngx.HTTP_NOT_MODIFIED, --304
+		HTTP_TEMPORARY_REDIRECT = ngx.HTTP_TEMPORARY_REDIRECT, --307
+		HTTP_BAD_REQUEST = ngx.HTTP_BAD_REQUEST, --400
+		HTTP_UNAUTHORIZED = ngx.HTTP_UNAUTHORIZED, --401
+		HTTP_PAYMENT_REQUIRED = ngx.HTTP_PAYMENT_REQUIRED, --402
+		HTTP_FORBIDDEN = ngx.HTTP_FORBIDDEN, --403
+		HTTP_NOT_FOUND = ngx.HTTP_NOT_FOUND, --404
+		HTTP_NOT_ALLOWED = ngx.HTTP_NOT_ALLOWED, --405
+		HTTP_NOT_ACCEPTABLE = ngx.HTTP_NOT_ACCEPTABLE, --406
+		HTTP_REQUEST_TIMEOUT = ngx.HTTP_REQUEST_TIMEOUT, --408
+		HTTP_CONFLICT = ngx.HTTP_CONFLICT, --409
+		HTTP_GONE = ngx.HTTP_GONE, --410
+		HTTP_UPGRADE_REQUIRED = ngx.HTTP_UPGRADE_REQUIRED, --426
+		HTTP_TOO_MANY_REQUESTS = ngx.HTTP_TOO_MANY_REQUESTS, --429
+		HTTP_CLOSE = ngx.HTTP_CLOSE, --444
+		HTTP_ILLEGAL = ngx.HTTP_ILLEGAL, --451
+		HTTP_INTERNAL_SERVER_ERROR = ngx.HTTP_INTERNAL_SERVER_ERROR, --500
+		HTTP_METHOD_NOT_IMPLEMENTED = ngx.HTTP_METHOD_NOT_IMPLEMENTED, --501
+		HTTP_BAD_GATEWAY = ngx.HTTP_BAD_GATEWAY, --502
+		HTTP_GATEWAY_TIMEOUT = ngx.HTTP_GATEWAY_TIMEOUT, --504
+		HTTP_VERSION_NOT_SUPPORTED = ngx.HTTP_SERVICE_UNAVAILABLE, --505
+		HTTP_INSUFFICIENT_STORAGE = ngx.HTTP_INSUFFICIENT_STORAGE, --507
 	},
-	__call = function(self, key, ...)
-		local lazyLoader = configs[key]
-		local tp = type(lazyLoader)
-		if tp == "table" then
-			local fget = lazyLoader.get
-			local ffree = lazyLoader.free
-			if type(fget) == "function" then
-				local r = fget(self, ...)
-				if r and type(ffree) == "function" then
-					local lazyLoaders = rawget(self, "_lazyLoaders")
-					lazyLoaders[ffree] = r
-				end
-				return r
-			end
-		elseif tp == 'function' then
-			return lazyLoader(self, ...)
-		end
-	end
+	
+	method = {
+		HTTP_GET = ngx.HTTP_GET,
+		HTTP_HEAD = ngx.HTTP_HEAD,
+		HTTP_PUT = ngx.HTTP_PUT,
+		HTTP_POST = ngx.HTTP_POST,
+		HTTP_DELETE = ngx.HTTP_DELETE,
+		HTTP_OPTIONS = ngx.HTTP_OPTIONS,
+		HTTP_MKCOL = ngx.HTTP_MKCOL,
+		HTTP_COPY = ngx.HTTP_COPY,
+		HTTP_MOVE = ngx.HTTP_MOVE,
+		HTTP_PROPFIND = ngx.HTTP_PROPFIND,
+		HTTP_PROPPATCH = ngx.HTTP_PROPPATCH,
+		HTTP_LOCK = ngx.HTTP_LOCK,
+		HTTP_UNLOCK = ngx.HTTP_UNLOCK,
+		HTTP_PATCH = ngx.HTTP_PATCH,
+		HTTP_TRACE = ngx.HTTP_TRACE,
+	},
+	
+	logLevel = {
+		STDERR = ngx.STDERR,
+		EMERG = ngx.EMERG,
+		ALERT = ngx.ALERT,
+		CRIT = ngx.CRIT,
+		ERR = ngx.ERR,
+		WARN = ngx.WARN,
+		NOTICE = ngx.NOTICE,
+		INFO = ngx.INFO,
+		DEBUG = ngx.DEBUG,
+	},
+	
+	null = ngx.null,
+	
+	log = function(level, ...)
+		ngx.log(level or ngx.WARN, ...)
+	end,
+
+	getConfigs = function()
+		return configs
+	end,
+	
+	exec = function(uri, args)
+		ngx.exec(uri, args)
+	end,
+	
+	redirect = function(uri, status)
+		ngx.redirect(uri, status)
+	end,
+	
+	capture = function(uri, options)
+		return ngx.location.capture(uri)
+	end,
+	
+	captureMulti = function(captures)
+		return ngx.location.capture_multi(captures)
+	end,
+	
+	sleep = function(seconds)
+		ngx.sleep(seconds)
+	end,
 }
 
 local application = {
 	__index = function(self, key)
-		local dirs = configs.dirs		
-		local f = require(string.format('reeme.%s', string.gsub(key, '_', '.')))
-		if type(f) == 'function' then			
+		local f = baseapi[key]
+		if f then
+			return f
+		end
+		
+		local dirs = configs.dirs
+		
+		f = require(string.format('reeme.%s', string.gsub(key, '_', '.')))		
+		if type(f) == 'function' then
 			local r = f(self.__reeme)
 			rawset(self, key, r)
 			return r
 		end
-		
-		return nil
 	end,
 	
 	__newindex = function()
 	end,
 }
 
-setmetatable(baseMeta.__index, application)
+local function lazyLoaderProc(self, key, ...)
+	local lazyLoader = configs[key]
+	local tp = type(lazyLoader)
+	if tp == "table" then
+		local fget = lazyLoader.get
+		local ffree = lazyLoader.free
+		if type(fget) == "function" then
+			local r = fget(self, ...)
+			if r and type(ffree) == "function" then
+				rawget(self, "_lazyLoaders")[ffree] = r
+			end
+			return r
+		end
+
+	elseif tp == 'function' then
+		return lazyLoader(self, ...)
+	end
+end
 
 local foreverProcessor = nil
 local appMeta = {
@@ -156,6 +156,7 @@ local appMeta = {
 				if not cfgs.dirs then cfgs.dirs = { } end
 				cfgs.dirs.appRootDir = ngx.var.APP_ROOT
 				if cfgs.devMode == nil then cfgs.devMode = true end
+				if cfgs.viewFileExt == nil then cfgs.viewFileExt = '.html' end
 				if not cfgs.dirs.appBaseDir then cfgs.dirs.appBaseDir = 'app' end
 				if not cfgs.dirs.modelsDir then cfgs.dirs.modelsDir = 'models' end
 				if not cfgs.dirs.viewsDir then cfgs.dirs.viewsDir = "views" end
@@ -193,44 +194,40 @@ local appMeta = {
 				if not c[act] then
 					error(string.format("the action %s of controller %s undefined", act, path))
 				end
-				
+
 				local cm = getmetatable(c)
-						
-				metacopy = { __index = { } }
-				local idxcopy = metacopy.__index
-				for k, v in pairs(baseMeta.__index) do
-					idxcopy[k] = v
-				end
-				idxcopy.__reeme = c
-				setmetatable(idxcopy, application)
+
+				local metacopy = { __index = { __reeme = c } }
+				setmetatable(metacopy.__index, application)
 
 				if cm then
 					if type(cm.__index) == 'function' then
 						error(string.format("the __index of controller[%s]'s metatable must be a table", path))
 					end
 					
-					cm.__call = baseMeta.__call
+					cm.__call = lazyLoaderProc
 					setmetatable(cm.__index, metacopy)
 				else
-					metacopy.__call = baseMeta.__call
+					metacopy.__call = lazyLoaderProc
 					setmetatable(c, metacopy)
 				end
-				
+
 				rawset(c, "_lazyLoaders", { })
-				
+
 				local fPreResponse = self.once.preResponse or foreverProcessor.preResponse
 				if type(fPreResponse) == "function" then
 					fPreResponse(c)
 				end
-				
+
 				local r = c[act](c)
 				if r then
 					local tp = type(r)
-					
+
 					if tp == 'table' then
-						ngx.say(c.utils.jsonEncode(r))
+						ngx.say(getmetatable(r) and r:content() or c.utils.jsonEncode(r))
 					elseif tp == 'string' then
 						ngx.say(r)
+					elseif tp == 'boolean' then
 					end
 				end
 				--require('mobdebug').done()

@@ -671,6 +671,7 @@ static int lua_string_subto(lua_State* L)
 //////////////////////////////////////////////////////////////////////////
 static int lua_string_checknumeric(lua_State* L)
 {
+	double d = 0;
 	int tp = lua_type(L, 1), r = 0;
 	if (tp == LUA_TNUMBER)
 	{
@@ -682,17 +683,19 @@ static int lua_string_checknumeric(lua_State* L)
 		char *endp = 0;
 		const char* s = (const char*)lua_tolstring(L, 1, &len);
 
-		strtod(s, &endp);
+		d = strtod(s, &endp);
 		if (endp && endp - s == len)
 			r = 1;
 	}
 
 	lua_pushboolean(L, r);
-	return 1;
+	lua_pushnumber(L, d);
+	return 2;
 }
 
 static int lua_string_checkinteger(lua_State* L)
 {
+	long long v = 0;
 	int tp = lua_type(L, 1), r = 0;
 	if (tp == LUA_TNUMBER)
 	{
@@ -704,13 +707,21 @@ static int lua_string_checkinteger(lua_State* L)
 		char *endp = 0;
 		const char* s = (const char*)lua_tolstring(L, 1, &len);
 
-		strtoll(s, &endp, 10);
+		v = strtoll(s, &endp, 10);
 		if (endp && endp - s == len)
 			r = 1;
 	}
 
 	lua_pushboolean(L, r);
-	return 1;
+#ifdef REEME_64
+	lua_pushinteger(L, v);
+#else
+	if (v > 0x7FFFFFFF)
+		lua_pushnumber(L, (double)v);
+	else
+		lua_pushinteger(L, v);
+#endif
+	return 2;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -847,6 +858,358 @@ static int lua_string_template(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+#define TP_FIXED	16384
+
+static const char templInitCode[] = { "return function(self, __env__)\nlocal __ret__ = {}\n" };
+static const char templReturnCode[] = { "\nreturn table.concat(__ret__, '')\nend" };
+static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
+static const char tenplAddstrCode[] = { "__ret__[#__ret__+1]=[==[" };
+
+class TemplateParser
+{
+public:
+	std::string	buf, errorMsg;
+	size_t		offset, srcLen, wrote;
+	const char	*src;
+	const char	*savedPos;
+	const char	*errorStart;
+	bool		bracketOpened;
+
+	size_t append(size_t s)
+	{
+		if (s == 0)
+			return 0;
+
+		size_t used = buf.size() + 400;
+		if (used >= TP_FIXED)
+			return 0;
+
+		open();
+
+		s = std::min(s, (size_t)(TP_FIXED - used));
+		buf.append(src + offset, s);
+		offset += s;
+
+		wrote = buf.size();
+		return s;
+	}
+
+	bool more()
+	{
+		uint8_t ch;
+		size_t add;
+
+		if (offset)
+		{
+			buf.clear();
+			wrote = 0;
+		}
+
+		if (offset >= srcLen)
+			return false;
+
+		for(;;)
+		{
+			const char* foundPos = savedPos ? savedPos : (const char*)memchr(src + offset, '{', srcLen - offset);
+			savedPos = 0;
+
+			if (!foundPos)
+				return false;
+
+			size_t pos = foundPos - src;
+			if (pos > srcLen - 3)
+				break;
+
+			foundPos ++;
+			if (foundPos[0] == '\\')
+			{
+				// 大括号转义
+				add = pos - offset + 1;
+				if (pos >= offset && append(add) != add)
+				{
+					savedPos = foundPos;
+					return true;
+				}
+
+				offset = pos + 2;
+				continue;
+			}
+
+			while((ch = foundPos[0]) <= 32)
+				foundPos ++;
+
+			// 如果是取变量，则是$或=，否则就只能是%，否则认为不是模板语法
+			if (ch == '$' || ch == '=')
+			{
+				add = pos - offset;
+				if (pos >= offset && append(add) != add)
+				{
+					savedPos = foundPos;
+					return true;
+				}
+
+				const char* varBegin = foundPos + 1;
+				while((uint8_t)varBegin[0] <= 32)
+					varBegin ++;
+
+				const char* varEnd = varBegin + 1;
+				for ( ; ; varEnd ++)
+				{
+					ch = varEnd[0];
+					if (ch == '}' || ch <= 32)
+						break;					
+				}
+
+				buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+				buf.append(varBegin, varEnd - varBegin);
+				buf += '\n';
+				wrote = buf.size();
+
+				foundPos = varEnd + 1;
+				offset = foundPos - src;
+				goto _lastcheck;
+			}
+			else if (ch == '%')
+			{
+				// 先关闭之前的输出，因为表达式不可能与字符串也不可能与其它的表达式位于同一行
+				add = pos - offset;
+				if (pos >= offset && append(add) != add)
+				{
+					savedPos = foundPos;
+					return true;
+				}
+
+				close();
+
+				// 找到表达式的结束位置
+				uint8_t quoted = 0;
+				const char* expStart = foundPos + 1;
+				const char* totalEnd = src + srcLen;
+
+				while(expStart[0] <= 32)
+					expStart ++;
+
+				const char* expEnd = expStart;
+				while (expEnd < totalEnd)
+				{
+					ch = *expEnd ++;
+					if (quoted)
+					{
+						if (ch == '\\')
+							expEnd ++;
+						else if (ch == '\'' || ch == '"')
+							quoted = 0;
+					}
+					else if (ch == '\'' || ch == '"')
+					{
+						if (quoted)
+						{
+							errorStart = expStart;
+							errorMsg = "not closed string";
+						}
+						quoted = ch;
+					}
+					else if (ch == '}')
+						break;
+				}
+
+				if (expEnd < totalEnd)
+				{					
+					add = expEnd - expStart - 1;
+					if (add >= 14 && memcmp(expStart, "subtemplate", 11) == 0 && sql_where_splits[expStart[11]] == 1)
+					{
+						// 特殊处理subtemplate
+						buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+						buf.append("subtemplate(self, __env__, ", 27);
+
+						expStart += 11;
+						while(expStart[0] <= 32)
+							expStart ++;
+
+						if (expStart[0] == '(')
+							expStart ++;
+
+						add = expEnd - expStart - 1;
+						buf.append(expStart, add);
+
+						const char* revFindBracket = expEnd - 1;
+						while (revFindBracket > expStart)
+						{
+							if ((uint8_t)revFindBracket[0] <= 32)
+								revFindBracket --;
+							else if (revFindBracket[0] == ')')
+								revFindBracket = 0;
+							else
+								break;
+						}
+
+						if (revFindBracket)
+							buf += ')';
+					}
+					else
+					{
+						// 其它的表达式直接输出
+						buf.append(expStart, add);											
+					}
+
+					buf += '\n';
+					wrote = buf.size();
+
+					foundPos = expEnd;
+					offset = foundPos - src;
+					goto _lastcheck;
+				}
+			}
+
+			append(foundPos - src - offset);
+
+_lastcheck:
+			if (buf.size() + 400 >= TP_FIXED)
+				break;	// 缓存只有400字节的空闲，就不使用了
+		}
+
+		return true;
+	}
+
+	void open()
+	{
+		if (!bracketOpened)
+		{
+			bracketOpened = true;
+			buf.append(tenplAddstrCode, sizeof(tenplAddstrCode) - 1);
+			wrote = buf.size();
+		}
+	}
+	void close()
+	{
+		if (bracketOpened)
+		{
+			bracketOpened = false;
+			buf.append("]==]\n", 5);
+			wrote = buf.size();
+		}
+	}
+};
+static const char *lua_tpl_loader(lua_State *L, void *ud, size_t *size)
+{
+	TemplateParser* ctx = (TemplateParser*)ud;
+	
+	if (!ctx->more())
+	{
+		size_t left = ctx->srcLen - ctx->offset;
+		if (left)
+		{
+			left = std::min(left, (size_t)TP_FIXED - ctx->buf.size());
+
+			ctx->open();
+			ctx->buf.append(ctx->src + ctx->offset, left);
+
+			ctx->offset = ctx->srcLen;
+		}
+
+		if (ctx->wrote)
+		{
+			ctx->close();
+			*size = ctx->wrote;
+			return ctx->buf.c_str();
+		}
+
+		if (ctx->src)
+		{
+			ctx->src = 0;
+			*size = sizeof(templReturnCode) - 1;
+			return templReturnCode;
+		}
+
+		*size = 0;
+		return 0;
+	}
+
+	ctx->close();
+
+	*size = ctx->wrote;
+	ctx->wrote = 0;
+	
+	return ctx->buf.c_str();
+}
+static int lua_string_parsetemplate(lua_State* L)
+{
+	luaL_checktype(L, 1, LUA_TTABLE);
+
+	size_t srcLen = 0;	
+	const char* src = luaL_checklstring(L, 2, &srcLen);
+	const char* chunkName = "__templ_tempr__";	
+
+	int hasEnv = lua_istable(L, 3);
+	if (lua_isstring(L, 4))
+		chunkName = lua_tostring(L, 3);
+
+	TemplateParser parser;	
+	parser.savedPos = 0;
+	parser.errorStart = 0;
+	parser.src = src;
+	parser.srcLen = srcLen;
+	parser.offset = 0;
+	parser.bracketOpened = false;
+	parser.wrote = sizeof(templInitCode) - 1;
+
+	parser.buf.reserve(TP_FIXED);
+	parser.buf.append(templInitCode, parser.wrote);
+
+	if (hasEnv)
+	{
+		int r = lua_load(L, &lua_tpl_loader, &parser, chunkName);
+		if (parser.errorMsg.length())
+		{
+			std::string& msg = parser.errorMsg;
+			msg += " start at : ";
+		
+			size_t left = std::min(srcLen - (parser.errorStart - parser.src), (size_t)60);
+			msg.append(parser.errorStart, left);
+
+			lua_pushlstring(L, msg.c_str(), msg.length());
+		}
+		else if (r == 0 && lua_isfunction(L, -1))
+		{
+			r = lua_pcall(L, 0, 1, 0);
+			if (r == 0)
+			{
+				assert(lua_isfunction(L, -1));
+
+				int top = lua_gettop(L);
+
+				lua_pushvalue(L, 3);
+				lua_setfenv(L, top);
+
+				lua_pushvalue(L, 1);
+				lua_pushvalue(L, 3);
+				lua_pcall(L, 2, 1, 0);
+			}
+		}
+	}
+	else
+	{
+		luaL_Buffer buf;
+		luaL_buffinit(L, &buf);
+
+		for (;;)
+		{
+			size_t s = 0;
+			const char* ss = lua_tpl_loader(L, &parser, &s);
+			if (!ss || s == 0)
+				break;
+			
+			lua_string_addbuf(&buf, ss, s);
+		}
+
+		luaL_pushresult(&buf);
+	}
+
+
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static int lua_string_bmcompile(lua_State* L)
 {
 	size_t len;
@@ -964,6 +1327,8 @@ static void luaext_string(lua_State *L)
 		{ "checkinteger", &lua_string_checkinteger },
 		// 模板解析（不支持语法和关键字，能按照变量名来进行替换）
 		{ "template", &lua_string_template },
+		// 模板解析
+		{ "parseTemplate", &lua_string_parsetemplate },
 		// 编译Boyer-Moore子字符串
 		{ "bmcompile", &lua_string_bmcompile },
 		// 用编译好的BM字符串进行查找
