@@ -35,6 +35,17 @@ local Response = {
 			end
 		end,
 		
+		writeView = function(self, view)
+			local t = view:content()
+			if #t > 0 then
+				if rawget(self, "begined") then
+					body[#body + 1] = t
+				else
+					ngx.say(t)
+				end
+			end
+		end,
+		
 		clear = function(self)
 			rawset(self, "body", { })
 		end,
@@ -51,15 +62,9 @@ local Response = {
 			local t = require("reeme.response.view")(rawget(self, "R"), tpl)
 			return t:render(env or {}, method)
 		end,
-		outputView = function(self, tpl, env)
-			local t = require("reeme.response.view")(rawget(self, "R"), tpl)
-			if env then
-				local v, t = view:render(env)
-				if t then
-					ngx.say(t)
-				end
-			end
-		end
+		loadView = function(self, tpl)
+			return require("reeme.response.view")(rawget(self, "R"), tpl)
+		end,
 	},
 	__newindex = function(self, key, value)
 		local f = writeMembers[key]

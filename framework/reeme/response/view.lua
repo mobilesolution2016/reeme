@@ -42,8 +42,29 @@ local renderMethods = {
 }
 
 viewMeta.__index = {
+	--设置source
+	setSource = function(self, souce)
+		local tp = type(source)
+		if tp == 'string' then
+			rawset(self, 'sourceCode', source)
+		elseif tp == 'table' then
+			rawset(self, 'sourceCode', table.concat(source, ''))
+		end
+		return self
+	end,
+	--获取source
+	source = function(self)
+		return rawget(self, 'sourceCode')
+	end,
+	
 	--参数2为所有的模板参数，参数3为nil表示重新渲染并且清除掉上一次的结果，否则将会累加在上一次的结果之后（如果本参数不是true而是string，那么将会做为join字符串放在累加的字符串中间）
 	render = function(self, env, method)
+		--如果没有source那么就无法渲染
+		local src = rawget(self, 'sourceCode')
+		if not src then
+			return self
+		end
+		
 		--切换meta
 		local meta = { __index = {
 			self = self,
@@ -65,7 +86,7 @@ viewMeta.__index = {
 			m = renderMethods.overwrite
 		end
 		
-		r = m(self, rawget(self, 'finalHTML'), rawget(self, 'sourceCode'), env)
+		r = m(self, rawget(self, 'finalHTML'), src, env)
 		
 		--换回meta
 		if oldMeta then
@@ -75,20 +96,31 @@ viewMeta.__index = {
 		
 		return r
 	end,
-	appendString = function(self, code)
-		local cur = rawget(self, 'finalHTML')
-		rawset(self, 'finalHTML', cur and (cur .. code) or code)
-		return self
-	end,
-	--获取render之后的结果
+	
+	--获取render之后的内容
 	content = function(self)
 		return rawget(self, 'finalHTML') or ''
 	end,
-	--调用ngx.say输出最后的结果
-	output = function(self)
-		ngx.say(rawget(self, 'finalHTML') or '')
+	--直接设置内容
+	setContent = function(self, code)
+		local tp = type(code)
+		if tp == 'string' then
+			rawset(self, 'finalHTML', code)
+		elseif tp == 'table' then
+			rawset(self, 'finalHTML', table.concat(code, ''))
+		end
+		return self
 	end,
-	--合并多个模板，joinPiece是两个模板之间的连接字符串，可以为空字符串但不能为非string类型的变量
+	
+	--在渲染后的结果中追加字符串
+	appendString = function(self, code)
+		if type(code) == 'string' then
+			local cur = rawget(self, 'finalHTML')
+			rawset(self, 'finalHTML', cur and (cur .. code) or code)
+		end
+		return self
+	end,
+	--合并多个模板，joinPiece是两个模板之间的连接字符串，可以为空字符串但不能为非string类型的变量。合并后的结果直接返回而不会覆盖掉当前模板的内容
 	merge = function(self, joinPiece, ...)
 		local t = { rawget(self, 'finalHTML') }
 		for i = 1, select('#', ...) do
@@ -116,8 +148,6 @@ end
 
 --tpl是模板的名称，名称中的.符号将被替换为/，表示多级目录
 return function(r, tpl)
-	local t = loadTemplateFile(r, tpl)
-	if t then
-		return setmetatable({ __reeme = r, sourceCode = t }, viewMeta)
-	end
+	local t = tpl and loadTemplateFile(r, tpl) or nil
+	return setmetatable({ __reeme = r, sourceCode = t }, viewMeta)
 end

@@ -73,38 +73,13 @@ local baseapi = {
 		INFO = ngx.INFO,
 		DEBUG = ngx.DEBUG,
 	},
-	
-	null = ngx.null,
-	
-	log = function(level, ...)
-		ngx.log(level or ngx.WARN, ...)
-	end,
 
 	getConfigs = function()
 		return configs
 	end,
-	
-	exec = function(uri, args)
-		ngx.exec(uri, args)
-	end,
-	
-	redirect = function(uri, status)
-		ngx.redirect(uri, status)
-	end,
-	
-	capture = function(uri, options)
-		return ngx.location.capture(uri)
-	end,
-	
-	captureMulti = function(captures)
-		return ngx.location.capture_multi(captures)
-	end,
-	
-	sleep = function(seconds)
-		ngx.sleep(seconds)
-	end,
 }
 
+local loadables = { cookie = 1, orm = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1 }
 local application = {
 	__index = function(self, key)
 		local f = baseapi[key]
@@ -112,17 +87,21 @@ local application = {
 			return f
 		end
 		
-		local dirs = configs.dirs
-		
-		f = require(string.format('reeme.%s', string.gsub(key, '_', '.')))		
-		if type(f) == 'function' then
+		f = loadables[key]
+		if f == 1 then
+			f = require(string.format('reeme.%s', key))
+			if type(f) == 'function' then
+				local r = f(self.__reeme)
+				rawset(self.__reeme, key, r)
+				loadables[key] = f
+				return r
+			end
+			
+		elseif f then
 			local r = f(self.__reeme)
 			rawset(self, key, r)
 			return r
 		end
-	end,
-	
-	__newindex = function()
 	end,
 }
 
@@ -190,6 +169,7 @@ local appMeta = {
 					error(string.format('controller %s must return a function that has action functions', path))
 				end
 				
+				act = act .. 'Action'
 				c = controlNew(act)
 				if not c[act] then
 					error(string.format("the action %s of controller %s undefined", act, path))
