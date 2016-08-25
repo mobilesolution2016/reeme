@@ -864,6 +864,7 @@ static const char templInitCode[] = { "return function(self, __env__)\nlocal __r
 static const char templReturnCode[] = { "\nreturn table.concat(__ret__, '')\nend" };
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
 static const char tenplAddstrCode[] = { "__ret__[#__ret__+1]=[==[" };
+static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
 
 class TemplateParser
 {
@@ -921,7 +922,8 @@ public:
 				break;
 
 			foundPos ++;
-			if (foundPos[0] == '\\')
+			ch = foundPos[0];
+			if (ch == '\\')
 			{
 				// 大括号转义
 				add = pos - offset + 1;
@@ -935,11 +937,8 @@ public:
 				continue;
 			}
 
-			while((ch = foundPos[0]) <= 32)
-				foundPos ++;
-
-			// 如果是取变量，则是$或=，否则就只能是%，否则认为不是模板语法
-			if (ch == '$' || ch == '=')
+			// 如果是取变量，则是$或=，否则就只能是%，否则认为不是模板语法			
+			if (ch == '=' || ch == ':')
 			{
 				add = pos - offset;
 				if (pos >= offset && append(add) != add)
@@ -955,13 +954,30 @@ public:
 				const char* varEnd = varBegin + 1;
 				for ( ; ; varEnd ++)
 				{
-					ch = varEnd[0];
-					if (ch == '}' || ch <= 32)
-						break;					
+					uint8_t ch2 = varEnd[0];
+					if (ch2 == '}' || ch2 <= 32)
+						break;			
 				}
 
-				buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
-				buf.append(varBegin, varEnd - varBegin);
+				// 引用子模板				
+				if (ch == ':')
+				{
+					close();
+
+					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+					buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
+					buf += '\'';
+					buf.append(varBegin, varEnd - varBegin);
+					buf.append("\')", 2);
+
+					open();
+				}
+				else
+				{
+					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+					buf.append(varBegin, varEnd - varBegin);
+				}
+
 				buf += '\n';
 				wrote = buf.size();
 
@@ -975,7 +991,7 @@ public:
 				add = pos - offset;
 				if (pos >= offset && append(add) != add)
 				{
-					savedPos = foundPos;
+					savedPos = foundPos - 1;
 					return true;
 				}
 
@@ -1013,14 +1029,14 @@ public:
 						break;
 				}
 
-				if (expEnd < totalEnd)
+				if (expEnd <= totalEnd)
 				{					
 					add = expEnd - expStart - 1;
 					if (add >= 14 && memcmp(expStart, "subtemplate", 11) == 0 && sql_where_splits[expStart[11]] == 1)
 					{
 						// 特殊处理subtemplate
 						buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
-						buf.append("subtemplate(self, __env__, ", 27);
+						buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
 
 						expStart += 11;
 						while(expStart[0] <= 32)
@@ -1058,6 +1074,11 @@ public:
 					foundPos = expEnd;
 					offset = foundPos - src;
 					goto _lastcheck;
+				}
+				else if (quoted)
+				{
+					errorStart = expStart;
+					errorMsg = "not closed string";
 				}
 			}
 
