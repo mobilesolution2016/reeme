@@ -114,7 +114,13 @@ local parseWhere = function(self, condType, name, value)
 		
 		local f = fields[keyname or name]
 		if f then
-			tokens, poses = self.__reeme.orm.parseExpression(value)
+			local tv = type(value)
+			local tokens, poses = { }, { }
+			if tv == "string" then
+				tokens, poses = self.__reeme.orm.parseExpression(value)
+				value = ngx.quote_sql_str(value)
+			end
+			
 			return tokens and { key = keyname, n = name, v = value, c = condType, tokens = tokens, poses = poses } or nil
 		end
 	end
@@ -476,7 +482,7 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 			end
 
 			if v ~= nil then
-				if #alias > 0 then
+				if alias and #alias > 0 then
 					name = alias .. name
 				end
 
@@ -500,6 +506,7 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias, condValues)
 		return true
 	end
 
+	if not alias then alias = '' end
 	if not condValues then
 		condValues = self.condValues
 	end
@@ -852,7 +859,7 @@ local queryMeta = {
 			if not sqls then
 				return nil
 			end
-			ngx.say(sqls, '<br/>')
+			--ngx.say(sqls, '<br/>')
 			
 			result = ormr.init(result, model)
 			local res = ormr.query(result, db, sqls, self.limitTotal or 10)
