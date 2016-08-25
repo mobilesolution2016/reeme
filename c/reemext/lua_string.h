@@ -955,22 +955,20 @@ public:
 				for ( ; ; varEnd ++)
 				{
 					uint8_t ch2 = varEnd[0];
-					if (ch2 == '}' || ch2 <= 32)
-						break;			
+					if (ch2 == '}')
+						break;
 				}
+
+				close();
 
 				// 引用子模板				
 				if (ch == ':')
 				{
-					close();
-
 					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
 					buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
 					buf += '\'';
 					buf.append(varBegin, varEnd - varBegin);
-					buf.append("\')", 2);
-
-					open();
+					buf.append("\')", 2);					
 				}
 				else
 				{
@@ -980,6 +978,8 @@ public:
 
 				buf += '\n';
 				wrote = buf.size();
+
+				open();
 
 				foundPos = varEnd + 1;
 				offset = foundPos - src;
