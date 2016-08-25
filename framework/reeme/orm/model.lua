@@ -852,7 +852,9 @@ local queryMeta = {
 			if not sqls then
 				return nil
 			end
-			ngx.say(sqls, '<br/>')
+
+--			self.finalSql = sqls
+--			ngx.say(sqls, '<br/>')
 			
 			result = ormr.init(result, model)
 			local res = ormr.query(result, db, sqls, self.limitTotal or 10)

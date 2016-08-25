@@ -1,3 +1,38 @@
+local ffi = require 'ffi'
+
+local socklib = nil
+if ffi.abi('win') then
+	ffi.cdef([[
+		struct hostent {
+			char  *h_name;            /* official name of host */
+			char **h_aliases;         /* alias list */
+			short  h_addrtype;        /* host address type */
+			short  h_length;          /* length of address */
+			char **h_addr_list;       /* list of addresses */
+		};
+		
+		struct hostent *gethostbyname(const char *name);
+		struct myaddr { uint8_t b1, b2, b3, b4; }; 
+	]])
+	
+	socklib = ffi.load('Ws2_32.dll')
+else
+	ffi.cdef([[
+		struct hostent {
+			char  *h_name;            /* official name of host */
+			char **h_aliases;         /* alias list */
+			int    h_addrtype;        /* host address type */
+			int    h_length;          /* length of address */
+			char **h_addr_list;       /* list of addresses */
+		};
+		
+		struct hostent *gethostbyname(const char *name);
+		struct myaddr { uint8_t b1, b2, b3, b4; }; 
+	]])
+
+	socklib = ffi.C
+end
+
 local Utils = {
 	__index = {
 		--en/decode
@@ -212,6 +247,28 @@ local Utils = {
 		
 		getPendingTimerCount = function()
 			return ngx.timer.pending_count()
+		end,
+		
+		--network
+		resolveHost = function(name)
+			if type(name) ~= 'string' then
+				return
+			end
+
+			local hostent = socklib.gethostbyname(name)
+			if hostent == nil then
+				return
+			end
+
+			local i, hosts = 0, {}
+			while i < (hostent.h_length / 4) do
+				local myaddr = ffi.cast('struct myaddr*', hostent.h_addr_list[i])
+				
+				i = i + 1
+				hosts[i] = string.format('%d.%d.%d.%d', myaddr.b1, myaddr.b2, myaddr.b3, myaddr.b4)				
+			end
+			
+			return hosts
 		end,
 	},
 }

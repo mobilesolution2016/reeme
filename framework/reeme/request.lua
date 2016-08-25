@@ -1,71 +1,64 @@
 local readables = {
 	get = function(reeme) return ngx.req.get_uri_args() end,
-	request = function(self, reeme) 
+	args = function(reeme) 
 		local args = { }
-		local get = rawget(self, "get")
-		local post = rawget(self, "post")
-		if not get then
-			get = ngx.req.get_uri_args()
-			rawset(self, "get", get)
-		end
-		if not post then
-			post = require("reeme.request.post")(reeme)
-			rawset(self, "post", post)
+		local get, post = reeme.request.get, reeme.request.post
+		
+		if get then
+			for k, v in pairs(get) do
+				args[k] = v
+			end
 		end
 		
-		for k, v in pairs(get) do
-			args[k] = v
+		if post.__post then
+			for k, v in pairs(post.__post) do
+				args[k] = v
+			end
 		end
-		for k, v in pairs(post.__post) do
-			args[k] = v
-		end
-		
+
 		return args
 	end,
-	post = function(self, reeme) return require("reeme.request.post")(reeme) end,
-	headers = function(self, reeme) return require("reeme.request.headers")(reeme) end,
+	post = function(reeme) return require("reeme.request.post")(reeme) end,
+	headers = function(reeme) return require("reeme.request.headers")(reeme) end,
+	
+	isInternal = function(reeme) return ngx.req.is_internal end,
+	startTime = function(reeme) return ngx.req.start_time end,
+	version = function(reeme) return ngx.req.http_version end,
+	rawHeader = function(reeme) return ngx.req.raw_header end,
+	method = function(reeme) return ngx.req.request_method end,
+	isPost = function(reeme) return ngx.req.get_method() == "POST" end,
+	isSubrequest = function(reeme) return ngx.is_subrequest end,
+	contentLength = function(reeme) return ngx.req.content_length end,
+	contentType = function(reeme) return ngx.var.content_type end,
+	host = function(reeme) return ngx.var.host end,
+	hostname = function(reeme) return ngx.var.hostname end,
+	cookie = function(reeme) return ngx.var.http_cookie end,
+	referer = function(reeme) return ngx.var.http_referer end,
+	userAgent = function(reeme) return ngx.var.http_user_agent end,
+	via = function(reeme) return ngx.var.http_via end,
+	xForwardedFor = function(reeme) return ngx.var.http_x_forwarded_for end,
+	remoteAddr = function(reeme) return ngx.var.remote_addr end,
+	remotePort = function(reeme) return ngx.var.remote_port end,
+	remoteUser = function(reeme) return ngx.var.remote_user end,
+	remotePassword = function(reeme) return ngx.var.remote_passwd end,
+	uri = function(reeme) return ngx.var.uri end,
+	scheme = function(reeme) return ngx.var.scheme end,
+	status = function(reeme) return ngx.status end,
+	serverName = function(reeme) return ngx.var.server_name end,
+	serverAddr = function(reeme) return ngx.var.server_addr end,
 }
 
 local RequestBase = {
 	__index = function(self, key)
 		local f = readables[key]
 		if type(f) == "function" then
-			local r = f(self, self.R)
+			local r = f(self.R)
 			rawset(self, key, r)
 			return r
 		end
 		
 		return nil
 	end,
-}
-
-local writeables = {
-	method = ngx.req.set_method,
-	uri = ngx.req.set_uri,
-	uriArgs = ngx.req.set_uri_args,
-}
-
-local Request = {
-	__index = {
-		clearHeadeer = function()
-			ngx.req.clear_header()
-		end,
-		setBodyData = function(self, data)
-			ngx.req.set_body_data(data)
-		end,
-		setBodyFile = function(self, filename, bAutoClear)
-			ngx.req.set_body_file(filename, bAutoClear)
-		end,
-		initBody = function(self, bufferSize)
-			ngx.req.init_body(bufferSize)
-		end,
-		appendBody = function(self, dataChunk)
-			ngx.req.append_body(dataChunk)
-		end,
-		finishBody = function()
-			ngx.req.finish_body()
-		end,
-	},
 	__newindex = function(self, key, value)
 		local f = writeables[key]
 		local tp = type(f)
@@ -73,39 +66,43 @@ local Request = {
 			f(value)
 		end
 	end,
+	__call = function(self, key)
+		return table.filter(self.args, key)
+	end
 }
-setmetatable(Request.__index, RequestBase)
+
+local RequestStatics = {
+	clearHeadeer = function()
+		ngx.req.clear_header()
+	end,
+	setBodyData = function(self, data)
+		ngx.req.set_body_data(data)
+	end,
+	setBodyFile = function(self, filename, bAutoClear)
+		ngx.req.set_body_file(filename, bAutoClear)
+	end,
+	initBody = function(self, bufferSize)
+		ngx.req.init_body(bufferSize)
+	end,
+	appendBody = function(self, dataChunk)
+		ngx.req.append_body(dataChunk)
+	end,
+	finishBody = function()
+		ngx.req.finish_body()
+	end,
+}
+	
+local writeables = {
+	method = ngx.req.set_method,
+	uri = ngx.req.set_uri,
+	uriArgs = ngx.req.set_uri_args,
+}
 
 return function(reeme)
-	local request = { 
-		R = reeme, 
-		
-		isInternal = ngx.req.is_internal,
-		startTime = ngx.req.start_time,
-		version = ngx.req.http_version,
-		rawHeader = ngx.req.raw_header,
-		method = ngx.req.request_method,
-		isPost = ngx.req.get_method() == "POST",
-		isSubrequest = ngx.is_subrequest,
-		contentLength = ngx.req.content_length,
-		contentType = ngx.var.content_type,
-		host = ngx.var.host,
-		hostname = ngx.var.hostname,
-		cookie = ngx.var.http_cookie,
-		referer = ngx.var.http_referer,
-		userAgent = ngx.var.http_user_agent,
-		via = ngx.var.http_via,
-		xForwardedFor = ngx.var.http_x_forwarded_for,
-		remoteAddr = ngx.var.remote_addr,
-		remotePort = ngx.var.remote_port,
-		remoteUser = ngx.var.remote_user,
-		remotePassword = ngx.var.remote_passwd,
-		uri = ngx.var.uri,
-		scheme = ngx.var.scheme,
-		status = ngx.status,
-		serverName = ngx.var.server_name,
-		serverAddr = ngx.var.server_addr,
-	}
-	
-	return setmetatable(request, Request)
+	local request = { R = reeme }
+	for k,f in pairs(RequestStatics) do
+		request[k] = f
+	end
+
+	return setmetatable(request, RequestBase)
 end
