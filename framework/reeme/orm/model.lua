@@ -260,9 +260,7 @@ queryexecuter.SELECT = function(self, model, db)
 	queryexecuter.buildWhereJoins(self, sqls, haveWheres)
 	
 	--order by
-	if self.orderBy then
-		sqls[#sqls + 1] = string.format('ORDER BY %s.%s %s', self.alias, self.orderBy.name, self.orderBy.order)
-	end
+	queryexecuter.buildOrder(self, sqls, alias)
 	--limit
 	queryexecuter.buildLimits(self, sqls)
 	
@@ -590,7 +588,6 @@ queryexecuter.buildJoinsCols = function(self, sqls, indient)
 	if cc < 1 then
 		return
 	end
-	
 	if indient == nil then
 		indient = 1
 	end	
@@ -634,6 +631,17 @@ queryexecuter.buildJoinsConds = function(self, sqls, haveOns)
 		sqls[#sqls + 1] = ')'
 		
 		queryexecuter.buildJoinsConds(q, sqls, haveOns)
+	end
+end
+
+queryexecuter.buildOrder = function(self, sqls, alias)
+	if self.orderBy then
+		if type(self.orderBy) == 'string' then
+			sqls[#sqls + 1] = 'ORDER BY'
+			sqls[#sqls + 1] = self.orderBy
+		else
+			sqls[#sqls + 1] = string.format('ORDER BY %s%s %s', alias, 		self.orderBy.name, self.orderBy.order)
+		end
 	end
 end
 
@@ -791,15 +799,19 @@ local queryMeta = {
 		
 		--设置排序
 		order = function(self, field, asc)
-			if not asc then
-				field, asc = field:split(' ', string.SPLIT_TRIM)
-				if asc == nil then asc = 'asc' end
-			end
-			
-			if field and self.__m.fields[field] and asc then
-				asc = asc:lower()
-				if asc == 'asc' or asc == 'desc' then
-					self.orderBy = { name = field, order = asc:upper() }
+			if field:find('[,]+') then
+				self.orderBy = field
+			else
+				if not asc then
+					field, asc = field:split(' ', string.SPLIT_TRIM)
+					if asc == nil then asc = 'asc' end
+				end
+				
+				if field and self.__m.fields[field] and asc then
+					asc = asc:lower()
+					if asc == 'asc' or asc == 'desc' then
+						self.orderBy = { name = field, order = asc:upper() }
+					end
 				end
 			end
 			
