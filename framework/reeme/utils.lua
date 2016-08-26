@@ -250,7 +250,7 @@ local Utils = {
 		end,
 		
 		--network
-		resolveHost = function(name)
+		resolveHost = function(name, returnFirst)
 			if type(name) ~= 'string' then
 				return
 			end
@@ -259,16 +259,24 @@ local Utils = {
 			if hostent == nil then
 				return
 			end
-
-			local i, hosts = 0, {}
-			while i < (hostent.h_length / 4) do
-				local myaddr = ffi.cast('struct myaddr*', hostent.h_addr_list[i])
-				
-				i = i + 1
-				hosts[i] = string.format('%d.%d.%d.%d', myaddr.b1, myaddr.b2, myaddr.b3, myaddr.b4)				
-			end
 			
-			return hosts
+			local total = hostent.h_length / 4
+			if total > 0 then
+				local i, hosts = 0, {}			
+				while i < total do
+					local myaddr = ffi.cast('struct myaddr*', hostent.h_addr_list[i])
+					
+					i = i + 1
+					myaddr = string.format('%d.%d.%d.%d', myaddr.b1, myaddr.b2, myaddr.b3, myaddr.b4)
+					if returnFirst then
+						return myaddr
+					end
+					
+					hosts[i] = myaddr
+				end
+				
+				return hosts
+			end
 		end,
 	},
 }

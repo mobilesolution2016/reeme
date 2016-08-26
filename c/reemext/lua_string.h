@@ -1325,6 +1325,43 @@ static int lua_string_bmfind(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+// 参数1是JSON字符串，返回值有两个，一个是解出来的Table，另外一个是用掉的字符串的长度。如果第2个返回值为nil则表示解析JSON的时候出错了
+// 参数2可以在当{}或[]为空的时候，标识出这是一个Object还是一个Array
+static int lua_string_json(lua_State* L)
+{
+	int top = lua_gettop(L);
+
+	size_t len = 0;
+	int needSetMarker = 0;
+	const char* str = luaL_checklstring(L, 1, &len);
+
+	if (!str || len < 2)
+		return 0;
+
+	if (top >= 2)
+		needSetMarker = 2;
+
+	lua_newtable(L);
+
+	JSONFile f(L);
+	size_t readlen = f.parse(str, len, true, needSetMarker);
+	if (readlen == 0)
+	{
+		// error
+		char err[512], summary[64] = { 0 };
+		
+		f.summary(summary, 63);
+		size_t errl = snprintf(err, 512, "JSON parse error: %s, position is approximately at: %s", f.getError(), summary);
+		
+		lua_pushlstring(L, err, errl);
+		return 1;
+	}
+
+	lua_pushinteger(L, readlen);
+	return 2;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void luaext_string(lua_State *L)
 {
 	const luaL_Reg procs[] = {
@@ -1354,6 +1391,8 @@ static void luaext_string(lua_State *L)
 		{ "bmcompile", &lua_string_bmcompile },
 		// 用编译好的BM字符串进行查找
 		{ "bmfind", &lua_string_bmfind },
+		// Json解码
+		{ "json", &lua_string_json },
 
 		{ NULL, NULL }
 	};

@@ -236,27 +236,112 @@ static inline int compare(const StringPtrKey& s1, const StringPtrKey& s2)
 	return strcmp(s1.pString, s2.pString);
 }
 
+
 //////////////////////////////////////////////////////////////////////////
-// Boyer-Mooer字符串快速查找(str参数如果为NULL则仅预处理sub字符串到preBuf
-extern size_t stringBMSearch(const char* str, size_t strLen, const char* sub, size_t subLen, DBuffer& preBuf);
+template <typename T> class TList;
 
-// URL编码
-extern void stringUrlEncode(const char* str, size_t strLen, DBuffer& outbuf);
-// URL解码
-extern void stringUrlDecode(const char* str, size_t strLen, DBuffer& outbuf);
+template <typename T> class TListNode
+{
+	friend TList;
+private:
+	typedef TListNode<T> Node;
+	typedef TList<T> List;
 
-// base64编码
-extern size_t stringBase64Encode(const void* src, size_t src_len, DBuffer& buf);
-// base64解码
-extern size_t stringBase64Decode(const void* base64code, size_t src_len, DBuffer& buf);
+	List			*m_pOwningList;
+	Node			*m_pNext, *m_pPrevious;
 
-// MD5
-extern "C" void stringMD5(const void* data, unsigned long size, unsigned char* outmd5);
+public:
+	inline TListNode()
+		: m_pNext(NULL), m_pPrevious(NULL), m_pOwningList(NULL)
+	{}
 
-// Slash
-extern void stringSlashesSQ(std::string& out, const char* src, size_t len);
+	inline T* next() const { return static_cast<T*>(m_pNext); }
+	inline T* previous() const { return static_cast<T*>(m_pPrevious); }
+} ;
 
+template <typename T> class TList
+{
+private:
+	typedef TListNode<T> Node;
 
+	TListNode		*m_pFirstNode, *m_pLastNode;
+	size_t			m_nodesCount;
+
+public:
+	inline TList() 
+		: m_pFirstNode(NULL), m_pLastNode(NULL), m_nodesCount(0)
+	{}
+
+	void append(T* node)
+	{
+		Node* n = static_cast<Node*>(node);
+		if (!n || n->m_pOwningList)
+			return ;
+
+		if (m_pLastNode)
+		{
+			m_pLastNode->m_pNext = n;
+			n->m_pPrevious = m_pLastNode;
+			m_pLastNode = n;
+		}
+		else
+		{
+			m_pFirstNode = m_pLastNode = n;
+			n->m_pPrevious = NULL;
+		}
+		n->m_pNext = NULL;
+
+		m_nodesCount ++;
+	}
+
+	void remove(T* node)
+	{
+		Node* n = static_cast<Node*>(node);
+		if (!n || n->m_pOwningList != this)
+			return ;
+
+		Node* pprev = n->m_pPrevious, *nnext = n->m_pNext;
+
+		pprev->m_pNext = nnext;
+		nnext->m_pPrevious = pprev;
+
+		if (pprev == m_pFirstNode)
+			m_pFirstNode = nnext;
+		if (nnext = m_pLastNode)
+			m_pLastNode = pprev;
+
+		n->m_pPrevious = n->m_pNext = NULL;
+		n->m_pOwningList = NULL;
+		m_nodesCount --;
+	}
+
+	T* popFirst()
+	{
+		Node* r = 0;
+		if (m_pFirstNode)
+		{
+			r = m_pFirstNode;
+
+			Node* nnext = r->m_pNext;
+			m_pFirstNode = nnext;
+			if (nnext)
+				nnext->m_pPrevious = NULL;
+			else
+				m_pLastNode = 0;
+
+			r->m_pPrevious = r->m_pNext = NULL;
+			r->m_pOwningList = NULL;
+			m_nodesCount --;
+		}
+
+		return static_cast<T*>(r);
+	}
+
+	inline T* first() const { return static_cast<T*>(m_pFirstNode); }
+	inline T* last() const { return static_cast<T*>(m_pLastNode); }
+
+	inline size_t size() const { return m_nodesCount; }
+};
 
 #ifndef _MSC_VER
 namespace std {

@@ -69,7 +69,7 @@ static int lua_table_filter(lua_State* L)
 	luaL_checktype(L, 1, LUA_TTABLE);
 	int tp = lua_type(L, 2), top = -1;
 
-	if (!lua_isboolean(L, 3) || !lua_toboolean(L, 3))
+	if (tp == LUA_TSTRING && (!lua_isboolean(L, 3) || !lua_toboolean(L, 3)))
 	{
 		lua_newtable(L);
 		top = lua_gettop(L);
@@ -102,7 +102,7 @@ static int lua_table_filter(lua_State* L)
 			if (top != -1)
 			{				
 				lua_pushvalue(L, -1);
-				lua_rawget(L, 1);
+				lua_gettable(L, 1);
 				lua_rawset(L, top);
 			}
 			else
@@ -120,7 +120,7 @@ static int lua_table_filter(lua_State* L)
 			if (top != -1)
 			{
 				lua_pushvalue(L, -1);
-				lua_rawget(L, 1);
+				lua_gettable(L, 1);
 				lua_rawset(L, top);
 			}
 			else
@@ -144,7 +144,7 @@ static int lua_table_filter(lua_State* L)
 				// 值是字符串，用值去查找
 				lua_pushvalue(L, -1);
 				lua_pushvalue(L, -1);
-				lua_rawget(L, 1);
+				lua_gettable(L, 1);
 				lua_rawset(L, top);
 			}
 			else if (lua_isstring(L, -2))
