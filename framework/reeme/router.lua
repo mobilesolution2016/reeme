@@ -5,13 +5,11 @@ return function(uri)
         return 'index', 'index'
     end
 	
-    for v in ngx.re.gmatch(uri , '/([A-Za-z0-9_]+)', "o") do
-        match[#match + 1] = v[1]
-    end
+	local segs = string.split(uri, './', 0, true)
 	
-    if #match == 1 then
-        return match[1], 'index'
+    if #segs == 1 then
+        return segs[1], 'index'
     else
-        return string.lower(table.concat(match, '.', 1, #match - 1)), string.lower(match[#match])
+        return string.lower(table.concat(segs, '.', 1, #segs - 1)), string.lower(segs[#segs])
     end
 end

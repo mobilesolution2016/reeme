@@ -124,7 +124,7 @@ local function lazyLoaderProc(self, key, ...)
 	end
 end
 
-local foreverProcessor = nil
+local preActionProc = nil
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
@@ -143,63 +143,106 @@ local appMeta = {
 				
 				configs = cfgs
 			end
+			
+			return self
 		end,
 		
-		once = function(self, funcs)
-			self.once = funcs
-		end,
-		
-		forever = function(self, funcs)
-			if not foreverProcessor then
-				foreverProcessor = funcs
+		preAction = function(self, func)
+			if type(func) == 'function' then
+				preActionProc = func
 			end
+			
+			return self
+		end,
+		
+		users = function(self, vals)
+			local u = self.users
+			for k,v in pairs(vals) do
+				u[k] = v
+			end
+			return self
+		end,
+		
+		--加载控制器，返回控制器实例和要执行的动作函数
+		loadController = function(self, path, act)
+			local dirs = configs.dirs
+			local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
+			
+			if type(controlNew) ~= 'function' then
+				error(string.format('controller %s must return a function that has action functions', path))
+			end
+			
+			local c = controlNew(act)
+			local mth = c[act .. 'Action']
+			local cm = getmetatable(c)			
+
+			local metacopy = { __index = { __reeme = c } }
+			setmetatable(metacopy.__index, application)
+
+			if cm then
+				if type(cm.__index) == 'function' then
+					error(string.format("the __index of controller[%s]'s metatable must be a table", path))
+				end
+				
+				cm.__call = lazyLoaderProc
+				setmetatable(cm.__index, metacopy)
+			else
+				metacopy.__call = lazyLoaderProc
+				setmetatable(c, metacopy)
+			end
+
+			rawset(c, "_lazyLoaders", { })
+			
+			return c, mth
 		end,
 		
 		run = function(self)
 			--require('mobdebug').start('192.168.3.13')
+			local c
 			local ok, err = pcall(function()
 				local router = configs.router or require("reeme.router")
-				local uri = ngx.var.uri
-				local path, act = router(uri)
-				local dirs = configs.dirs
+				local path, act = router(ngx.var.uri)
+				local mth
 				
-				local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
-				
-				if type(controlNew) ~= 'function' then
-					error(string.format('controller %s must return a function that has action functions', path))
-				end
-				
-				act = act .. 'Action'
-				c = controlNew(act)
-				if not c[act] then
+				--载入控制器
+				c, mth = self:loadController(path, act)
+								
+				local r
+				if preActionProc then
+					--执行动作前响应函数
+					r = preActionProc(self, c, act, mth)
+					local tp = type(r)
+
+					if tp == 'table' then
+						if r.response then
+							mth = nil
+							r = r.response
+						elseif r.controller then
+							c, mth = r.controller, r.method
+						elseif r.method then
+							mth = r.method
+						end
+					elseif tp == 'string' then
+						mth = nil
+						ngx.say(r)
+					end
+					
+				elseif not mth then
+					--如果没有动作前响应函数又没有动作，那么就报错
 					error(string.format("the action %s of controller %s undefined", act, path))
 				end
 
-				local cm = getmetatable(c)
-
-				local metacopy = { __index = { __reeme = c } }
-				setmetatable(metacopy.__index, application)
-
-				if cm then
-					if type(cm.__index) == 'function' then
-						error(string.format("the __index of controller[%s]'s metatable must be a table", path))
+				--执行动作
+				if mth then
+					if self.users then
+						for k,v in pairs(self.users) do
+							rawset(c, k, v)
+						end
+						self.users = nil
 					end
 					
-					cm.__call = lazyLoaderProc
-					setmetatable(cm.__index, metacopy)
-				else
-					metacopy.__call = lazyLoaderProc
-					setmetatable(c, metacopy)
+					r = mth(c)
 				end
-
-				rawset(c, "_lazyLoaders", { })
-
-				local fPreResponse = self.once.preResponse or foreverProcessor.preResponse
-				if type(fPreResponse) == "function" then
-					fPreResponse(c)
-				end
-
-				local r = c[act](c)
 				if r then
 					local tp = type(r)
 
@@ -207,12 +250,11 @@ local appMeta = {
 						ngx.say(getmetatable(r) and r:content() or c.utils.jsonEncode(r))
 					elseif tp == 'string' then
 						ngx.say(r)
-					elseif tp == 'boolean' then
 					end
 				end
 				--require('mobdebug').done()
 			end)
-			
+
 			if not ok then
 				local msg = err.msg
 				local msgtp = type(msg)
@@ -239,5 +281,5 @@ local appMeta = {
 }
 
 return function()
-	return setmetatable({ once = { } }, appMeta)
+	return setmetatable({ users = { } }, appMeta)
 end
