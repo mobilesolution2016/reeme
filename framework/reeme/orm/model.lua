@@ -460,9 +460,11 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 					v = nil
 				end
 			elseif v == nil then
-				if cfg.null then
+				if cfg.default then
+					v = cfg.default
+				elseif cfg.null then
 					v = 'NULL'
-				elseif cfg.default then
+				else
 					v = cfg.type == 1 and "''" or '0'
 				end
 			elseif v == ngx.null then
@@ -819,6 +821,11 @@ local queryMeta = {
 		end,
 		--限制数量
 		limit = function(self, start, total)
+			if (start or total) == nil then
+				self.limitStart, self.limitTotal = nil, nil
+				return self
+			end	
+			
 			local tp = type(total)
 			if tp == 'string' then
 				total = tonumber(total)
@@ -927,7 +934,13 @@ local modelMeta = {
 			end
 			
 			return q:exec()
-		end,		
+		end,
+		findAll = function(self, p1, p2, p3, p4)
+			local r = self:find(p1, p2, p3, p4)
+			if r then
+				return r(true)
+			end			
+		end,
 		findFirst = function(self, name, val)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)

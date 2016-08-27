@@ -7,7 +7,7 @@ end
 
 --print is use writes argument values into the nginx error.log file with the ngx.NOTICE log level
 		
-local baseapi = {
+local copybasees = {
 	statusCode = {
 		HTTP_CONTINUE = ngx.HTTP_CONTINUE, --100
 		HTTP_SWITCHING_PROTOCOLS = ngx.HTTP_SWITCHING_PROTOCOLS, --101
@@ -81,19 +81,17 @@ local baseapi = {
 
 local loadables = { cookie = 1, orm = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1 }
 local application = {
-	__index = function(self, key)
-		local f = baseapi[key]
-		if f then
-			return f
-		end
-		
+	__index = function(self, key)	
 		f = loadables[key]
 		if f == 1 then
 			f = require(string.format('reeme.%s', key))
 			if type(f) == 'function' then
-				local r = f(self.__reeme)
-				rawset(self.__reeme, key, r)
+				local reeme = self.__reeme
+				local r = f(reeme)
+
+				rawset(reeme, key, r)
 				loadables[key] = f
+				
 				return r
 			end
 			
@@ -101,6 +99,12 @@ local application = {
 			local r = f(self.__reeme)
 			rawset(self, key, r)
 			return r
+		end
+		
+		local f = self.__commonBase[key]
+		if f then
+			rawset(self.__reeme, key, f)
+			return f
 		end
 	end,
 }
@@ -155,7 +159,7 @@ local appMeta = {
 			return self
 		end,
 		
-		users = function(self, vals)
+		addUsers = function(self, vals)
 			local u = self.users
 			for k,v in pairs(vals) do
 				u[k] = v
@@ -163,10 +167,15 @@ local appMeta = {
 			return self
 		end,
 		
+		setControllerBase = function(self, tbl)
+			self.controllerBase = tbl
+			return self
+		end,
+		
 		--加载控制器，返回控制器实例和要执行的动作函数
 		loadController = function(self, path, act)
 			local dirs = configs.dirs
-			local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, string.gsub(path, '_', '.')))
+			local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, path:gsub('/', '.')))
 			
 			if type(controlNew) ~= 'function' then
 				error(string.format('controller %s must return a function that has action functions', path))
@@ -174,9 +183,20 @@ local appMeta = {
 			
 			local c = controlNew(act)
 			local mth = c[act .. 'Action']
-			local cm = getmetatable(c)			
+			local cm = getmetatable(c)
 
-			local metacopy = { __index = { __reeme = c } }
+			local metacopy = { __index = { 
+				__reeme = c, 
+				__commonBase = self.controllerBase or {}, 
+				
+				statusCode = copybasees.statusCode,
+				method = copybasees.method,
+				logLevel = copybasees.logLevel,
+				getConfigs = copybasees.getConfigs,
+				
+				currentControllerName = path,
+				currentRequestAction = act
+			} }
 			setmetatable(metacopy.__index, application)
 
 			if cm then

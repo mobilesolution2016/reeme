@@ -68,6 +68,7 @@ viewMeta.__index = {
 		--切换meta
 		local meta = { __index = {
 			self = self,
+			reeme = self.__reeme,
 			subtemplate = loadSubtemplate
 		}}
 		setmetatable(meta.__index, { __index = _G })

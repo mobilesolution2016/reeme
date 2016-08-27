@@ -107,7 +107,7 @@ static int lua_table_filter(lua_State* L)
 			}
 			else
 			{
-				lua_rawget(L, 1);
+				lua_gettable(L, 1);
 			}
 			ptr = endp + 1;
 			cc ++;
@@ -125,7 +125,7 @@ static int lua_table_filter(lua_State* L)
 			}
 			else
 			{
-				lua_rawget(L, 1);
+				lua_gettable(L, 1);
 			}
 			cc ++;
 		}
