@@ -91,7 +91,7 @@ public:
 	{\
 		uint8_t ch = pReadPos[0];\
 		if (ch > 32)\
-			return pReadPos;\
+			break;\
 		if (json_invisibles_allowed[ch] != 1)\
 		{\
 			m_iErr = kErrorSymbol;\
@@ -376,6 +376,7 @@ private:
 				if (!pReadPos)
 					return 0;
 
+				pReadPos ++;
 				SKIP_WHITES();
 
 				attr->name.end();		
@@ -660,8 +661,10 @@ private:
 				if (m_nOpens == 0 || m_opens[m_nOpens - 1] != JATArray)
 					return 0;
 
-				onNodeEnd(true);
+				m_nOpens --;
 				pReadPos ++;
+
+				onNodeEnd(true);				
 				break;
 			}
 			else if (ch == '"' || json_value_char_tbl[ch] <= 2 || json_value_char_tbl[ch] >= 4)

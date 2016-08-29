@@ -188,9 +188,10 @@ local processOn = function(self, condType, k, v)
 end
 
 --解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
-local processWhereFullString = function(self, alias, src)
+local processTokenedString = function(self, alias, src, joinFrom)
 	local fields = self.__m.__fields
 	local sql, adjust = src.n, 0
+	local n1, n2 = self.__m.__name, joinFrom and joinFrom.__m.__name or nil
 
 	if type(sql) == 'number' then
 		sql = src.v[1]
@@ -204,6 +205,7 @@ local processWhereFullString = function(self, alias, src)
 		return sql
 	end
 
+	local drops = 0
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
 		if one then
@@ -212,14 +214,23 @@ local processWhereFullString = function(self, alias, src)
 				newone = ngx.quote_sql_str(one:sub(2, -2))
 			elseif fields[one] then
 				--这是一个字段的名称
-				newone = alias .. one
+				newone = drops > 0 and one or alias .. one
+			elseif one == n1 then
+				newone = ''
+				one = one .. '.'
+			elseif one == n2 then
+				newone = joinFrom.alias
+				drops = 2
 			end
 		end
+		
 		if newone then
 			--替换掉最终的表达式
 			sql = sql:subreplace(newone, poses[i] + adjust, #one)
 			adjust = adjust + #newone - #one
 		end
+		
+		drops = drops - 1
 	end
 	
 	return sql
@@ -334,6 +345,7 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	local excepts, express = nil, nil
 	if self.expressions then
 		local fields, func = self.__m.__fields, self.__reeme.orm.parseExpression
+		local tbname = self.__m.__name
 		
 		for i=1, #self.expressions do
 			local expr = self.expressions[i]
@@ -369,6 +381,10 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 						elseif removeColFromExpWhen[one:lower()] then
 							--遇到这些定义的表达式，这个表达式所关联的字段就不会再在字段列表中出现
 							removeCol = true
+							
+						elseif one == tbname then
+							newone = alias
+							one = one .. '.'
 						end
 
 						if newone then
@@ -390,10 +406,10 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	if not excepts then
 		excepts = self.colExcepts
 	end
-
-	--如果imde指定只获取哪些列，那么就获取所有的列，当然，要去掉表达式中已经使用了的列
+	
 	local cols
 	if self.colSelects then
+		--只获取某几列
 		local plains = {}
 		if excepts then			
 			for k,v in pairs(self.colSelects) do
@@ -406,32 +422,35 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 				plains[#plains + 1] = k
 			end
 		end
-		
+
 		cols = table.concat(plains, ',' .. alias)		
-	else
+		
+	elseif excepts then
+		--只排除掉某几列
+		local fps = {}
 		local fieldPlain = model.__fieldsPlain
-		if excepts then
-			local fps = {}
-			for i = 1, #fieldPlain do
-				local n = fieldPlain[i]
-				if not excepts[n] then
-					fps[#fps + 1] = n
-				end
+		
+		for i = 1, #fieldPlain do
+			local n = fieldPlain[i]
+			if not excepts[n] then
+				fps[#fps + 1] = n
 			end
-			fieldPlain = fps
 		end
 		
-		cols = table.concat(fieldPlain, ',' .. alias)
-	end
-	
+		cols = #fps > 0 and table.concat(fps, ',' .. alias) or '*'
+	else
+		--所有列
+		cols = '*'
+	end	
+
 	if #alias > 0 then
 		cols = #cols > 0 and (alias .. cols) or ''
 	end
 	if express then
 		cols = #cols > 0 and string.format('%s,%s', express, cols) or express
 	end
-	
-	if #cols > 2 then
+
+	if #cols > 0 then
 		if returnCols == true then
 			return cols
 		end
@@ -497,21 +516,25 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 end
 
 
+--如果condValues非nil，说明现在处理的不是self代表的query自己的条件
 queryexecuter.buildWheres = function(self, sqls, condPre, alias, condValues)
-	if self.condString then
-		if condPre then
-			sqls[#sqls + 1] = condPre
-		end
-		sqls[#sqls + 1] = self.condString
-		return true
-	end
-
 	if not alias then alias = '' end
+	
 	if not condValues then
+		if self.condString then
+			if condPre then
+				sqls[#sqls + 1] = condPre
+			end
+			sqls[#sqls + 1] = self.condString
+			return true
+		end
+		
 		condValues = self.condValues
 	end
+	
 	if condValues and #condValues > 0 then
 		local wheres, conds = {}, queryexecuter.conds
+		local joinFrom = self.joinFrom
 		
 		for i = 1, #condValues do
 			local one, rsql = condValues[i], nil
@@ -525,7 +548,7 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias, condValues)
 				local subq = one.sub
 				subq.limitStart, subq.limitTotal = nil, nil
 				
-				local expr = processWhereFullString(self, alias, one)
+				local expr = processTokenedString(self, alias, one, joinFrom)
 				local subsql = queryexecuter.SELECT(subq, subq.__m, self.db)
 				
 				if subsql then
@@ -546,14 +569,14 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias, condValues)
 				
 				if tp == 'table' then
 					if type(one.n) == 'number' then
-						rsql = processWhereFullString(self, alias, one)
+						rsql = processTokenedString(self, alias, one, joinFrom)
 					else
 						rsql = string.format("%s%s%s %s", conds[one.c], alias, key, one.v[1])
 					end
 				elseif tp ~= 'nil' then
 					rsql = string.format("%s%s%s%s", conds[one.c], alias, key, one.v)
 				elseif one.tokens then
-					rsql = string.format("%s%s", conds[one.c], processWhereFullString(self, alias, one))
+					rsql = string.format("%s%s", conds[one.c], processTokenedString(self, alias, one, joinFrom))
 				else
 					rsql = string.format("%s%s", conds[one.c], key)
 				end
@@ -580,8 +603,10 @@ queryexecuter.buildWhereJoins = function(self, sqls, haveWheres)
 	end
 
 	for i = 1, cc do
-		local q = self.joins[i].q		
+		local q = self.joins[i].q
+		q.joinFrom = self
 		queryexecuter.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.')
+		q.joinFrom = nil
 	end
 end
 
@@ -622,6 +647,8 @@ queryexecuter.buildJoinsConds = function(self, sqls, haveOns)
 	for i = 1, cc do
 		local join = self.joins[i]
 		local q = join.q
+		
+		q.joinFrom = self
 
 		sqls[#sqls + 1] = validJoins[join.type]
 		sqls[#sqls + 1] = q.__m.__name
@@ -631,6 +658,8 @@ queryexecuter.buildJoinsConds = function(self, sqls, haveOns)
 			sqls[#sqls + 1] = '1'
 		end
 		sqls[#sqls + 1] = ')'
+		
+		q.joinFrom = nil
 		
 		queryexecuter.buildJoinsConds(q, sqls, haveOns)
 	end
@@ -774,11 +803,20 @@ local queryMeta = {
 				return self
 			end
 
+			local tbname = query.__m.__name
 			local j = { q = query, type = jt, on = self.joinOn }
+			
 			if not self.joins then
 				self.joins = { j }
+				
 			else
-				self.joins[#self.joins + 1] = j
+				local joins = self.joins
+				for i = 1, #joins do
+					if joins[i].q == query then
+						return self
+					end
+				end
+				joins[#joins + 1] = j
 			end
 			return self
 		end,
@@ -892,6 +930,12 @@ local queryMeta = {
 				return { rows = res.affected_rows, insertid = res.insert_id }
 			end
 		end,
+		
+		--执行并返回全部结果集。与exec所不同的是，返回的是所有行，并且在没有结果集的时候返回的是一个空的table
+		fetchAll = function(self, db, result)
+			local r = self:exec(db, result)
+			return r and r(true) or {}
+		end,
 	}
 }
 
@@ -956,6 +1000,11 @@ local modelMeta = {
 		update = function(self)
 			local q = { __m = self, __reeme = self.__reeme, op = 'UPDATE', limitStart = 0, limitTotal = 50 }
 			return setmetatable(q, queryMeta)
+		end,
+		
+		expression = function(self, expr)
+			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT', limitStart = 0, limitTotal = 50 }
+			return setmetatable(q, queryMeta):expr(expr):columns()
 		end,
 		
 		getField = function(self, name)

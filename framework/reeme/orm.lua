@@ -4,6 +4,7 @@ local validIndex = { primary = 1, unique = 2, index = 3 }
 local modelmeta = require('reeme.orm.model')
 
 local parseFields = function(m)
+	local aiExists = false
 	local fields, plains, indices = {}, {}, {}
 	
 	for k,v in pairs(m.fields) do
@@ -16,6 +17,11 @@ local parseFields = function(m)
 				allownull = true
 			elseif first == 42 then --*
 				v = v:sub(2)
+				if aiExists then
+					return false
+				end
+				
+				aiExists = true
 				isai = true
 			end
 			

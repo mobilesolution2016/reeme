@@ -865,6 +865,7 @@ static const char templReturnCode[] = { "\nreturn table.concat(__ret__, '')\nend
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
 static const char tenplAddstrCode[] = { "__ret__[#__ret__+1]=[==[" };
 static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
+static const char templErrTipCode[] = { ", the full template parsed code: <br/><br/>\r\n\r\n" };
 
 class TemplateParser
 {
@@ -923,22 +924,32 @@ public:
 
 			foundPos ++;
 			ch = foundPos[0];
+
+			if (ch <= 32)
+			{
+				append(foundPos - src - offset);
+				offset = pos + 1;
+				goto _lastcheck;
+			}
+
 			if (ch == '\\')
 			{
-				// 大括号转义
-				add = pos - offset + 1;
-				if (pos >= offset && append(add) != add)
+				ch = foundPos[1];
+				if (ch == '=' || ch == ':' | ch == '%')
 				{
-					savedPos = foundPos;
-					return true;
+					// 大括号转义
+					add = pos - offset + 1;
+					if (pos >= offset && append(add) != add)
+					{
+						savedPos = foundPos;
+						return true;
+					}
 				}
 
 				offset = pos + 2;
 				continue;
 			}
-
-			// 如果是取变量，则是$或=，否则就只能是%，否则认为不是模板语法			
-			if (ch == '=' || ch == ':')
+			else if (ch == '=' || ch == ':')
 			{
 				add = pos - offset;
 				if (pos >= offset && append(add) != add)
@@ -1153,6 +1164,19 @@ static const char *lua_tpl_loader(lua_State *L, void *ud, size_t *size)
 	
 	return ctx->buf.c_str();
 }
+static void _init_TemplateParser(TemplateParser& parser, const char* src, size_t srcLen)
+{
+	parser.savedPos = 0;
+	parser.errorStart = 0;
+	parser.src = src;
+	parser.srcLen = srcLen;
+	parser.offset = 0;
+	parser.bracketOpened = false;
+	parser.wrote = sizeof(templInitCode) - 1;
+
+	parser.buf.reserve(TP_FIXED);
+	parser.buf.append(templInitCode, parser.wrote);
+}
 static int lua_string_parsetemplate(lua_State* L)
 {
 	luaL_checktype(L, 1, LUA_TTABLE);
@@ -1166,16 +1190,7 @@ static int lua_string_parsetemplate(lua_State* L)
 		chunkName = lua_tostring(L, 3);
 
 	TemplateParser parser;	
-	parser.savedPos = 0;
-	parser.errorStart = 0;
-	parser.src = src;
-	parser.srcLen = srcLen;
-	parser.offset = 0;
-	parser.bracketOpened = false;
-	parser.wrote = sizeof(templInitCode) - 1;
-
-	parser.buf.reserve(TP_FIXED);
-	parser.buf.append(templInitCode, parser.wrote);
+	_init_TemplateParser(parser, src, srcLen);
 
 	if (hasEnv)
 	{
@@ -1190,7 +1205,32 @@ static int lua_string_parsetemplate(lua_State* L)
 
 			lua_pushlstring(L, msg.c_str(), msg.length());
 		}
-		else if (r == 0 && lua_isfunction(L, -1))
+		else if (r)
+		{
+			// 出错，将错误信息组合起来
+			size_t len = 0;
+			luaL_Buffer buf;
+			TemplateParser fullcode;
+			const char* err = lua_tolstring(L, -1, &len);
+
+			_init_TemplateParser(fullcode, src, srcLen);					
+			
+			luaL_buffinit(L, &buf);
+			lua_string_addbuf(&buf, err, len);
+			lua_string_addbuf(&buf, templErrTipCode, sizeof(templErrTipCode) - 1);
+
+			for (;;)
+			{
+				const char* ss = lua_tpl_loader(L, &fullcode, &len);
+				if (!ss || len == 0)
+					break;
+
+				lua_string_addbuf(&buf, ss, len);
+			}
+
+			luaL_pushresult(&buf);
+		}
+		else if (lua_isfunction(L, -1))
 		{
 			r = lua_pcall(L, 0, 1, 0);
 			if (r == 0)
@@ -1330,6 +1370,8 @@ static int lua_string_bmfind(lua_State* L)
 static int lua_string_json(lua_State* L)
 {
 	int top = lua_gettop(L);
+	if (!lua_isstring(L, 1))
+		return 0;
 
 	size_t len = 0;
 	int needSetMarker = 0;

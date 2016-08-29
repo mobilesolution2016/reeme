@@ -218,16 +218,14 @@ local appMeta = {
 		
 		run = function(self)
 			--require('mobdebug').start('192.168.3.13')
-			local c
 			local ok, err = pcall(function()
 				local router = configs.router or require("reeme.router")
 				local path, act = router(ngx.var.uri)
-				local mth
+				local c, mth, r
 				
 				--载入控制器
 				c, mth = self:loadController(path, act)
-								
-				local r
+				
 				if preActionProc then
 					--执行动作前响应函数
 					r = preActionProc(self, c, act, mth)
@@ -273,6 +271,12 @@ local appMeta = {
 					end
 				end
 				--require('mobdebug').done()
+				
+				local lazyLoaders = rawget(c, "_lazyLoaders")
+				for k, v in pairs(lazyLoaders) do
+					k(c, v)
+				end
+				c = nil
 			end)
 
 			if not ok then
@@ -288,14 +292,6 @@ local appMeta = {
 
 				ngx.eof()
 			end
-			
-			local lazyLoaders = rawget(c, "_lazyLoaders")
-			for k, v in pairs(lazyLoaders) do
-				k(c, v)
-			end
-			
-			metacopy = nil
-			c = nil
 		end,
 	}
 }

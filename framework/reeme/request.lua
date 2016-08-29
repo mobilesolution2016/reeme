@@ -73,7 +73,25 @@ local RequestBase = {
 		end
 	end,
 	__call = function(self, key)
-		return table.filter(self.args, key)
+		local args = self.args
+		if type(key) == 'table' then
+			local cc = #keys
+			if cc > 0 then
+				local r = {}
+				for i = 1, #keys do
+					local k = keys[i]
+					r[k] = args[k]
+				end
+				return r
+			else
+				for k,v in pairs(keys) do
+					keys[k] = args[k]
+				end
+				return keys
+			end
+		end
+		
+		return table.filter(args, key)
 	end
 }
 
