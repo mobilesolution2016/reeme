@@ -6,17 +6,20 @@ static int lua_sql_expression_parse(lua_State* L)
 		TString,
 	};
 
-	uint8_t m;
-	int cc = 0, slashes = 0;
+	uint8_t m;	
 	TokenChecker kToken = TNone;
 	size_t i, len = 0, prevpos = 0;
 	const char* sql = luaL_checklstring(L, 1, &len);
+	int cc = 0, slashes = 0, top = lua_gettop(L), r1 = 2, r2 = 3;
+	
+	if (top == 1)
+	{
+		lua_createtable(L, 4, 0);
+		r1 = lua_gettop(L);
 
-	lua_newtable(L);
-	int r1 = lua_gettop(L);
-
-	lua_newtable(L);
-	int r2 = r1 + 1;
+		lua_createtable(L, 4, 0);
+		r2 = r1 + 1;
+	}
 
 	for (i = 0; i < len; ++ i)
 	{
@@ -80,6 +83,12 @@ static int lua_sql_expression_parse(lua_State* L)
 
 		lua_pushinteger(L, prevpos + 1);
 		lua_rawseti(L, r2, cc);
+	}
+
+	if (top == 3)
+	{
+		lua_pushinteger(L, cc);
+		return 3;
 	}
 
 	return 2;

@@ -11,6 +11,8 @@
 	__m指向model原型
 ]]
 
+local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
+
 
 --处理where条件的值，与field字段的配置类型做比对，然后根据是否有左右引号来决定是否要做反斜杠处理
 local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
@@ -64,65 +66,52 @@ end
 
 --解析一个where条件，本函数被processWhere调用
 local parseWhere = function(self, condType, name, value)
-	local tokens, poses = nil, nil
-	local fields, valok = self.__m.__fields, false
-
 	self.condString = nil	--condString和condValues同一时间只会存在一个，只有一个是可以有效的
 	if not self.condValues then
 		self.condValues = {}
 	end
 
+	name = name:trim()
+	
 	if value == nil then
 		--name就是整个表达式
-		name = name:trim()
-		if type(name) == 'string' then
-			tokens, poses = self.__reeme.orm.parseExpression(name)
-		end
-		
-		return tokens and { n = name, c = condType, tokens = tokens, poses = poses } or nil
+		return { expr = name, c = condType }
 	end
 	
-	if type(value) == 'table' then
-		name = name:trim()
-		local keyname = name:match('^[0-9A-Za-z-_]+')
-		if not keyname or #keyname == #name then
-			keyname = nil
-		end
-
+	puredkeyname = name:match('^[0-9A-Za-z-_]+')
+	if puredkeyname and #puredkeyname == #name then
+		--key没有多余的符号，只是一个纯粹的列名
+		puredkeyname = true
+	else
+		puredkeyname = false
+	end
+	
+	local tv = type(value)
+	if tv == 'table' then
 		if not getmetatable(value) then
 			--{value}这种表达式
-			tokens, poses = self.__reeme.orm.parseExpression(value[1])
-			return tokens and { key = keyname, n = name, v = value, c = condType, tokens = tokens, poses = poses } or nil
-			
-		else
-			--子查询
-			return { key = keyname, n = name, sub = value, c = condType }
+			assert(#value > 0)
+			return { expr = puredkeyname and string.format('%s=%s', name, value[1]) or value[1], c = condType }
 		end
 		
-		return nil
+		--子查询
+		return { puredkeyname = puredkeyname, n = name, sub = value, c = condType }
 	end
 
 	if type(name) == 'string' then
-		--key=value或key={value}这种表达式
-		local keyname
-		
-		name = name:trim()
-		keyname = name:match('^[0-9A-Za-z-_]+')
-		if not keyname or #keyname == #name then
-			keyname = nil
-		end
-		
-		local f = fields[keyname or name]
-		if f then
-			local tv = type(value)
-			local tokens, poses = { }, { }
-			if tv == "string" then
-				tokens, poses = self.__reeme.orm.parseExpression(value)
-				value = ngx.quote_sql_str(value)
-			end
+		--key=value
+		if tv == 'string' then
+			value = ngx.quote_sql_str(value)
 			
-			return tokens and { key = keyname, n = name, v = value, c = condType, tokens = tokens, poses = poses } or nil
+		elseif puredkeyname then
+			local f = self.__m.__fields[name]
+			if f and f.type == 1 then
+				--如果是字段是字符串类型，则自动转字符串
+				value = ngx.quote_sql_str(tostring(value))
+			end
 		end
+		
+		return { expr = puredkeyname and string.format('%s=%s', name, value) or (name .. value), c = condType }
 	end
 end
 
@@ -135,7 +124,7 @@ local processWhere = function(self, condType, k, v)
 			if where then
 				self.condValues[#self.condValues + 1] = where
 			else
-				error(string.format("process where(%s) function call failed: illegal value or confilict with declaration of model fields", name))
+				error(string.format("process where(%s) function with illegal value(s) call", name))
 			end
 		end
 		return self
@@ -149,7 +138,7 @@ local processWhere = function(self, condType, k, v)
 	if where then
 		self.condValues[#self.condValues + 1] = where
 	else
-		error(string.format("process where(%s) function call failed: illegal value or confilict with declaration of model fields", name))
+		error(string.format("process where(%s) function with illegal value(s) call", name))
 	end
 	return self
 end
@@ -188,19 +177,17 @@ local processOn = function(self, condType, k, v)
 end
 
 --解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
-local processTokenedString = function(self, alias, src, joinFrom)
-	local fields = self.__m.__fields
-	local sql, adjust = src.n, 0
-	local n1, n2 = self.__m.__name, joinFrom and joinFrom.__m.__name or nil
-
-	if type(sql) == 'number' then
-		sql = src.v[1]
-	end
+local processTokenedString = function(self, alias, expr, joinFrom)
 	if #alias == 0 then
-		return sql
+		return expr
 	end
 
-	local tokens, poses = src.tokens, src.poses
+	local fields = self.__m.__fields
+	local sql, adjust = expr, 0
+	local n1, n2 = self.__m.__name, joinFrom and joinFrom.__m.__name or nil
+	local names = self.joinNames
+	
+	local tokens, poses = _parseExpression(sql)
 	if not tokens or not poses then
 		return sql
 	end
@@ -209,10 +196,7 @@ local processTokenedString = function(self, alias, src, joinFrom)
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
 		if one then
-			if one:byte(1) == 39 then
-				--这是一个字符串
-				newone = ngx.quote_sql_str(one:sub(2, -2))
-			elseif fields[one] then
+			if fields[one] then
 				--这是一个字段的名称
 				newone = drops > 0 and one or alias .. one
 			elseif one == n1 then
@@ -221,6 +205,9 @@ local processTokenedString = function(self, alias, src, joinFrom)
 			elseif one == n2 then
 				newone = joinFrom.alias
 				drops = 2
+			elseif names then
+				local q = names[one]
+				newone = q and self.joinNames[one].alias or nil
 			end
 		end
 		
@@ -344,7 +331,7 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	--加入所有的表达式
 	local excepts, express = nil, nil
 	if self.expressions then
-		local fields, func = self.__m.__fields, self.__reeme.orm.parseExpression
+		local fields = self.__m.__fields
 		local tbname = self.__m.__name
 		
 		for i=1, #self.expressions do
@@ -352,7 +339,7 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 			
 			if type(expr) == 'string' then
 				local adjust = 0
-				local tokens, poses = func(expr)
+				local tokens, poses = _parseExpression(expr)
 				if tokens then
 					local removeCol = false
 					for k=1,#tokens do
@@ -541,45 +528,26 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias, condValues)
 			
 			if i > 1 and one.c == 1 then
 				one.c = 2
-			end
+			end			
 			
 			if one.sub then
 				--子查询
 				local subq = one.sub
 				subq.limitStart, subq.limitTotal = nil, nil
 				
-				local expr = processTokenedString(self, alias, one, joinFrom)
+				local expr = processTokenedString(self, alias, one.n, joinFrom)
 				local subsql = queryexecuter.SELECT(subq, subq.__m, self.db)
 				
 				if subsql then
-					if one.keyname then
-						rsql = string.format('%s(%s)', expr, subsql)
-					else
+					if one.puredkeyname then
 						rsql = string.format('%s IN(%s)', expr, subsql)
+					else
+						rsql = string.format('%s(%s)', expr, subsql)
 					end
 				end
 				
 			else
-				local tp = type(one.v)
-				local key = one.n
-				
-				if not one.key then
-					key = key .. '='
-				end
-				
-				if tp == 'table' then
-					if type(one.n) == 'number' then
-						rsql = processTokenedString(self, alias, one, joinFrom)
-					else
-						rsql = string.format("%s%s%s %s", conds[one.c], alias, key, one.v[1])
-					end
-				elseif tp ~= 'nil' then
-					rsql = string.format("%s%s%s%s", conds[one.c], alias, key, one.v)
-				elseif one.tokens then
-					rsql = string.format("%s%s", conds[one.c], processTokenedString(self, alias, one, joinFrom))
-				else
-					rsql = string.format("%s%s", conds[one.c], key)
-				end
+				rsql = conds[one.c] .. processTokenedString(self, alias, one.expr, joinFrom)
 			end
 
 			wheres[#wheres + 1] = rsql
@@ -808,16 +776,14 @@ local queryMeta = {
 			
 			if not self.joins then
 				self.joins = { j }
+				self.joinNames = { }
+				self.joinNames[tbname] = query
 				
-			else
-				local joins = self.joins
-				for i = 1, #joins do
-					if joins[i].q == query then
-						return self
-					end
-				end
-				joins[#joins + 1] = j
+			elseif not self.joinNames[tbname] then
+				self.joins[#self.joins + 1] = j
+				self.joinNames[tbname] = query
 			end
+			
 			return self
 		end,
 		
@@ -889,8 +855,7 @@ local queryMeta = {
 			return self
 		end,
 		
-		--执行并返回结果集，
-		exec = function(self, db, result)
+		execute = function(self, db, result)
 			if db then
 				if type(db) == 'string' then
 					db = self.__reeme(db)
@@ -913,28 +878,50 @@ local queryMeta = {
 			local ormr = require('reeme.orm.result')
 			local sqls = queryexecuter[self.op](self, model, db)
 			
-			if not sqls then
-				return nil
+			if sqls then			
+				--[[local f = io.open('d:/sqls.txt', 'w+')
+				f:write(sqls .. '\n')
+				f:close()]]
+				
+				result = ormr.init(result, model)
+				res = ormr.query(result, db, sqls, self.limitTotal or 10)
 			end
-			--ngx.say(sqls, '<br/>')
 			
-			result = ormr.init(result, model)
-			local res = ormr.query(result, db, sqls, self.limitTotal or 10)
-
 			self.__vals = nil
+			return res, res and result or nil
+		end,
+		
+		--执行并取第一行，如果都成功，则返回结果集本身
+		exec = function(self, db, result)
+			local res, r = self:execute(db, result)
 			if res then
 				if self.op == 'SELECT' then
-					return result + 1 and result or nil
+					return r + 1 and r or nil
 				end
 				
 				return { rows = res.affected_rows, insertid = res.insert_id }
 			end
 		end,
 		
-		--执行并返回全部结果集。与exec所不同的是，返回的是所有行，并且在没有结果集的时候返回的是一个空的table
+		--查询并返回所有行，并且在没有结果集或不是查询指令的时候返回的是一个空的table而非nil
 		fetchAll = function(self, db, result)
-			local r = self:exec(db, result)
-			return r and r(true) or {}
+			if self.op == 'SELECT' then
+				local res, r = self:execute(db, result)	
+				if res then
+					return r + 1 and r(true) or {}
+				end
+			end
+			return {}
+		end,
+		--查询并返回第一行，并且在没有结果集或不是查询指令的时候返回的是一个空的table而非nil
+		fetchFirst = function(self, db, result)
+			if self.op == 'SELECT' then
+				local res, r = self:execute(db, result)
+				if res then
+					return r + 1 and r(false) or {}
+				end
+			end
+			return {}
 		end,
 	}
 }
