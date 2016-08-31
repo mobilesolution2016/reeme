@@ -205,6 +205,25 @@ static int lua_table_val2key(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_table_new(lua_State* L)
+{
+	int t = lua_gettop(L), narr, nrec;
+
+	if (t == 1)
+	{
+		narr = luaL_optinteger(L, 1, 4);
+	}
+	else
+	{
+		narr = luaL_optinteger(L, 1, 4);
+		nrec = luaL_optinteger(L, 2, 0);
+	}
+
+	lua_createtable(L, narr, nrec);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void luaext_table(lua_State *L)
 {
 	const luaL_Reg procs[] = {
@@ -220,23 +239,35 @@ static void luaext_table(lua_State *L)
 		{ NULL, NULL }
 	};
 
-
 	lua_getglobal(L, "table");
 
 	luaL_register(L, NULL, procs);
 
 	lua_pushliteral(L, "pack");
 	lua_rawget(L, -2);
-	if (lua_isnil(L, -1))
-	{
-		lua_pop(L, 1);
+	int t = lua_isnil(L, -1);
+	lua_pop(L, 1);
 
+	if (t)
+	{
 		lua_pushliteral(L, "pack");
 		lua_getglobal(L, "pack");
 		lua_rawset(L, -3);
 
 		lua_pushliteral(L, "unpack");
 		lua_getglobal(L, "unpack");
+		lua_rawset(L, -3);
+	}
+
+	lua_pushliteral(L, "new");
+	lua_rawget(L, -2);
+	t = lua_isnil(L, -1);
+	lua_pop(L, 1);
+
+	if (t)
+	{
+		lua_pushliteral(L, "new");
+		lua_pushcfunction(L, &lua_table_new);
 		lua_rawset(L, -3);
 	}
 

@@ -160,14 +160,58 @@ resultMeta.__index = {
 		return execModelInstance(self, db, 'UPDATE', true, true)
 	end,
 	create = function(self, db)
-		return execModelInstance(self, db, 'INSERT', false, false)
+		local r = execModelInstance(self, db, 'INSERT', false, false)
+		if r then
+			local ai = rawget(self, -10000):findAutoIncreasementField()
+			if ai then
+				self[ai.colname] = r.insertid
+			end
+		end
+		return r
 	end,
 	fullCreate = function(self, db)
 		return execModelInstance(self, db, 'INSERT', false, true)
 	end,
 	delete = function(self, db)
 		return execModelInstance(self, db, 'DELETE', true, false)
-	end
+	end,
+	clone = function(self, fieldnames)
+		local m = rawget(self, -10000)
+		local names = m.__fieldsPlain
+		local keys = nil
+		
+		if fieldnames then
+			local tp = type(fieldnames)
+
+			keys = table.new(0, bit.rshift(#names, 1))
+			if tp == 'string' then
+				string.split(fieldnames, ',', string.SPLIT_ASKEY, keys)
+			elseif tp == 'table' then
+				for i = 1, #fieldnames do
+					keys[fieldnames[i]] = true
+				end
+			else
+				return
+			end
+			
+			--default add all unique key
+			for k,v in pairs(m.__fieldIndices) do
+				if v.type == 1 or v.type == 2 then
+					keys[k] = true
+				end
+			end
+		end		
+
+		local r = pub.init(nil, m)
+		for i = 1, #names do
+			local n = names[i]
+			if not keys or keys[n] then
+				r[n] = self[n]
+			end
+		end
+		
+		return r
+	end,
 }
 
 

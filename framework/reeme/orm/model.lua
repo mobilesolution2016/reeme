@@ -496,6 +496,7 @@ end
 queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 	local fieldCfgs = model.__fields
 	local vals, full = self.__vals, self.__full	
+	local isUpdate = self.op == 'UPDATE' and true or false
 	local keyvals = {}
 
 	if not vals then
@@ -513,12 +514,14 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 					v = nil
 				end
 			elseif v == nil then
-				if cfg.default then
-					v = cfg.default
-				elseif cfg.null then
-					v = 'NULL'
-				else
-					v = cfg.type == 1 and "''" or '0'
+				if not isUpdate then
+					if cfg.default then
+						v = cfg.default
+					elseif cfg.null then
+						v = 'NULL'
+					else
+						v = cfg.type == 1 and "''" or '0'
+					end
 				end
 			elseif v == ngx.null then
 				v = 'NULL'
@@ -528,9 +531,11 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 				v = ngx.quote_sql_str(v)
 			elseif cfg.type == 3 then
 				if not string.checknumeric(v) then
+					print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, name))
 					v = nil
 				end
 			elseif not string.checkinteger(v) then
+				print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, name))
 				v = nil
 			end
 
@@ -946,7 +951,7 @@ local queryMeta = {
 				if self.op == 'SELECT' then
 					return r + 1 and r or nil
 				end
-				
+
 				return { rows = res.affected_rows, insertid = res.insert_id }
 			end
 		end,
@@ -961,15 +966,14 @@ local queryMeta = {
 			end
 			return {}
 		end,
-		--查询并返回第一行，并且在没有结果集或不是查询指令的时候返回的是一个空的table而非nil
+		--查询并返回第一行，如果不存在至少1行，则返回为nil
 		fetchFirst = function(self, db, result)
 			if self.op == 'SELECT' then
 				local res, r = self:execute(db, result)
 				if res then
-					return r + 1 and r(false) or {}
+					return r + 1 and r(false) or nil
 				end
 			end
-			return {}
 		end,
 	}
 }
@@ -1055,14 +1059,15 @@ local modelMeta = {
 			if f then return f.null end
 			return false
 		end,
-		isFieldAutoIncreasement = function(self, name)
-			local f = self.__fields[name]
-			if f then return f.ai end
-			return false
+		findAutoIncreasementField = function(self)
+			for n,f in pairs(self.__fields) do
+				if f.ai then
+					return f
+				end
+			end
 		end,
 		findUniqueKey = function(self)
-			local idx = self.__fieldIndices
-			for k,v in pairs(idx) do
+			for k,v in pairs(self.__fieldIndices) do
 				if v.type == 1 or v.type == 2 then
 					return k
 				end

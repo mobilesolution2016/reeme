@@ -691,6 +691,32 @@ static int lua_string_subto(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_string_countchars(lua_State* L)
+{	
+	size_t srcLen = 0, byLen = 0;
+	uint8_t checker[256] = { 0 }, ch;
+
+	const uint8_t* src = (const uint8_t*)luaL_checklstring(L, 1, &srcLen);
+	const uint8_t* by = (const uint8_t*)luaL_checklstring(L, 2, &byLen);
+
+	while ((ch = *by) != 0)
+	{
+		checker[ch] = 1;
+		by ++;
+	}
+
+	int cc = 0;
+	for(size_t i = 0; i < srcLen; ++ i)
+	{
+		if (checker[src[i]])
+			cc ++;
+	}
+
+	lua_pushinteger(L, cc);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static int lua_string_checknumeric(lua_State* L)
 {
 	double d = 0;
@@ -1515,6 +1541,8 @@ static void luaext_string(lua_State *L)
 		{ "subreplace", &lua_string_subreplace },
 		// 字符串查找带截取
 		{ "subto", &lua_string_subto },
+		// 对字符串进行指定字符的计数
+		{ "countchars", &lua_string_countchars },
 		// 数值+浮点数字符串检测
 		{ "checknumeric", &lua_string_checknumeric },
 		// 整数字符串检测

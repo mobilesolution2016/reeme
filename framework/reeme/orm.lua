@@ -39,7 +39,7 @@ local parseFields = function(m)
 					defv = nil
 				end
 
-				fields[k] = { maxlen = tonumber(maxl), ai = isai, null = allownull, type = t, default = defv }
+				fields[k] = { maxlen = tonumber(maxl), ai = isai, null = allownull, type = t, default = defv, colname = k }
 				plains[#plains + 1] = k
 			else
 				return false
