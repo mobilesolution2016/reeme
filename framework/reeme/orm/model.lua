@@ -882,6 +882,7 @@ local queryMeta = {
 				--[[local f = io.open('d:/sqls.txt', 'w+')
 				f:write(sqls .. '\n')
 				f:close()]]
+				--ngx.say(sqls)
 				
 				result = ormr.init(result, model)
 				res = ormr.query(result, db, sqls, self.limitTotal or 10)

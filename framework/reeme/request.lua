@@ -72,9 +72,9 @@ local RequestBase = {
 			f(value)
 		end
 	end,
-	__call = function(self, key)
+	__call = function(self, keys)
 		local args = self.args
-		if type(key) == 'table' then
+		if type(keys) == 'table' then
 			local cc = #keys
 			if cc > 0 then
 				local r = {}
@@ -91,7 +91,7 @@ local RequestBase = {
 			end
 		end
 		
-		return table.filter(args, key)
+		return table.filter(args, keys, true)
 	end
 }
 
