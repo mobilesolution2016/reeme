@@ -16,7 +16,7 @@ local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
 
 --处理where条件的值，与field字段的配置类型做比对，然后根据是否有左右引号来决定是否要做反斜杠处理
 local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
-local removeColFromExpWhen = { distinct = 1 }
+local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
 
 local processWhereValue = function(self, field, value)
 	local tp = type(value)
@@ -293,7 +293,7 @@ queryexecuter.UPDATE = function(self, model, db)
 		end
 
 		if not haveWheres then
-			error("Cannot save a model without any conditions")
+			error("Cannot do model update without any conditions")
 			return false
 		end
 	end
@@ -324,6 +324,37 @@ queryexecuter.INSERT = function(self, model, db)
 end
 	
 queryexecuter.DELETE = function(self, model)
+	local sqls = {}
+	sqls[#sqls + 1] = 'DELETE FROM '
+	sqls[#sqls + 1] = model.__name
+	
+	--where
+	--where
+	if not queryexecuter.buildWheres(self, sqls, 'WHERE') then
+		--find primary or unique
+		local haveWheres = false
+		local idx, vals = model.__fieldIndices, self.__vals
+		if vals then
+			for k,v in pairs(idx) do
+				if (v.type == 1 or v.type == 2) and vals[k] then
+					processWhere(self, 1, k, vals[k])
+					haveWheres = queryexecuter.buildWheres(self, sqls, 'WHERE')
+					break
+				end
+			end
+		end
+
+		if not haveWheres then
+			error("Cannot do model delete without any conditions")
+			return false
+		end
+	end
+	
+	--limit
+	queryexecuter.buildLimits(self, sqls, true)
+	
+	--end
+	return table.concat(sqls, ' ')
 end
 
 
@@ -333,21 +364,23 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 	if self.expressions then
 		local fields = self.__m.__fields
 		local tbname = self.__m.__name
+		local skips = 0
 		
-		for i=1, #self.expressions do
+		for i = 1, #self.expressions do
 			local expr = self.expressions[i]
-			
-			if type(expr) == 'string' then
+
+			if skips <= 0 and type(expr) == 'string' then
 				local adjust = 0
 				local tokens, poses = _parseExpression(expr)
 				if tokens then
 					local removeCol = false
-					for k=1,#tokens do
+					for k = 1, #tokens do
 						local one, newone = tokens[k], nil
 
 						if one:byte(1) == 39 then
 							--这是一个字符串
-							newone = ngx.quote_sql_str(one:sub(2, -2))				
+							newone = ngx.quote_sql_str(one:sub(2, -2))		
+							
 						elseif fields[one] then
 							--这是一个字段的名称
 							if removeCol then
@@ -364,14 +397,25 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 							end
 							
 							newone = alias .. one
-							
-						elseif removeColFromExpWhen[one:lower()] then
-							--遇到这些定义的表达式，这个表达式所关联的字段就不会再在字段列表中出现
-							removeCol = true
-							
+
 						elseif one == tbname then
 							newone = alias
 							one = one .. '.'
+
+						else
+							--特殊处理
+							local spec = specialExprFunctions[one:lower()]
+							if spec == 1 then
+								--遇到这些定义的表达式，这个表达式所关联的字段就不会再在字段列表中出现
+								removeCol = true
+							elseif spec == 2 then
+								--构造出excepts数据，哪怕是为空，因为只要excepts数组存在，字段就不会以*形式出现，这样就不会组合出count(*),*的语句
+								if not excepts then excepts = {} end
+							elseif spec == 3 then
+								--AS命名之后需要德育下一个token直接复制即可
+								skips = 2
+							end
+
 						end
 
 						if newone then
@@ -382,9 +426,12 @@ queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
 
 					self.expressions[i] = expr
 				end
+
 			else
 				self.expressions[i] = tostring(expr)
 			end
+
+			skips = skips - 1
 		end
 		
 		express = table.concat(self.expressions, ',')
@@ -882,6 +929,7 @@ local queryMeta = {
 				--[[local f = io.open('d:/sqls.txt', 'w+')
 				f:write(sqls .. '\n')
 				f:close()]]
+				--ngx.say(sqls)
 				
 				result = ormr.init(result, model)
 				res = ormr.query(result, db, sqls, self.limitTotal or 10)
@@ -968,9 +1016,7 @@ local modelMeta = {
 		end,
 		findAll = function(self, p1, p2, p3, p4)
 			local r = self:find(p1, p2, p3, p4)
-			if r then
-				return r(true)
-			end			
+			return r and r(true) or {}
 		end,
 		findFirst = function(self, name, val)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
@@ -984,8 +1030,8 @@ local modelMeta = {
 			return setmetatable(q, queryMeta)
 		end,
 		
-		update = function(self)
-			local q = { __m = self, __reeme = self.__reeme, op = 'UPDATE', limitStart = 0, limitTotal = 50 }
+		delete = function(self)
+			local q = { __m = self, __reeme = self.__reeme, op = 'DELETE' }
 			return setmetatable(q, queryMeta)
 		end,
 		

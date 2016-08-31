@@ -112,6 +112,15 @@ local ORM = {
 			return m
 		end,
 		
+		uses = function(self, names)
+			local r = table.new(0, #names)
+			for i = 1, #names do
+				local n = names[i]
+				r[n] = self:use(n)
+			end
+			return r
+		end,
+		
 		--清理所有的model缓存
 		clear = function(self)
 			for k,m in pairs(models) do

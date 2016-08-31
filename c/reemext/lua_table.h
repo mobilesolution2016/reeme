@@ -185,6 +185,26 @@ static int lua_table_filter(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_table_val2key(lua_State* L)
+{
+	luaL_checktype(L, 1, LUA_TTABLE);
+
+	lua_createtable(L, 0, lua_objlen(L, 1));
+	int idx = lua_gettop(L);
+
+	lua_pushnil(L);
+	while (lua_next(L, 1))
+	{
+		lua_pushvalue(L, -1);
+		lua_pushvalue(L, -3);
+		lua_rawset(L, idx);
+		lua_pop(L, 1);
+	}
+
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void luaext_table(lua_State *L)
 {
 	const luaL_Reg procs[] = {
@@ -194,6 +214,8 @@ static void luaext_table(lua_State *L)
 		{ "extend", &lua_table_extend },
 		// ¹ýÂË
 		{ "filter", &lua_table_filter },
+		// valueºÍkey»¥×ª
+		{ "val2key", &lua_table_val2key },
 
 		{ NULL, NULL }
 	};

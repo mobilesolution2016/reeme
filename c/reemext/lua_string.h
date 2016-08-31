@@ -150,36 +150,66 @@ struct BMString
 
 //////////////////////////////////////////////////////////////////////////
 static int lua_string_split(lua_State* L)
-{	
-	bool retAsTable = false;
-	int top = lua_gettop(L);
+{		
 	uint8_t checker[256] = { 0 }, ch;
 	size_t byLen = 0, srcLen = 0, start = 0;
+	int top = lua_gettop(L), retAs = LUA_TNIL, tblVal = 0;
 
 	const uint8_t* src = (const uint8_t*)luaL_checklstring(L, 1, &srcLen);
 	const uint8_t* by = (const uint8_t*)luaL_checklstring(L, 2, &byLen);
 
-	uint32_t nFlags = luaL_checklong(L, 3);
-	uint32_t maxSplits = nFlags & 0x0FFFFFFF, cc = 0;
-
-	if (top >= 4 && lua_toboolean(L, 4))
+	uint32_t nFlags = 0, maxSplits = 0, cc = 0;
+	if (lua_isnumber(L, 3))
 	{
-		retAsTable = true;
-		lua_newtable(L);
+		nFlags = luaL_optinteger(L, 3, 0);
+		maxSplits = nFlags & 0x0FFFFFFF;
+
+		if (top >= 4)
+			retAs = lua_type(L, tblVal = 4);
+	}
+	else if (top >= 3)
+	{
+		retAs = lua_type(L, tblVal = 3);
 	}
 
 	if (byLen > srcLen)
-		return retAsTable ? 1 : 0;
+		return retAs ? 1 : 0;
+	
+	if (tblVal)
+	{
+		if (retAs == LUA_TBOOLEAN)
+		{
+			// is true then create a table
+			if (lua_toboolean(L, tblVal))
+			{				
+				lua_createtable(L, std::max(maxSplits, 4U), 0);
+				tblVal = lua_gettop(L);
+				retAs = LUA_TTABLE;
+			}
+		}
+		else if (retAs == LUA_TTABLE)
+		{
+			// is table then use it directly
+			cc = lua_objlen(L, tblVal);
+		}
+		else
+		{
+			// otherwise plain return 
+			tblVal = 0;
+			retAs = LUA_TNIL;
+		}
+	}
+
+	if (maxSplits == 0)
+		maxSplits = 0x0FFFFFFF;
 
 	while ((ch = *by) != 0)
 	{
 		checker[ch] = 1;
 		by ++;
 	}
-
-	if (maxSplits == 0)
-		maxSplits = 0x0FFFFFFF;
 	
+	// 逐个字符的检测
 	size_t i, endpos;
 	for (i = endpos = 0; i < srcLen; ++ i)
 	{
@@ -191,37 +221,29 @@ static int lua_string_split(lua_State* L)
 		if (nFlags & 0x40000000)
 		{
 			// trim
-			while(start < endpos)
-			{
-				if (src[start] > 32)
-					break;
+			while(start < endpos && src[start] <= 32)
 				start ++;
-			}
-			while(start < endpos)
-			{
-				if (src[endpos - 1] > 32)
-					break;
+			while(start < endpos && src[endpos - 1] <= 32)
 				endpos --;
-			}
 		}
 
 		if (start < endpos)
 		{
 _lastseg:
 			// push result
-			if (retAsTable)
+			if (tblVal)
 			{
 				lua_pushlstring(L, (const char*)src + start, endpos - start);
 				if (nFlags & 0x40000000)
 				{
 					// as key
 					lua_pushlstring(L, "", 0);
-					lua_rawset(L, top + 1);
+					lua_rawset(L, tblVal);
 				}
 				else
 				{
 					// as array element
-					lua_rawseti(L, top + 1, cc + 1);
+					lua_rawseti(L, tblVal, cc + 1);
 				}
 			}
 			else
@@ -248,25 +270,25 @@ _lastseg:
 	{
 		// no one
 		lua_pushvalue(L, 1);
-		if (retAsTable)
+		if (tblVal)
 		{
 			if (nFlags & 0x40000000)
 			{
 				// as key
 				lua_pushlstring(L, "", 0);
-				lua_rawset(L, top + 1);
+				lua_rawset(L, tblVal);
 			}
 			else
 			{
 				// as array element
-				lua_rawseti(L, top + 1, cc + 1);
+				lua_rawseti(L, tblVal, cc + 1);
 			}
 		}
 
 		return 1;
 	}
 
-	return retAsTable ? 1 : cc;
+	return retAs == LUA_TTABLE ? 1 : cc;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -679,13 +701,16 @@ static int lua_string_checknumeric(lua_State* L)
 	}
 	else if (tp == LUA_TSTRING)
 	{
-		size_t len;
+		size_t len = 0;
 		char *endp = 0;
 		const char* s = (const char*)lua_tolstring(L, 1, &len);
 
-		d = strtod(s, &endp);
-		if (endp && endp - s == len)
-			r = 1;
+		if (len > 0)
+		{
+			d = strtod(s, &endp);
+			if (endp && endp - s == len)
+				r = 1;
+		}
 	}
 
 	lua_pushboolean(L, r);
@@ -703,13 +728,16 @@ static int lua_string_checkinteger(lua_State* L)
 	}
 	else if (tp == LUA_TSTRING)
 	{
-		size_t len;
+		size_t len = 0;
 		char *endp = 0;
 		const char* s = (const char*)lua_tolstring(L, 1, &len);
 
-		v = strtoll(s, &endp, 10);
-		if (endp && endp - s == len)
-			r = 1;
+		if (len > 0)
+		{
+			v = strtoll(s, &endp, 10);
+			if (endp && endp - s == len)
+				r = 1;
+		}
 	}
 
 	lua_pushboolean(L, r);
@@ -877,6 +905,53 @@ public:
 	const char	*errorStart;
 	bool		bracketOpened;
 
+	enum KeywordEndType {
+		KEND_NONE,
+		KEND_THEN,
+		KEND_DO,
+	};
+	static KeywordEndType checkTemplateKeywords(const char* exp, const char* expEnd, size_t leng)
+	{
+		char buf[8] = { 0 };
+		const size_t revLeng[] = { 0, 4, 2 };
+		const char cmps[][8] = { { "if" }, { "elseif" }, { "while" }, { "for" } };
+
+		for (int i = 0; i < 8; ++ i)
+		{
+			char ch = exp[i];
+			if (ch <= 32) break;
+			buf[i] = ch;
+		}
+
+		KeywordEndType r = KEND_NONE;
+		uint64_t a = *(const uint64_t*)buf;
+
+		if (a == *(uint64_t*)cmps[0] || a == *(uint64_t*)cmps[1])
+			r = KEND_THEN;
+		else if (a == *(uint64_t*)cmps[2] || a == *(uint64_t*)cmps[3])
+			r = KEND_DO;
+
+		if (r != KEND_NONE)
+		{
+			const char* revFind = expEnd - 1;
+			while (revFind > exp)
+			{
+				if ((uint8_t)revFind[0] <= 32 || revFind[0] == '}')
+					revFind --;
+				else
+					break;
+			}			
+
+			revFind -= revLeng[r];
+			if (r == KEND_THEN && strncmp(revFind, " then", 5))
+				return KEND_THEN;
+			if (r == KEND_DO && strncmp(revFind, " do", 3))
+				return KEND_DO;
+		}
+
+		return KEND_NONE;
+	}
+
 	size_t append(size_t s)
 	{
 		if (s == 0)
@@ -1009,7 +1084,7 @@ public:
 				close();
 
 				// 找到表达式的结束位置
-				uint8_t quoted = 0;
+				uint8_t quoted = 0, ln = 0;
 				const char* expStart = foundPos + 1;
 				const char* totalEnd = src + srcLen;
 
@@ -1022,13 +1097,17 @@ public:
 					ch = *expEnd ++;
 					if (quoted)
 					{
+						expEnd ++;
 						if (ch == '\\')
 							expEnd ++;
 						else if (ch == '\'' || ch == '"')
 							quoted = 0;
+						else if (ch == '\n')
+							ln = 1;
 					}
 					else if (ch == '\'' || ch == '"')
 					{
+						expEnd ++;
 						if (quoted)
 						{
 							errorStart = expStart;
@@ -1036,6 +1115,8 @@ public:
 						}
 						quoted = ch;
 					}
+					else if (ch == '\n')
+						ln = 1;
 					else if (ch == '}')
 						break;
 				}
@@ -1075,8 +1156,21 @@ public:
 					}
 					else
 					{
-						// 其它的表达式直接输出
-						buf.append(expStart, add);											
+						// 其它的表达式，判断一下是否是某些关键字，如果是的话，则再判断有没有相应的then do语句。这个地方是很容易被忘记的，因此由程序来自动添加
+						buf.append(expStart, add);
+
+						if (ln == 0 && add >= 4)
+						{
+							switch (checkTemplateKeywords(expStart, expEnd, add))
+							{
+							case KEND_THEN:
+								buf.append(" then", 5);
+								break;
+							case KEND_DO:
+								buf.append(" do", 3);
+								break;
+							}
+						}
 					}
 
 					buf += '\n';

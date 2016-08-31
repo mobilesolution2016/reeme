@@ -164,6 +164,9 @@ resultMeta.__index = {
 	end,
 	fullCreate = function(self, db)
 		return execModelInstance(self, db, 'INSERT', false, true)
+	end,
+	delete = function(self, db)
+		return execModelInstance(self, db, 'DELETE', true, false)
 	end
 }
 

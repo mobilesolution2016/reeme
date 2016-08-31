@@ -66,12 +66,13 @@ viewMeta.__index = {
 		end
 		
 		--切换meta
-		local meta = { __index = {
+		local vals = {
 			self = self,
 			reeme = self.__reeme,
 			subtemplate = loadSubtemplate
-		}}
-		setmetatable(meta.__index, { __index = _G })
+		}
+		local meta = { __index = vals, __newindex = vals }
+		setmetatable(vals, { __index = _G })
 
 		local oldMeta = nil
 		if env then
@@ -88,12 +89,12 @@ viewMeta.__index = {
 		end
 		
 		r = m(self, rawget(self, 'finalHTML'), src, env)
-		
+
 		--换回meta
 		if oldMeta then
 			setmetatable(env, oldMeta)
 		end
-		meta = nil
+		meta, vals = nil, nil
 		
 		return r
 	end,
