@@ -57,6 +57,23 @@ local function parse(s)
     return r
 end
 
+local function getTempFileName()
+	local ffi = require("ffi")
+    if ffi.abi('win') then
+        ffi.cdef[[
+            unsigned long GetTempPathA(unsigned long nBufferLength, char* lpBuffer);
+        ]]
+    
+        local tempPathLengh = 256
+        local tempPathBuffer = ffi.new("char[?]", tempPathLengh)
+        ffi.C.GetTempPathA(tempPathLengh, tempPathBuffer)
+        local tempPath = ffi.string(tempPathBuffer) or "d:/tmp"
+		return tempPath .. tmpname()
+	else
+		return tmpname()
+    end
+end
+	
 local function getPostArgsAndFiles(options)
     local post = { }
     local files = { }
@@ -87,7 +104,7 @@ local function getPostArgsAndFiles(options)
                                 name = d.name,
                                 type = h["Content-Type"] and h["Content-Type"][1],
                                 file = basename(d.filename),
-                                temp = tmpname(),
+                                temp = getTempFileName(),
 								moveFile = function(self, dstFilename)
 									return os.rename(self.temp, dstFilename)
 								end,

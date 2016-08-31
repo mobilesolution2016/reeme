@@ -6,8 +6,7 @@ return function(reeme)
 		__newindex = function(self, key, value)
 			ngx.header[key] = value
 		end,
-		__call = function(self, ...)
-			local hds = { ... }
+		__call = function(self, hds)
 			for k,v in pairs(hds) do
 				ngx.header[k] = v
 			end
