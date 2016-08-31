@@ -207,13 +207,13 @@ static int lua_table_val2key(lua_State* L)
 //////////////////////////////////////////////////////////////////////////
 static int lua_table_new(lua_State* L)
 {
-	int t = lua_gettop(L), narr, nrec;
+	int t = lua_gettop(L), narr = 4, nrec = 0;
 
 	if (t == 1)
 	{
 		narr = luaL_optinteger(L, 1, 4);
 	}
-	else
+	else if (t == 2)
 	{
 		narr = luaL_optinteger(L, 1, 4);
 		nrec = luaL_optinteger(L, 2, 0);

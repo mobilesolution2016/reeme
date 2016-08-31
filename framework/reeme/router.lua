@@ -5,7 +5,7 @@ return function(uri)
         return 'index', 'index'
     end
 	
-	local segs = string.split(uri, './', 0, true)
+	local segs = string.split(uri, './')
 	
     if #segs == 1 then
         return segs[1], 'index'

@@ -150,16 +150,18 @@ struct BMString
 
 //////////////////////////////////////////////////////////////////////////
 static int lua_string_split(lua_State* L)
-{		
+{
+	bool exists = false;
 	uint8_t checker[256] = { 0 }, ch;
 	size_t byLen = 0, srcLen = 0, start = 0;
-	int top = lua_gettop(L), retAs = LUA_TNIL, tblVal = 0;
+	uint32_t nFlags = 0, maxSplits = 0, cc = 0;
+	int top = lua_gettop(L), retAs = LUA_TTABLE, tblVal = 3;
 
 	const uint8_t* src = (const uint8_t*)luaL_checklstring(L, 1, &srcLen);
-	const uint8_t* by = (const uint8_t*)luaL_checklstring(L, 2, &byLen);
+	const uint8_t* by = (const uint8_t*)luaL_checklstring(L, 2, &byLen);	
 
-	uint32_t nFlags = 0, maxSplits = 0, cc = 0;
-	if (lua_isnumber(L, 3))
+	retAs = lua_type(L, 3);
+	if (retAs == LUA_TNUMBER)
 	{
 		nFlags = luaL_optinteger(L, 3, 0);
 		maxSplits = nFlags & 0x0FFFFFFF;
@@ -167,50 +169,52 @@ static int lua_string_split(lua_State* L)
 		if (top >= 4)
 			retAs = lua_type(L, tblVal = 4);
 	}
-	else if (top >= 3)
+	
+	if (retAs == LUA_TBOOLEAN)
 	{
-		retAs = lua_type(L, tblVal = 3);
+		// is true return plained string(s)
+		if (lua_toboolean(L, tblVal))
+			retAs = LUA_TNIL;
+	}
+	else if (retAs == LUA_TTABLE)
+	{
+		// is table then use it directly
+		cc = lua_objlen(L, tblVal);
+		exists = true;
+	}
+	else
+	{
+		retAs = LUA_TTABLE;
 	}
 
-	if (byLen > srcLen)
-		return retAs ? 1 : 0;
-	
-	if (tblVal)
+	if (retAs == LUA_TTABLE)
 	{
-		if (retAs == LUA_TBOOLEAN)
+		if (!exists)
 		{
-			// is true then create a table
-			if (lua_toboolean(L, tblVal))
-			{				
-				lua_createtable(L, std::max(maxSplits, 4U), 0);
-				tblVal = lua_gettop(L);
-				retAs = LUA_TTABLE;
-			}
-		}
-		else if (retAs == LUA_TTABLE)
-		{
-			// is table then use it directly
-			cc = lua_objlen(L, tblVal);
-		}
-		else
-		{
-			// otherwise plain return 
-			tblVal = 0;
-			retAs = LUA_TNIL;
+			int n1 = std::max(maxSplits, 4U), n2 = 0;
+
+			if (nFlags & 0x40000000)
+				std::swap(n1, n2);
+
+			lua_createtable(L, n1, n2);
+			tblVal = lua_gettop(L);
 		}
 	}
+	else
+		tblVal = 0;
 
 	if (maxSplits == 0)
 		maxSplits = 0x0FFFFFFF;
 
-	while ((ch = *by) != 0)
+	// …Ë÷√±Íº«
+	size_t i, endpos;
+	for(i = 0; i < byLen; ++ i)
 	{
-		checker[ch] = 1;
+		checker[by[i]] = 1;
 		by ++;
 	}
 	
-	// ÷∏ˆ◊÷∑˚µƒºÏ≤‚
-	size_t i, endpos;
+	// ÷∏ˆ◊÷∑˚µƒºÏ≤‚	
 	for (i = endpos = 0; i < srcLen; ++ i)
 	{
 		ch = src[i];
@@ -218,7 +222,7 @@ static int lua_string_split(lua_State* L)
 			continue;
 
 		endpos = i;
-		if (nFlags & 0x40000000)
+		if (nFlags & 0x20000000)
 		{
 			// trim
 			while(start < endpos && src[start] <= 32)
@@ -237,7 +241,7 @@ _lastseg:
 				if (nFlags & 0x40000000)
 				{
 					// as key
-					lua_pushlstring(L, "", 0);
+					lua_pushboolean(L, 1);
 					lua_rawset(L, tblVal);
 				}
 				else
@@ -275,7 +279,7 @@ _lastseg:
 			if (nFlags & 0x40000000)
 			{
 				// as key
-				lua_pushlstring(L, "", 0);
+				lua_pushboolean(L, 1);
 				lua_rawset(L, tblVal);
 			}
 			else
@@ -720,12 +724,13 @@ static int lua_string_countchars(lua_State* L)
 static int lua_string_checknumeric(lua_State* L)
 {
 	double d = 0;
-	int tp = lua_type(L, 1), r = 0;
-	if (tp == LUA_TNUMBER)
+	int r = 0;
+
+	if (lua_isnumber(L, 1))
 	{
 		r = 1;
 	}
-	else if (tp == LUA_TSTRING)
+	else
 	{
 		size_t len = 0;
 		char *endp = 0;
@@ -747,12 +752,12 @@ static int lua_string_checknumeric(lua_State* L)
 static int lua_string_checkinteger(lua_State* L)
 {
 	long long v = 0;
-	int tp = lua_type(L, 1), r = 0;
-	if (tp == LUA_TNUMBER)
+	int r = 0;
+	if (lua_isnumber(L, 1))
 	{
 		r = 1;
 	}
-	else if (tp == LUA_TSTRING)
+	else
 	{
 		size_t len = 0;
 		char *endp = 0;
@@ -1029,7 +1034,6 @@ public:
 			if (ch <= 32)
 			{
 				append(foundPos - src - offset);
-				offset = pos + 1;
 				goto _lastcheck;
 			}
 

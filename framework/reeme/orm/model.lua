@@ -96,6 +96,10 @@ local parseWhere = function(self, condType, name, value)
 		
 		--子查询
 		return { puredkeyname = puredkeyname, n = name, sub = value, c = condType }
+		
+	elseif value == ngx.null then
+		--设置为null值
+		return { expr = puredkeyname and string.format('%s IS NULL', name) or (name .. 'NULL'), c = condType }
 	end
 
 	if type(name) == 'string' then
@@ -284,10 +288,13 @@ queryexecuter.UPDATE = function(self, model, db)
 		local idx, vals = model.__fieldIndices, self.__vals
 		if vals then
 			for k,v in pairs(idx) do
-				if (v.type == 1 or v.type == 2) and vals[k] then
-					processWhere(self, 1, k, vals[k])
-					haveWheres = queryexecuter.buildWheres(self, sqls, 'WHERE')
-					break
+				if (v.type == 1 or v.type == 2) then
+					local v = vals[k]
+					if v and v ~= ngx.null then
+						processWhere(self, 1, k, v)
+						haveWheres = queryexecuter.buildWheres(self, sqls, 'WHERE')
+						break
+					end
 				end
 			end
 		end
@@ -861,7 +868,7 @@ local queryMeta = {
 				self.orderBy = field
 			else
 				if not asc then
-					field, asc = field:split(' ', string.SPLIT_TRIM)
+					field, asc = field:split(' ', string.SPLIT_TRIM, true)
 					if asc == nil then asc = 'asc' end
 				end
 				
@@ -956,7 +963,7 @@ local queryMeta = {
 			end
 		end,
 		
-		--查询并返回所有行，并且在没有结果集或不是查询指令的时候返回的是一个空的table而非nil
+		--执行select查询并返回所有行，注意返回是所有行而非结果集实例，并且在没有结果集或不是查询指令的时候返回的是一个空的table而非nil
 		fetchAll = function(self, db, result)
 			if self.op == 'SELECT' then
 				local res, r = self:execute(db, result)	
@@ -966,7 +973,7 @@ local queryMeta = {
 			end
 			return {}
 		end,
-		--查询并返回第一行，如果不存在至少1行，则返回为nil
+		--执行select查询并返回第一行，注意返回的是行而非结果集实例，如果不存在至少1行，则返回为nil
 		fetchFirst = function(self, db, result)
 			if self.op == 'SELECT' then
 				local res, r = self:execute(db, result)

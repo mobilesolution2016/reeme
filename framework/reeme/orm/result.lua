@@ -200,7 +200,7 @@ resultMeta.__index = {
 					keys[k] = true
 				end
 			end
-		end		
+		end
 
 		local r = pub.init(nil, m)
 		for i = 1, #names do

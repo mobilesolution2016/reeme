@@ -77,7 +77,7 @@ local RequestBase = {
 		if type(keys) == 'table' then
 			local cc = #keys
 			if cc > 0 then
-				local r = {}
+				local r = table.new(0, #keys)
 				for i = 1, #keys do
 					local k = keys[i]
 					r[k] = args[k]
