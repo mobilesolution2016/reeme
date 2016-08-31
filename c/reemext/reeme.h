@@ -5,13 +5,13 @@
 
 class DBuffer;
 
-// ×Ö·û´®Hashº¯Êý
+// ï¿½Ö·ï¿½ï¿½ï¿½Hashï¿½ï¿½ï¿½ï¿½
 template <typename T> static inline T hashString(const char *str)
 {
 	const T seed = 131;
 
 	char ch;
-	T hash = 0;	
+	T hash = 0;
 	while ((ch = *str) ++ != 0)
 		hash = hash * seed + ch;
 
@@ -29,7 +29,7 @@ template <typename T> static inline T hashString(const char *str, size_t len)
 	return hash;
 }
 
-// ¿ìËÙ¸¡µã×ªÓÐ·ûºÅÕûÊý
+// ï¿½ï¿½ï¿½Ù¸ï¿½ï¿½ï¿½×ªï¿½Ð·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 union double2int
 {
 	double	dval;
@@ -43,7 +43,7 @@ static inline int32_t dtoi(double val)
 	return u.ivals[0];
 }
 
-// ¹Ì¶¨³ß´çÄÚ´æ³Ø
+// ï¿½Ì¶ï¿½ï¿½ß´ï¿½ï¿½Ú´ï¿½ï¿½ï¿½
 template <typename T, size_t BlockSize = 4096> class TMemoryPool
 {
 public:
@@ -178,7 +178,7 @@ private:
 };
 
 //////////////////////////////////////////////////////////////////////////
-//!×Ö·û´®Ö¸Õë´øHASHµÄ¼üÖµ
+//!ï¿½Ö·ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½HASHï¿½Ä¼ï¿½Öµ
 struct StringPtrKey
 {
 	const char*		pString;
@@ -242,7 +242,7 @@ template <typename T> class TList;
 
 template <typename T> class TListNode
 {
-	friend TList;
+	friend class TList<T>;
 private:
 	typedef TListNode<T> Node;
 	typedef TList<T> List;
@@ -264,11 +264,11 @@ template <typename T> class TList
 private:
 	typedef TListNode<T> Node;
 
-	TListNode		*m_pFirstNode, *m_pLastNode;
+	Node			*m_pFirstNode, *m_pLastNode;
 	size_t			m_nodesCount;
 
 public:
-	inline TList() 
+	inline TList()
 		: m_pFirstNode(NULL), m_pLastNode(NULL), m_nodesCount(0)
 	{}
 
@@ -307,7 +307,7 @@ public:
 
 		if (pprev == m_pFirstNode)
 			m_pFirstNode = nnext;
-		if (nnext = m_pLastNode)
+		if (nnext == m_pLastNode)
 			m_pLastNode = pprev;
 
 		n->m_pPrevious = n->m_pNext = NULL;
@@ -345,7 +345,7 @@ public:
 
 #ifndef _MSC_VER
 namespace std {
-	//ÎªStringPtrKeyÏòstd::tr1Ìá¹©Hashº¯Êý
+	//ÎªStringPtrKeyï¿½ï¿½std::tr1ï¿½á¹©Hashï¿½ï¿½ï¿½ï¿½
 	template <> struct hash<StringPtrKey>
 	{
 		size_t operator()(StringPtrKey const& k) const

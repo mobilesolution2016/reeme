@@ -27,14 +27,14 @@
 
 #	define REEME_API extern "C" __declspec(dllexport)
 
-// ÐÞ¸´VS2015±àÒëÎÊÌâ
+// ï¿½Þ¸ï¿½VS2015ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 #if _MSC_VER >= 1900
 #	define STDC99
 #else
 #	define snprintf _snprintf
 #endif
 
-#elif defined(__GUNC__) || defined(__unix__)
+#elif defined(__GUNC__) || defined(__unix__) || defined(__APPLE__)
 #   include <sys/time.h>
 #	include <unordered_map>
 #	include <unordered_set>
