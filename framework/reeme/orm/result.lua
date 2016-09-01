@@ -32,15 +32,18 @@
 ]]
 
 local execModelInstance = function(self, db, op, limit, full)
-	local q = rawget(self, -10000):query()
+	local m = rawget(self, -10000)
+	if m then
+		local q = m:query()
 
-	q.op = op
-	q.__full = full
+		q.op = op
+		q.__full = full
 
-	if limit then 
-		q:limit(1) 
+		if limit then 
+			q:limit(1) 
+		end
+		return q:exec(db, self)
 	end
-	return q:exec(db, self)
 end
 
 local resultMeta = {}
@@ -54,25 +57,22 @@ local getRowPairs = function(self)
 		return next(vals, k)
 	end
 end
+--参数tbl可以是一个以key=val的table，也可以是一个布尔值，true的时候返回所有行，false返回当前行，也可以为Nil则效果同false
 local callRowTable = function(self, tbl)
-	if tbl == nil then
+	if not tbl then
 		return getmetatable(self).__index
 	end	
+	if tbl == true then
+		return rawget(self, -10003)
+	end
 	
-	local tp = type(tbl)
-	if tp == 'boolean' then
-		return tbl and rawget(self, -10003) or getmetatable(self).__index
-
-	elseif type(tbl) == 'table' then
-		local fs = rawget(self, '__model').__fields
+	if type(tbl) == 'table' then
 		local vals = getmetatable(self).__index
 		for k,v in pairs(tbl) do
-			local cfg = fs[k]
-			if cfg then
-				vals[k] = v
-			end
+			vals[k] = v
 		end
 	end
+	
 	return self
 end
 local setResultRow = function(self, rowId)
@@ -175,43 +175,15 @@ resultMeta.__index = {
 	delete = function(self, db)
 		return execModelInstance(self, db, 'DELETE', true, false)
 	end,
-	clone = function(self, fieldnames)
-		local m = rawget(self, -10000)
-		local names = m.__fieldsPlain
-		local keys = nil
-		
-		if fieldnames then
-			local tp = type(fieldnames)
-
-			keys = table.new(0, bit.rshift(#names, 1))
-			if tp == 'string' then
-				string.split(fieldnames, ',', string.SPLIT_ASKEY, keys)
-			elseif tp == 'table' then
-				for i = 1, #fieldnames do
-					keys[fieldnames[i]] = true
-				end
-			else
-				return
-			end
-			
-			--default add all unique key
-			for k,v in pairs(m.__fieldIndices) do
-				if v.type == 1 or v.type == 2 then
-					keys[k] = true
-				end
-			end
-		end
-
-		local r = pub.init(nil, m)
-		for i = 1, #names do
-			local n = names[i]
-			if not keys or keys[n] then
-				r[n] = self[n]
-			end
-		end
-		
-		return r
+	
+	getModel = function(self)
+		return rawget(self, -10000)
 	end,
+	
+	clone = function(self, fieldnames, newvals)
+		local m = rawget(self, -10000)
+		return m and m:new(self, fieldnames, newvals) or nil
+	end
 }
 
 

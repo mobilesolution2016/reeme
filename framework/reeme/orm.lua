@@ -113,12 +113,24 @@ local ORM = {
 		end,
 		
 		uses = function(self, names)
-			local r = table.new(0, #names)
-			for i = 1, #names do
-				local n = names[i]
-				r[n] = self:use(n)
+			local tp = type(names)
+			
+			if tp == 'table' then
+				local r = table.new(0, #names)
+				for i = 1, #names do
+					local n = names[i]
+					r[n] = self:use(n)
+				end
+				return r
+			elseif tp == 'string' then
+				local r = table.new(0, 10)
+				string.split(names, ',', string.SPLIT_ASKEY, r)
+				
+				for k,v in pairs(r) do
+					r[k] = self:use(k)
+				end
+				return r
 			end
-			return r
 		end,
 		
 		--清理所有的model缓存

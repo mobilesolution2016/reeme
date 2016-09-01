@@ -73,25 +73,32 @@ local RequestBase = {
 		end
 	end,
 	__call = function(self, keys)
-		local args = self.args
+		local get, post = self.get, self.post
 		if type(keys) == 'table' then
 			local cc = #keys
 			if cc > 0 then
 				local r = table.new(0, #keys)
 				for i = 1, #keys do
 					local k = keys[i]
-					r[k] = args[k]
+					r[k] = get[k] or post[k]
 				end
 				return r
 			else
 				for k,v in pairs(keys) do
-					keys[k] = args[k]
+					keys[k] = get[k] or post[k]
 				end
 				return keys
 			end
 		end
+
+		local r = table.new(0, 6)
+		string.split(keys, ',', string.SPLIT_ASKEY, r)
 		
-		return table.filter(args, keys, true)
+		for k,_ in pairs(r) do
+			r[k] = get[k] or post[k]
+		end
+		
+		return r
 	end
 }
 

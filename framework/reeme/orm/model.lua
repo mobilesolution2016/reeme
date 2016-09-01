@@ -517,10 +517,12 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 			local tp = type(v)
 
 			if cfg.ai then
+				--自增长值要么是fullCreate/fullSave要么被忽略
 				if not full or not string.checkinteger(v) then
 					v = nil
 				end
 			elseif v == nil then
+				--值为nil，那么判断是否使用字段的默认值
 				if not isUpdate then
 					if cfg.default then
 						v = cfg.default
@@ -531,28 +533,40 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 					end
 				end
 			elseif v == ngx.null then
+				--NULL值直接设置
 				v = 'NULL'
 			elseif tp == 'table' then
+				--table原值则取出table中的1号值
 				v = v[1]
 			elseif cfg.type == 1 then
-				v = ngx.quote_sql_str(v)
+				--字段要求为字符串，因此转字符串并转义
+				v = ngx.quote_sql_str(tostring(v))
+			elseif cfg.type == 4 then
+				--布尔型使用1或0来处理
+				if tp == 'boolean' then
+					v = v and 1 or 0
+				else
+					v = toboolean(v) and 1 or 0
+				end
 			elseif cfg.type == 3 then
+				--数值/浮点数类型，检测值必须为浮点数
 				if not string.checknumeric(v) then
 					print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, name))
 					v = nil
 				end
 			elseif not string.checkinteger(v) then
+				--否则就都是整数类型，检测值必须为整数
 				print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, name))
 				v = nil
 			end
 
 			if v ~= nil then
+				--如果到了这里值还不是nil，那么就可以使用了
 				if alias and #alias > 0 then
 					name = alias .. name
 				end
 
-				v = tostring(v)
-				keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
+				keyvals[#keyvals + 1] = string.format("%s=%s", name, tostring(v))
 			end
 		end
 	end
@@ -764,6 +778,12 @@ local queryMeta = {
 			return processOn(self, 5, name, val)
 		end,
 		
+		--设置调试
+		--[[debug = function(self, dbg)
+			self.debugMode = dbg
+			return self
+		end,]]
+		
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列
 		columns = function(self, names)
 			if not self.colSelects then
@@ -938,9 +958,9 @@ local queryMeta = {
 			local sqls = queryexecuter[self.op](self, model, db)
 			
 			if sqls then			
-				--[[local f = io.open('d:/sqls.txt', 'w+')
-				f:write(sqls .. '\n')
-				f:close()]]
+				--if self.debugMode then
+					self.lastSql = sqls
+				--end
 				--ngx.say(sqls)
 				
 				result = ormr.init(result, model)
@@ -989,16 +1009,59 @@ local queryMeta = {
 --model的原型表，提供了所有的model功能函数
 local modelMeta = {
 	__index = {
-		new = function(self, vals)
-			local r = require('reeme.orm.result').init(nil, self)
-			if vals then
-				for k,v in pairs(vals) do
-					r[k] = v
+		--从模板新建结果集实例，建立的同时可从现有的一个结果集copyfrom复制数据，复制的时候可以指定只复制哪些字段fieldnames，最后还可以使用newvals中的值优先覆盖copyfrom中的指定字段
+		new = function(self, copyfrom, fieldnames, newvals)	
+			local r = pub.init(nil, self)
+			if not copyfrom then
+				return r
+			end
+			
+			--从copyfrom复制
+			local keys = nil
+			local names = self.__fieldsPlain
+			if fieldnames then
+				local tp = type(fieldnames)
+
+				keys = table.new(0, bit.rshift(#names, 1))
+				if tp == 'string' then
+					string.split(fieldnames, ',', string.SPLIT_ASKEY, keys)
+				elseif tp == 'table' then
+					for i = 1, #fieldnames do
+						keys[fieldnames[i]] = true
+					end
+				else
+					return
 				end
-			end 
+				
+				--default add all unique key
+				for k,v in pairs(m.__fieldIndices) do
+					if v.type == 1 or v.type == 2 then
+						keys[k] = true
+					end
+				end
+			end
+						
+			if newvals then
+				--优先从newvals中取
+				for i = 1, #names do
+					local n = names[i]
+					if not keys or keys[n] then
+						r[n] = newvals[n] or copyfrom[n]
+					end
+				end
+			else
+				for i = 1, #names do
+					local n = names[i]
+					if not keys or keys[n] then
+						r[n] = copyfrom[n]
+					end
+				end
+			end
+			
 			return r
 		end,
 		
+		--按条件查找并返回所有的结果（其实不指定limit也是默认只是前50条而非真的全部），注意本函数返回为结果集实例而非结果行数组
 		find = function(self, p1, p2, p3, p4)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)
@@ -1025,10 +1088,7 @@ local modelMeta = {
 			
 			return q:exec()
 		end,
-		findAll = function(self, p1, p2, p3, p4)
-			local r = self:find(p1, p2, p3, p4)
-			return r and r(true) or {}
-		end,
+		--和find一样但是仅查找第1行，其实就是find加上limit(1)
 		findFirst = function(self, name, val)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
 			setmetatable(q, queryMeta)
@@ -1036,16 +1096,24 @@ local modelMeta = {
 			return q:limit(1):exec()
 		end,
 		
+		--和find一样，只不过返回的是结果行而非结果集实例，并且在没有任何结果的时候也不会返回Nil而是返回一个空table
+		findAll = function(self, p1, p2, p3, p4)
+			local r = self:find(p1, p2, p3, p4)
+			return r and r(true) or {}
+		end,
+		
+		--建立一个select查询器
 		query = function(self)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT', limitStart = 0, limitTotal = 50 }
 			return setmetatable(q, queryMeta)
 		end,
-		
+		--建立一个delete查询器
 		delete = function(self)
 			local q = { __m = self, __reeme = self.__reeme, op = 'DELETE' }
 			return setmetatable(q, queryMeta)
 		end,
 		
+		--建立一个执行表达式的查询器而忽略其它行或列
 		expression = function(self, expr)
 			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT', limitStart = 0, limitTotal = 50 }
 			return setmetatable(q, queryMeta):expr(expr):columns()
