@@ -12,7 +12,7 @@
 ]]
 
 local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
-
+local resultPub = require('reeme.orm.result')
 
 --处理where条件的值，与field字段的配置类型做比对，然后根据是否有左右引号来决定是否要做反斜杠处理
 local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
@@ -954,7 +954,6 @@ local queryMeta = {
 			end
 			
 			local model = self.__m
-			local ormr = require('reeme.orm.result')
 			local sqls = queryexecuter[self.op](self, model, db)
 			
 			if sqls then			
@@ -963,8 +962,8 @@ local queryMeta = {
 				--end
 				--ngx.say(sqls)
 				
-				result = ormr.init(result, model)
-				res = ormr.query(result, db, sqls, self.limitTotal or 10)
+				result = resultPub.init(result, model)
+				res = resultPub.query(result, db, sqls, self.limitTotal or 10)
 			end
 			
 			self.__vals = nil
@@ -1011,7 +1010,7 @@ local modelMeta = {
 	__index = {
 		--从模板新建结果集实例，建立的同时可从现有的一个结果集copyfrom复制数据，复制的时候可以指定只复制哪些字段fieldnames，最后还可以使用newvals中的值优先覆盖copyfrom中的指定字段
 		new = function(self, copyfrom, fieldnames, newvals)	
-			local r = pub.init(nil, self)
+			local r = resultPub.init(nil, self)
 			if not copyfrom then
 				return r
 			end
@@ -1034,7 +1033,7 @@ local modelMeta = {
 				end
 				
 				--default add all unique key
-				for k,v in pairs(m.__fieldIndices) do
+				for k,v in pairs(self.__fieldIndices) do
 					if v.type == 1 or v.type == 2 then
 						keys[k] = true
 					end
