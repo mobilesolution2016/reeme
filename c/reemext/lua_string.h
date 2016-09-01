@@ -209,10 +209,7 @@ static int lua_string_split(lua_State* L)
 	// 设置标记
 	size_t i, endpos;
 	for(i = 0; i < byLen; ++ i)
-	{
 		checker[by[i]] = 1;
-		by ++;
-	}
 	
 	// 逐个字符的检测	
 	for (i = endpos = 0; i < srcLen; ++ i)
