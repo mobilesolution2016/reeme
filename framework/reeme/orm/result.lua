@@ -15,8 +15,9 @@
 		结果集中的字段名冲突的时候，就可以采用这种方式越过r的metatable直接访问字段，就不用担心函数名称与字段名称冲突了。比如r中有一个函数
 		名为saveTo，如果数据表中也有一个字段叫做saveTo(尽管这种可能性其实很小而且也不应该)，那么r().saveTo就可以操作这个字段了。
 		
-	   r(param) 这个调用还可以有参数，参数可以是true|false|table，当为false时，和没有参数是一样的，当为true时，将会一次性返回整个结果集，那
-	   就是一个二维的table。当为table时，可以将该table中的所有的key=>value覆盖到当前的结果集中，相当于一次性设置结果集中当前行中列的值
+	   r(param) 这个调用还可以有参数，参数可以是true|false|table|string，当为false时，和没有参数是一样的，当为true时，将会一次性返回整个结
+	   果集，那就是一个二维的table。当为table时，可以将该table中的所有的key=>value覆盖到当前的结果集中，相当于一次性设置结果集中当前行中列
+	   的值。也可以是一个string，表示列名，函数会根据该列的数据类型自动的转换值类型之后再返回
 		
 	3、for k,v in pairs(r) do这样可以迭代出r当前行的所有字段，不会将r中的函数迭代出来
 	   如果您的luajit在编译的时候没有加上过LUAJIT_ENABLE_LUA52COMPAT这个选项（参考：http://luajit.org/extensions.html拉到最后面基本上就可以看到）
@@ -66,7 +67,26 @@ local callRowTable = function(self, tbl)
 		return rawget(self, -10003)
 	end
 	
-	if type(tbl) == 'table' then
+	local tp = type(tbl)
+	if tp == 'string' then
+		local m = rawget(self, -10000)
+		local f = m.__fields[tbl]
+		
+		if f then
+			local v = getmetatable(self).__index[tbl]
+
+			if f.type == 1 then
+				return f.isDate and require('reeme.orm.datetime')(v) or v
+
+			elseif f.type == 2 or f.type == 3 then
+				return tonumber(v)
+				
+			elseif f.type == 4 then
+				return toboolean(v)
+			end
+		end
+		
+	elseif tp == 'table' then
 		local vals = getmetatable(self).__index
 		for k,v in pairs(tbl) do
 			vals[k] = v
@@ -117,7 +137,7 @@ local pub = {
 	init = function(r, m)
 		if r == nil then
 			local rVals = {}
-			local valsMeta = { 
+			local valsMeta = {
 				__index = rVals, 
 				__newindex = rVals, 
 				__len = getRowsLen, 

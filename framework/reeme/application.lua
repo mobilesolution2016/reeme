@@ -5,8 +5,11 @@ function error(e)
 	error_old({ msg = e })
 end
 
+local getAppConfigs = function()
+	return configs
+end
+	
 --print is use writes argument values into the nginx error.log file with the ngx.NOTICE log level
-		
 local copybasees = {
 	statusCode = {
 		HTTP_CONTINUE = ngx.HTTP_CONTINUE, --100
@@ -73,18 +76,14 @@ local copybasees = {
 		INFO = ngx.INFO,
 		DEBUG = ngx.DEBUG,
 	},
-
-	getConfigs = function()
-		return configs
-	end,
 }
 
 local loadables = { cookie = 1, orm = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1 }
 local application = {
 	__index = function(self, key)	
-		f = loadables[key]
+		local f = loadables[key]
 		if f == 1 then
-			f = require(string.format('reeme.%s', key))
+			f = require('reeme.' .. key)
 			if type(f) == 'function' then
 				local reeme = self.__reeme
 				local r = f(reeme)
@@ -101,7 +100,7 @@ local application = {
 			return r
 		end
 		
-		local f = self.__commonBase[key]
+		f = self.__bases[key] or self.__users[key]
 		if f then
 			rawset(self.__reeme, key, f)
 			return f
@@ -166,6 +165,14 @@ local appMeta = {
 			return self
 		end,
 		
+		deniedAction = function(self, func)
+			if type(func) == 'function' then
+				self.deniedActionProc = func
+			end
+			
+			return self
+		end,
+		
 		addUsers = function(self, vals)
 			local u = self.users
 			for k,v in pairs(vals) do
@@ -217,12 +224,13 @@ local appMeta = {
 
 			local metacopy = { __index = { 
 				__reeme = c, 
-				__commonBase = self.controllerBase or {}, 
+				__bases = self.controllerBase or {}, 
+				__users = self.users or {},
 				
 				statusCode = copybasees.statusCode,
 				method = copybasees.method,
 				logLevel = copybasees.logLevel,
-				getConfigs = copybasees.getConfigs,
+				getConfigs = getAppConfigs,
 				
 				currentControllerName = path,
 				currentRequestAction = act
@@ -286,13 +294,6 @@ local appMeta = {
 
 				--执行动作
 				if c and mth then
-					if self.users then
-						for k,v in pairs(self.users) do
-							rawset(c, k, v)
-						end
-						self.users = nil
-					end
-					
 					r = mth(c)
 				end
 				
@@ -303,6 +304,13 @@ local appMeta = {
 						ngx.say(getmetatable(r) and r:content() or c.utils.jsonEncode(r))
 					elseif tp == 'string' then
 						ngx.say(r)
+					elseif tp == false then
+						--动作函数返回false表示拒绝访问，此时如果定义有deniedAction的话就会被执行，否则统一返回ErrorAccess的报错
+						if self.deniedActionProc then
+							self.deniedActionProc(self, c, path, act)
+						else
+							error('Error Access!')
+						end
 					end
 				end
 				--require('mobdebug').done()

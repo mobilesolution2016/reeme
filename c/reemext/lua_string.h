@@ -375,6 +375,53 @@ static int lua_string_cmp(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_string_findchar(lua_State* L)
+{
+	size_t len = 0, len2 = 0;
+	const char* s = luaL_checklstring(L, 1, &len);
+	const char* f = luaL_checklstring(L, 2, &len2);
+
+	if (len && len2)
+	{
+		long t = luaL_optinteger(L, 3, 0);
+		if (t > 0 && t <= len)
+			s += t - 1;
+
+		f = std::strchr(s, f[0]);
+		if (f)
+		{
+			lua_pushinteger(L, f - s + 1);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int lua_string_rfindchar(lua_State* L)
+{
+	size_t len = 0, len2 = 0;
+	const char* s = luaL_checklstring(L, 1, &len);
+	const char* f = luaL_checklstring(L, 2, &len2);
+
+	if (len && len2)
+	{
+		long t = luaL_optinteger(L, 3, 0);
+		if (t > 0 && t <= len)
+			s += t - 1;
+
+		f = std::strrchr(s, f[0]);
+		if (f)
+		{
+			lua_pushinteger(L, f - s + 1);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+//////////////////////////////////////////////////////////////////////////
 struct StringReplacePos
 {
 	size_t		offset;
@@ -426,7 +473,7 @@ static int lua_string_replace(lua_State* L)
 				to = lua_tolstring(L, -1, &toLen);
 
 				srcptr = src;
-				while((foundPos = fromLen == 1 ? strchr(srcptr, from[0]) : strstr(srcptr, from)) != 0)
+				while((foundPos = fromLen == 1 ? std::strchr(srcptr, from[0]) : std::strstr(srcptr, from)) != 0)
 				{			
 					newrep.offset = foundPos - src;
 					newrep.fromLen = fromLen;
@@ -521,7 +568,7 @@ static int lua_string_replace(lua_State* L)
 				srcptr = src;
 				for(;;)
 				{
-					foundPos = fromLen == 1 ? strchr(srcptr, from[0]) : strstr(srcptr, from);
+					foundPos = fromLen == 1 ? std::strchr(srcptr, from[0]) : std::strstr(srcptr, from);
 					if (!foundPos)
 						break;
 
@@ -665,7 +712,7 @@ static int lua_string_subto(lua_State* L)
 			return 0;
 
 		const char* findStart = src + start;
-		const char* pos = toLen == 1 ? strchr(findStart, to[0]) : strstr(findStart, to);
+		const char* pos = toLen == 1 ? std::strchr(findStart, to[0]) : std::strstr(findStart, to);
 		if (!pos)
 			return 0;
 		
@@ -1015,7 +1062,7 @@ public:
 
 		for(;;)
 		{
-			const char* foundPos = savedPos ? savedPos : (const char*)memchr(src + offset, '{', srcLen - offset);
+			const char* foundPos = savedPos ? savedPos : (const char*)std::memchr(src + offset, '{', srcLen - offset);
 			savedPos = 0;
 
 			if (!foundPos)
@@ -1534,6 +1581,10 @@ static void luaext_string(lua_State *L)
 		{ "trim", &lua_string_trim },
 		// 字符串比较
 		{ "cmp", &lua_string_cmp },
+		// 单个字符正向查找
+		{ "findchar", &lua_string_findchar },
+		// 单个字符反向查找
+		{ "rfindchar", &lua_string_rfindchar },
 		// 字符串快速替换
 		{ "replace", &lua_string_replace },
 		// 字符串指定位置+结束位置替换

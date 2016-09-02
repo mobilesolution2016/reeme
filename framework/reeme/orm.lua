@@ -1,5 +1,5 @@
 local models = {}
-local validTypes = { s = 1, i = 2, n = 3, b = 4 }
+local validTypes = { s = 1, i = 2, n = 3, b = 4, d = 5, t = 6 }
 local validIndex = { primary = 1, unique = 2, index = 3 }
 local modelmeta = require('reeme.orm.model')
 
@@ -39,7 +39,20 @@ local parseFields = function(m)
 					defv = nil
 				end
 
-				fields[k] = { maxlen = tonumber(maxl), ai = isai, null = allownull, type = t, default = defv, colname = k }
+				local newf = { maxlen = tonumber(maxl), ai = isai, null = allownull, type = t, default = defv, colname = k }
+				
+				--date/datetime强制转为string型，然后再打标记
+				if t == 5 then
+					newf.type = 1
+					newf.maxlen = 10
+					newf.isDate = true
+				elseif t == 6 then
+					newf.type = 1
+					newf.maxlen = 19
+					newf.isDate, newf.isDateTime = true, true
+				end
+
+				fields[k] = newf
 				plains[#plains + 1] = k
 			else
 				return false

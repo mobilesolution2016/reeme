@@ -13,6 +13,8 @@
 
 local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
 local resultPub = require('reeme.orm.result')
+local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
+local queryMeta = nil
 
 --处理where条件的值，与field字段的配置类型做比对，然后根据是否有左右引号来决定是否要做反斜杠处理
 local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
@@ -88,14 +90,21 @@ local parseWhere = function(self, condType, name, value)
 	
 	local tv = type(value)
 	if tv == 'table' then
-		if not getmetatable(value) then
-			--{value}这种表达式
-			assert(#value > 0)
-			return { expr = puredkeyname and string.format('%s=%s', name, value[1]) or value[1], c = condType }
+		local mt = getmetatable(value)		
+		if mt == queryMeta then
+			--子查询
+			return { puredkeyname = puredkeyname, n = name, sub = value, c = condType }
 		end
 		
-		--子查询
-		return { puredkeyname = puredkeyname, n = name, sub = value, c = condType }
+		if mt == datetimeMeta then
+			--日期类型
+			value = tostring(value)
+			return { expr = puredkeyname and string.format('%s=%s', name, value) or value, c = condType }
+		end
+		
+		--{value}这种表达式
+		assert(#value > 0)
+		return { expr = puredkeyname and string.format('%s=%s', name, value[1]) or value[1], c = condType }
 		
 	elseif value == ngx.null then
 		--设置为null值
@@ -536,18 +545,23 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 				--NULL值直接设置
 				v = 'NULL'
 			elseif tp == 'table' then
-				--table原值则取出table中的1号值
-				v = v[1]
+				--table类型则根据meta来进行判断是什么table
+				local mt = getmetatable(v)
+				if mt == datetimeMeta then
+					--日期时间
+					v = ngx.quote_sql_str(tostring(v))
+				elseif mt == queryMeta then	
+					--子查询
+				else
+					--字符串原值
+					v = v[1]
+				end
 			elseif cfg.type == 1 then
 				--字段要求为字符串，因此转字符串并转义
 				v = ngx.quote_sql_str(tostring(v))
 			elseif cfg.type == 4 then
 				--布尔型使用1或0来处理
-				if tp == 'boolean' then
-					v = v and 1 or 0
-				else
-					v = toboolean(v) and 1 or 0
-				end
+				v = toboolean(v) and '1' or '0'
 			elseif cfg.type == 3 then
 				--数值/浮点数类型，检测值必须为浮点数
 				if not string.checknumeric(v) then
@@ -566,7 +580,7 @@ queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
 					name = alias .. name
 				end
 
-				keyvals[#keyvals + 1] = string.format("%s=%s", name, tostring(v))
+				keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
 			end
 		end
 	end
@@ -600,7 +614,8 @@ queryexecuter.buildWheres = function(self, sqls, condPre, alias, condValues)
 			local one, rsql = condValues[i], nil
 			
 			if i > 1 and one.c == 1 then
-				one.c = 2
+				--如果没有指定条件连接方式，那么当不是第1个条件的时候，就会自动修改为and
+				one.c = 1
 			end			
 			
 			if one.sub then
@@ -729,7 +744,7 @@ end
 
 
 --query的原型类
-local queryMeta = {
+queryMeta = {
 	__index = {
 		--全部清空
 		reset = function(self)
@@ -1001,6 +1016,23 @@ local queryMeta = {
 				end
 			end
 		end,
+		--执行select查询并获取所有的行，然后将这些行的指定的字段形成为一个新的table返回，如果没有结果集或不是查询指令时返回一个空的table而非nil
+		fetchAllSingles = function(self, colname, db, result)
+			if self.op == 'SELECT' then
+				local res, r = self:execute(db, result)	
+				if res and r + 1 then
+					r = r(true)
+
+					local s = table.new(#r, 0)
+					for i = 1, #r do
+						s[i] = r[i][colname]
+					end
+					
+					return s
+				end
+			end
+			return {}
+		end,
 	}
 }
 
@@ -1099,6 +1131,18 @@ local modelMeta = {
 		findAll = function(self, p1, p2, p3, p4)
 			local r = self:find(p1, p2, p3, p4)
 			return r and r(true) or {}
+		end,
+		--和findFirst一样，但是仅查找第1行的指定的某1列或某几列，如果只设置了一个列名，那么返回的将是一个单值，如果设置了好几列，那么返回的将是一个table(注意不是结果集实例)
+		findSingle = function(self, colname, name, val)
+			local q = { __m = self, __reeme = self.__reeme, op = 'SELECT' }
+			setmetatable(q, queryMeta)
+			if name then q:where(name, val) end
+			q = q:columns(colname):limit(1):exec()
+			
+			if string.findchar(colname, ',') then
+				return q(false)
+			end
+			return q and q[colname] or nil
 		end,
 		
 		--建立一个select查询器
