@@ -48,14 +48,9 @@ static int lua_table_extend(lua_State* L)
 		while (lua_next(L, i))
 		{
 			lua_pushvalue(L, -2);
-			lua_rawget(L, 1);
-			if (lua_isnil(L, -1))
-			{
-				lua_pushvalue(L, -3);
-				lua_pushvalue(L, -3);
-				lua_rawset(L, 1);
-			}
-			lua_pop(L, 2);
+			lua_pushvalue(L, -2);
+			lua_settable(L, 1);
+			lua_pop(L, 1);
 		}
 	}
 
@@ -209,14 +204,14 @@ static int lua_table_new(lua_State* L)
 {
 	int t = lua_gettop(L), narr = 4, nrec = 0;
 
-	if (t == 1)
-	{
-		narr = luaL_optinteger(L, 1, 4);
-	}
-	else if (t == 2)
+	if (t == 2)
 	{
 		narr = luaL_optinteger(L, 1, 4);
 		nrec = luaL_optinteger(L, 2, 0);
+	}
+	else if (t == 1)
+	{
+		narr = luaL_optinteger(L, 1, 4);
 	}
 
 	lua_createtable(L, narr, nrec);

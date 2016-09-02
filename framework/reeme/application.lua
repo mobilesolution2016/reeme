@@ -128,7 +128,6 @@ local function lazyLoaderProc(self, key, ...)
 	end
 end
 
-local preActionProc = nil
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
@@ -153,7 +152,15 @@ local appMeta = {
 		
 		preAction = function(self, func)
 			if type(func) == 'function' then
-				preActionProc = func
+				self.preActionProc = func
+			end
+			
+			return self
+		end,
+		
+		errAction = function(self, func)
+			if type(func) == 'function' then
+				self.errActionProc = func
 			end
 			
 			return self
@@ -175,7 +182,30 @@ local appMeta = {
 		--加载控制器，返回控制器实例和要执行的动作函数
 		loadController = function(self, path, act)
 			local dirs = configs.dirs
-			local controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, path:gsub('/', '.')))
+			local controlNew = nil
+
+			while true do
+				--加载
+				local _, errmsg = pcall(function()
+					controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, path:gsub('/', '.')))
+				end)
+
+				if controlNew then
+					break
+				end
+				
+				--失败，则判断是否有errAction，如果有就执行
+				if self.errActionProc then
+					--这个函数可以返回新的path和act用于去加载。如果没有返回，那么就停止加载了
+					path, act = self.errActionProc(self, path, act, errmsg)
+					if not path or not act then
+						return nil, nil, true
+					end
+				else
+					ngx.say(errmsg)
+					return nil, nil, true
+				end
+			end
 			
 			if type(controlNew) ~= 'function' then
 				error(string.format('controller %s must return a function that has action functions', path))
@@ -224,11 +254,15 @@ local appMeta = {
 				local c, mth, r
 				
 				--载入控制器
-				c, mth = self:loadController(path, act)
+				c, mth, r = self:loadController(path, act)
+				if r == true then
+					--halt it
+					return
+				end
 				
-				if preActionProc then
+				if self.preActionProc then
 					--执行动作前响应函数
-					r = preActionProc(self, c, act, mth)
+					r = self.preActionProc(self, c, path, act, mth)
 					local tp = type(r)
 
 					if tp == 'table' then
@@ -251,7 +285,7 @@ local appMeta = {
 				end
 
 				--执行动作
-				if mth then
+				if c and mth then
 					if self.users then
 						for k,v in pairs(self.users) do
 							rawset(c, k, v)
@@ -261,6 +295,7 @@ local appMeta = {
 					
 					r = mth(c)
 				end
+				
 				if r then
 					local tp = type(r)
 
@@ -272,11 +307,13 @@ local appMeta = {
 				end
 				--require('mobdebug').done()
 				
-				local lazyLoaders = rawget(c, "_lazyLoaders")
-				for k, v in pairs(lazyLoaders) do
-					k(c, v)
+				if c then
+					local lazyLoaders = rawget(c, "_lazyLoaders")
+					for k, v in pairs(lazyLoaders) do
+						k(c, v)
+					end
+					c = nil
 				end
-				c = nil
 			end)
 
 			if not ok then

@@ -69,6 +69,16 @@ static int lua_toboolean(lua_State* L)
 	return cc;
 }
 
+static int lua_checknull(lua_State* L)
+{
+	int t = lua_type(L, 1);
+	if ((t == LUA_TUSERDATA || t == LUA_TLIGHTUSERDATA) && lua_touserdata(L, 1) == NULL)
+		lua_pushvalue(L, 2);
+	else
+		lua_pushvalue(L, 1);
+	return 1;
+}
+
 //////////////////////////////////////////////////////////////////////////
 const char initcodes[] = {
 	"table.unique = function(tbl)\n"
@@ -98,6 +108,9 @@ REEME_API int luaopen_reemext(lua_State* L)
 
 	lua_pushcfunction(L, &lua_toboolean);
 	lua_setglobal(L, "toboolean");
+
+	lua_pushcfunction(L, &lua_checknull);
+	lua_setglobal(L, "checknull");
 
 	int r = luaL_dostring(L, initcodes);
 	assert(r == 0);
