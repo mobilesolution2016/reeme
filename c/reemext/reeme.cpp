@@ -72,10 +72,19 @@ static int lua_toboolean(lua_State* L)
 static int lua_checknull(lua_State* L)
 {
 	int t = lua_type(L, 1);
+	int top = lua_gettop(L);
+
 	if ((t == LUA_TUSERDATA || t == LUA_TLIGHTUSERDATA) && lua_touserdata(L, 1) == NULL)
-		lua_pushvalue(L, 2);
+	{
+		if (top >= 2)
+			lua_pushvalue(L, 2);
+		else
+			lua_pushboolean(L, 1);
+	}
 	else
-		lua_pushvalue(L, 1);
+	{
+		lua_pushboolean(L, 0);
+	}
 	return 1;
 }
 

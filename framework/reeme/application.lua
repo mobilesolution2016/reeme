@@ -127,6 +127,10 @@ local function lazyLoaderProc(self, key, ...)
 	end
 end
 
+local outputRedirect = function(app, v)
+	ngx.say(v)
+end
+
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
@@ -149,27 +153,11 @@ local appMeta = {
 			return self
 		end,
 		
-		preAction = function(self, func)
-			if type(func) == 'function' then
-				self.preActionProc = func
+		on = function(self, name, func)
+			local valids = { pre = 1, err = 1, denied = 1, missmatch = 1, output = 1 }
+			if type(func) == 'function' and valids[name] then
+				self[name .. 'Proc'] = func
 			end
-			
-			return self
-		end,
-		
-		errAction = function(self, func)
-			if type(func) == 'function' then
-				self.errActionProc = func
-			end
-			
-			return self
-		end,
-		
-		deniedAction = function(self, func)
-			if type(func) == 'function' then
-				self.deniedActionProc = func
-			end
-			
 			return self
 		end,
 		
@@ -201,10 +189,10 @@ local appMeta = {
 					break
 				end
 				
-				--失败，则判断是否有errAction，如果有就执行
-				if self.errActionProc then
+				--失败，则判断是否有errProc，如果有就执行
+				if self.errProc then
 					--这个函数可以返回新的path和act用于去加载。如果没有返回，那么就停止加载了
-					path, act = self.errActionProc(self, path, act, errmsg)
+					path, act = self.errProc(self, path, act, errmsg)
 					if not path or not act then
 						return nil, nil, true
 					end
@@ -260,7 +248,7 @@ local appMeta = {
 				local router = configs.router or require("reeme.router")
 				local path, act = router(ngx.var.uri)
 				local c, mth, r
-				
+
 				--载入控制器
 				c, mth, r = self:loadController(path, act)
 				if r == true then
@@ -268,9 +256,9 @@ local appMeta = {
 					return
 				end
 				
-				if self.preActionProc then
+				if self.preProc then
 					--执行动作前响应函数
-					r = self.preActionProc(self, c, path, act, mth)
+					r = self.preProc(self, c, path, act, mth)
 					local tp = type(r)
 
 					if tp == 'table' then
@@ -295,21 +283,25 @@ local appMeta = {
 				--执行动作
 				if c and mth then
 					r = mth(c)
+				elseif self.missmatchProc then
+					self.missmatchProc(self, path, act)
+					r = nil
 				end
 				
 				if r then
 					local tp = type(r)
+					local out = self.outputProc or outputRedirect
 
 					if tp == 'table' then
-						ngx.say(getmetatable(r) and r:content() or c.utils.jsonEncode(r))
+						out(self, getmetatable(r) and r:content() or c.utils.jsonEncode(r))
 					elseif tp == 'string' then
-						ngx.say(r)
+						out(self, r)
 					elseif tp == false then
-						--动作函数返回false表示拒绝访问，此时如果定义有deniedAction的话就会被执行，否则统一返回ErrorAccess的报错
-						if self.deniedActionProc then
-							self.deniedActionProc(self, c, path, act)
+						--动作函数返回false表示拒绝访问，此时如果定义有deniedProc的话就会被执行，否则统一返回ErrorAccess的报错
+						if self.deniedProc then
+							self.deniedProc(self, c, path, act)
 						else
-							error('Error Access!')
+							out(self, 'Error Access!')
 						end
 					end
 				end
@@ -327,12 +319,14 @@ local appMeta = {
 			if not ok then
 				local msg = err.msg
 				local msgtp = type(msg)
+				local out = self.outputProc or outputRedirect
+				
 				if type(msg) == "string" then
-					ngx.say(msg)
+					out(self, msg)
 				elseif type(msg) == "table" then
-					ngx.say(c.utils.jsonEncode(msg))
+					out(self, c.utils.jsonEncode(msg))
 				elseif type(err) == "string" then
-					ngx.say(err)
+					out(self, err)
 				end
 
 				ngx.eof()

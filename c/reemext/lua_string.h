@@ -622,7 +622,7 @@ static int lua_string_subreplaceto(lua_State* L)
 		return 1;
 	}
 
-	long startp = luaL_checklong(L, 3) - 1, endp = srcLen - 1;
+	ptrdiff_t startp = luaL_checklong(L, 3) - 1, endp = srcLen - 1;
 	if (lua_isnumber(L, 4))
 		endp = lua_tointeger(L, 4);
 
@@ -663,11 +663,11 @@ static int lua_string_subreplace(lua_State* L)
 		return 1;
 	}
 
-	long startp = luaL_checklong(L, 3) - 1, leng = LONG_MAX;
+	ptrdiff_t startp = luaL_checklong(L, 3) - 1, leng = LONG_MAX;
 	if (lua_isnumber(L, 4))
 		leng = lua_tointeger(L, 4);
 
-	leng = std::min(leng, (long)(srcLen - startp));
+	leng = std::min(leng, (ptrdiff_t)(srcLen - startp));
 	if (leng < 1)
 	{
 		lua_pushvalue(L, 1);
@@ -768,63 +768,223 @@ static int lua_string_countchars(lua_State* L)
 static int lua_string_checknumeric(lua_State* L)
 {
 	double d = 0;
-	int r = 0;
+	int r = 0, t = lua_gettop(L);
 
-	if (lua_isnumber(L, 1))
+	if (t >= 2)
 	{
-		r = 1;
-	}
-	else
-	{
-		size_t len = 0;
-		char *endp = 0;
-		const char* s = (const char*)lua_tolstring(L, 1, &len);
-
-		if (len > 0)
+		if (lua_isnumber(L, 1))
 		{
-			d = strtod(s, &endp);
-			if (endp && endp - s == len)
-				r = 1;
+			r = 1;
+		}
+		else
+		{
+			size_t len = 0;
+			char *endp = 0;
+			const char* s = (const char*)lua_tolstring(L, 1, &len);
+
+			if (len > 0)
+			{
+				d = strtod(s, &endp);
+				if (endp && endp - s == len)
+					r = 1;
+			}
 		}
 	}
 
-	lua_pushboolean(L, r);
-	lua_pushnumber(L, d);
-	return 2;
+	if (t >= 2)
+	{
+		if (!r)
+			return 0;
+
+		lua_pushvalue(L, 2);
+		return 1;
+	}
+	else
+	{
+		lua_pushboolean(L, r);
+		lua_pushnumber(L, d);
+		return 2;
+	}
+
+	return 0;
 }
 
 static int lua_string_checkinteger(lua_State* L)
 {
 	long long v = 0;
-	int r = 0;
-	if (lua_isnumber(L, 1))
-	{
-		r = 1;
-	}
-	else
-	{
-		size_t len = 0;
-		char *endp = 0;
-		const char* s = (const char*)lua_tolstring(L, 1, &len);
+	int r = 0, t = lua_gettop(L);
 
-		if (len > 0)
+	if (t >= 1)
+	{
+		if (lua_isnumber(L, 1))
 		{
-			v = strtoll(s, &endp, 10);
-			if (endp && endp - s == len)
-				r = 1;
+			r = 1;
+		}
+		else
+		{
+			size_t len = 0;
+			char *endp = 0;
+			const char* s = (const char*)lua_tolstring(L, 1, &len);
+
+			if (len > 0)
+			{
+				v = strtoll(s, &endp, 10);
+				if (endp && endp - s == len)
+					r = 1;
+			}
 		}
 	}
 
-	lua_pushboolean(L, r);
-#ifdef REEME_64
-	lua_pushinteger(L, v);
-#else
-	if (v > 0x7FFFFFFF)
-		lua_pushnumber(L, (double)v);
+	if (t >= 2)
+	{
+		if (!r)
+			return 0;
+
+		lua_pushvalue(L, 2);
+		return 1;
+	}
 	else
+	{
+		lua_pushboolean(L, r);
+#ifdef REEME_64
 		lua_pushinteger(L, v);
+#else
+		if (v > 0x7FFFFFFF)
+			lua_pushnumber(L, (double)v);
+		else
+			lua_pushinteger(L, v);
 #endif
-	return 2;
+		return 2;
+	}
+
+	return 0;
+}
+
+static int lua_string_checkboolean(lua_State* L)
+{
+	int top = lua_gettop(L), r = 0, cc = 0;
+	if (top >= 1)
+	{
+		switch (lua_type(L, 1))
+		{
+		case LUA_TNUMBER:
+		if ((lua_isnumber(L, 1) && lua_tonumber(L, 1) != 0) || lua_tointeger(L, 1) != 0)
+			r = 1;
+		cc = 1;
+		break;
+
+		case LUA_TBOOLEAN:
+			lua_pushvalue(L, 1);
+			cc = 1;
+			break;
+
+		case LUA_TSTRING:
+		{
+			size_t len = 0;
+			const char* s = lua_tolstring(L, 1, &len);
+
+			if (len == 4 && stricmp(s, "true") == 0)
+				r = 1;
+			else if (len = 5 && stricmp(s, "false") == 0)
+				cc = 1;
+			else if (len == 1)
+			{
+				if (s[0] == '0') cc = 1;
+				else if (s[0] == '1') r = cc = 1;
+			}
+		}
+		break;
+		}
+	}
+
+	if (cc)
+	{
+		if (top >= 2)
+			lua_pushvalue(L, 2);
+		else
+			lua_pushboolean(L, r);
+	}
+	return cc;
+}
+
+static int lua_string_checkstring(lua_State* L)
+{
+	if (!lua_isstring(L, 1))
+		return 0;
+
+	size_t len = 0;
+	const char* s = lua_tolstring(L, 1, &len);
+	if (!s)
+		return 0;
+	
+	uint32_t flags = 0;
+	ptrdiff_t minl = 0, maxl = len;
+	int utf8 = 0, top = lua_gettop(L);
+
+	for(int n = 2; n <= top; n ++)
+	{
+		int t = lua_type(L, n);
+		if (flags & (1 << t))
+			return luaL_error(L, "error type of parameter(#%d) for string.checkstring", n);
+
+		flags |= 1 << t;
+		if (t == LUA_TNUMBER)
+		{
+			// 字符串最小和最大长度范围
+			minl = lua_tointeger(L, n);
+			if (lua_isnumber(L, n + 1))
+			{
+				maxl = lua_tointeger(L, 3);
+				n ++;
+			}
+
+			if (utf8)
+			{
+			}
+			else if (len < minl || len > maxl)
+			{
+				flags = 0;
+				break;
+			}
+		}
+		else if (t == LUA_TSTRING)
+		{
+			// 正则表达式进行匹配
+			lua_getglobal(L, "string");
+			lua_getfield(L, -1, "match");
+			lua_pushvalue(L, 1);
+			lua_pushvalue(L, n);
+			lua_pcall(L, 2, 1, 0);
+			if (lua_isnil(L, -1))
+			{
+				flags = 0;
+				break;
+			}
+		}
+		else if (t == LUA_TBOOLEAN)
+		{
+			// 是否utf8编码的字符串
+			utf8 = lua_toboolean(L, n);
+		}
+		else if (t == LUA_TFUNCTION)
+		{
+			// 使用检测函数进行检测，返回true表示检测通过
+			lua_pushvalue(L, n);
+			lua_pushvalue(L, 1);
+			if (lua_pcall(L, 1, 1, 0) || lua_toboolean(L, -1) == 0)
+			{
+				flags = 0;
+				break;
+			}
+		}
+	}
+
+	if (flags)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+	return 0;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -1581,10 +1741,14 @@ static void luaext_string(lua_State *L)
 		{ "trim", &lua_string_trim },
 		// 字符串比较
 		{ "cmp", &lua_string_cmp },
-		// 单个字符正向查找
+
+		// 单个字符正向查找（3~5倍性能于string.find(str, by, 1, true)）
 		{ "findchar", &lua_string_findchar },
 		// 单个字符反向查找
 		{ "rfindchar", &lua_string_rfindchar },
+		// 对字符串进行指定字符的计数
+		{ "countchars", &lua_string_countchars },
+
 		// 字符串快速替换
 		{ "replace", &lua_string_replace },
 		// 字符串指定位置+结束位置替换
@@ -1593,21 +1757,27 @@ static void luaext_string(lua_State *L)
 		{ "subreplace", &lua_string_subreplace },
 		// 字符串查找带截取
 		{ "subto", &lua_string_subto },
-		// 对字符串进行指定字符的计数
-		{ "countchars", &lua_string_countchars },
+
 		// 数值+浮点数字符串检测
 		{ "checknumeric", &lua_string_checknumeric },
 		// 整数字符串检测
 		{ "checkinteger", &lua_string_checkinteger },
-		// 模板解析（不支持语法和关键字，能按照变量名来进行替换）
+		// 布尔型检测（允许数值、字符串和boolean类型）
+		{ "checkboolean", &lua_string_checkboolean },
+		// 字符串检测
+		{ "checkstring", &lua_string_checkstring },
+
+		// 模板解析（不支持语法和关键字，能按照变量名来进行替换）（当字符串较长时，2~3倍性能于string.format）
 		{ "template", &lua_string_template },
 		// 模板解析
 		{ "parseTemplate", &lua_string_parsetemplate },
+
 		// 编译Boyer-Moore子字符串
 		{ "bmcompile", &lua_string_bmcompile },
-		// 用编译好的BM字符串进行查找
+		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串越长性能越优）
 		{ "bmfind", &lua_string_bmfind },
-		// Json解码
+
+		// Json解码（3~4倍性能于cjson）
 		{ "json", &lua_string_json },
 
 		{ NULL, NULL }
