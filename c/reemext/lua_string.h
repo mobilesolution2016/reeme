@@ -770,7 +770,7 @@ static int lua_string_checknumeric(lua_State* L)
 	double d = 0;
 	int r = 0, t = lua_gettop(L);
 
-	if (t >= 2)
+	if (t >= 1)
 	{
 		if (lua_isnumber(L, 1))
 		{
@@ -934,12 +934,42 @@ static int lua_string_checkstring(lua_State* L)
 			minl = lua_tointeger(L, n);
 			if (lua_isnumber(L, n + 1))
 			{
+				// 如果下一个参数也是数值型的话，那么就默认为与本参数一起组成最小到最大长度允许范围
 				maxl = lua_tointeger(L, 3);
 				n ++;
 			}
 
 			if (utf8)
 			{
+				// 计算UTF8下字符串的长度
+				ptrdiff_t cc = 0;
+				const char* ptr = s;
+				while (ptr - s < len)
+				{
+					uint8_t hiChar = ptr[0];
+					if (!(hiChar & 0x80))
+						ptr ++;
+					else if ((hiChar & 0xE0) == 0xC0)
+						ptr += 2;
+					else if ((hiChar & 0xF0) == 0xE0)
+						ptr += 3;
+					else if ((hiChar & 0xF8) == 0xF0)
+						ptr += 4;
+					else if ((hiChar & 0xFC) == 0xF8)
+						ptr += 5;
+					else if ((hiChar & 0xFE) == 0xFC)
+						ptr += 6;
+					else
+						return luaL_error(L, "illegal char in string.checkstring(#1) with utf-8 mode", 0);
+
+					cc ++;
+				}
+
+				if (cc < minl || cc > maxl)
+				{
+					flags = 0;
+					break;
+				}
 			}
 			else if (len < minl || len > maxl)
 			{

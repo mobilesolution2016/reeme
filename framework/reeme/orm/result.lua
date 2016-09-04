@@ -38,7 +38,7 @@ local execModelInstance = function(self, db, op, limit, full)
 		local q = m:query()
 
 		q.op = op
-		q.__full = full
+		q.fullop = full
 
 		if limit then 
 			q:limit(1) 

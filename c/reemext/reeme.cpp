@@ -1,9 +1,9 @@
 #include "reeme.h"
 #include "lua.hpp"
 #include "json.h"
+#include "lua_utf8str.h"
 #include "lua_string.h"
 #include "lua_table.h"
-#include "lua_utf8str.h"
 #include "sql.h"
 
 static luaL_Reg cExtProcs[] = {

@@ -78,7 +78,7 @@ local copybasees = {
 	},
 }
 
-local loadables = { cookie = 1, orm = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1 }
+local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1 }
 local application = {
 	__index = function(self, key)	
 		local f = loadables[key]
@@ -288,7 +288,7 @@ local appMeta = {
 					r = nil
 				end
 				
-				if r then
+				if r ~= nil then
 					local tp = type(r)
 					local out = self.outputProc or outputRedirect
 
@@ -296,7 +296,7 @@ local appMeta = {
 						out(self, getmetatable(r) and r:content() or c.utils.jsonEncode(r))
 					elseif tp == 'string' then
 						out(self, r)
-					elseif tp == false then
+					elseif r == false then
 						--动作函数返回false表示拒绝访问，此时如果定义有deniedProc的话就会被执行，否则统一返回ErrorAccess的报错
 						if self.deniedProc then
 							self.deniedProc(self, c, path, act)

@@ -1,785 +1,12 @@
---ModelQuery建立的类型，self.__m是model定义
-
---[[
-	where的condType可以取以下值：
-	0: none
-	1: and
-	2: or
-	3: xor
-	4: not
-	
-	__m指向model原型
-]]
-
-local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
-local resultPub = require('reeme.orm.result')
-local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
 local queryMeta = nil
-
---处理where条件的值，与field字段的配置类型做比对，然后根据是否有左右引号来决定是否要做反斜杠处理
-local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
-local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
-
-local processWhereValue = function(self, field, value)
-	local tp = type(value)
-	value = tostring(value)
-
-	local l, quoted = #value, false
-	if value:byte(1) == 39 and value:byte(l) == 39 then
-		quoted = true
-	end
-	
-	if field.type == 1 then
-		--字符串/Binary型的字段
-		if l == 0 then
-			return "''"
-		end
-		if not quoted then
-			return ngx.quote_sql_str(value)
-		end
-		return value
-	end
-	
-	if field.type == 2 then
-		--整数型的字段
-		if quoted then
-			l = l - 2
-		end
-		if l <= field.maxlen then
-			return quoted and value:sub(2, l + 1) or value
-		end
-		return nil
-	end
-	
-	if field.type == 3 then
-		--小数型的字段
-		if quoted then
-			l = l - 2
-		end
-		return quoted and value:sub(2, l + 1) or value
-	end
-	
-	--布尔型的字段
-	if quoted then
-		value = value:sub(2, l - 1)
-	end
-	return booleanValids[value]
-end
-
---解析一个where条件，本函数被processWhere调用
-local parseWhere = function(self, condType, name, value)
-	self.condString = nil	--condString和condValues同一时间只会存在一个，只有一个是可以有效的
-	if not self.condValues then
-		self.condValues = {}
-	end
-
-	name = name:trim()
-	
-	if value == nil then
-		--name就是整个表达式
-		return { expr = name, c = condType }
-	end
-	
-	puredkeyname = name:match('^[0-9A-Za-z-_]+')
-	if puredkeyname and #puredkeyname == #name then
-		--key没有多余的符号，只是一个纯粹的列名
-		puredkeyname = true
-	else
-		puredkeyname = false
-	end
-	
-	local tv = type(value)
-	if tv == 'table' then
-		local mt = getmetatable(value)		
-		if mt == queryMeta then
-			--子查询
-			return { puredkeyname = puredkeyname, n = name, sub = value, c = condType }
-		end
-		
-		if mt == datetimeMeta then
-			--日期类型
-			value = tostring(value)
-			return { expr = puredkeyname and string.format('%s=%s', name, value) or value, c = condType }
-		end
-		
-		--{value}这种表达式
-		assert(#value > 0)
-		return { expr = puredkeyname and string.format('%s=%s', name, value[1]) or value[1], c = condType }
-		
-	elseif value == ngx.null then
-		--设置为null值
-		return { expr = puredkeyname and string.format('%s IS NULL', name) or (name .. 'NULL'), c = condType }
-	end
-
-	if type(name) == 'string' then
-		--key=value
-		if tv == 'string' then
-			value = ngx.quote_sql_str(value)
-			
-		elseif puredkeyname then
-			local f = self.__m.__fields[name]
-			if f and f.type == 1 then
-				--如果是字段是字符串类型，则自动转字符串
-				value = ngx.quote_sql_str(tostring(value))
-			end
-		end
-		
-		return { expr = puredkeyname and string.format('%s=%s', name, value) or (name .. value), c = condType }
-	end
-end
-
---处理where函数带来的条件
-local processWhere = function(self, condType, k, v)
-	local tp = type(k)
-	if tp == 'table' then
-		for name,val in pairs(k) do
-			local where = parseWhere(self, condType, name, val)
-			if where then
-				self.condValues[#self.condValues + 1] = where
-			else
-				error(string.format("process where(%s) function with illegal value(s) call", name))
-			end
-		end
-		return self
-	end
-	
-	if tp ~= 'string' then
-		k = tostring(k)
-	end
-
-	local where = parseWhere(self, condType, k, v)
-	if where then
-		self.condValues[#self.condValues + 1] = where
-	else
-		error(string.format("process where(%s) function with illegal value(s) call", name))
-	end
-	return self
-end
-
---处理on函数带来的条件
-local processOn = function(self, condType, k, v)
-	local tp = type(k)
-	if tp == 'string' then
-		local where = parseWhere(self, condType, k, v)
-		if where then
-			if not self.onValues then
-				self.onValues = { where }
-			else
-				self.onValues[#self.onValues + 1] = where
-			end			
-		else
-			error(string.format("process on(%s) function call failed: illegal value or confilict with declaration of model fields", name))
-		end
-
-	elseif tp == 'table' then
-		for name,val in pairs(k) do
-			local where = parseWhere(self, condType, name, val)
-			if where then
-				if not self.onValues then
-					self.onValues = { where }
-				else
-					self.onValues[#self.onValues + 1] = where
-				end
-			else
-				error(string.format("process on(%s) function call failed: illegal value or confilict with declaration of model fields", name))
-			end
-		end
-	end
-
-	return self
-end
-
---解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
-local processTokenedString = function(self, alias, expr, joinFrom)
-	if #alias == 0 then
-		return expr
-	end
-
-	local fields = self.__m.__fields
-	local sql, adjust = expr, 0
-	local n1, n2 = self.__m.__name, joinFrom and joinFrom.__m.__name or nil
-	local names = self.joinNames
-
-	local tokens, poses = _parseExpression(sql)
-	if not tokens or not poses then
-		return sql
-	end
-
-	local drops = 0
-	for i=1, #tokens do
-		local one, newone = tokens[i], nil
-		if one then
-			if fields[one] then
-				--这是一个字段的名称
-				newone = drops > 0 and one or alias .. one
-			elseif one == n1 then
-				newone = alias
-				one = one .. '.'
-			elseif one == n2 then
-				newone = joinFrom.alias
-				drops = 2
-			elseif names then
-				local q = names[one]
-				newone = q and self.joinNames[one].alias or nil
-			end
-		end
-		
-		if newone then
-			--替换掉最终的表达式
-			sql = sql:subreplace(newone, poses[i] + adjust, #one)
-			adjust = adjust + #newone - #one
-		end
-		
-		drops = drops - 1
-	end
-	
-	return sql
-end
-
---将query设置的条件合并为SQL语句
-local queryexecuter = { conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }, validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN' } }
-
-queryexecuter.SELECT = function(self, model, db)
-	local sqls = {}
-	sqls[#sqls + 1] = 'SELECT'
-	
-	--main
-	local alias = ''
-	self.db = db
-	if self.joins and #self.joins > 0 then
-		self.alias = self.userAlias or '_A'
-		alias = self.alias .. '.'
-	end	
-	
-	queryexecuter.buildColumns(self, model, sqls, alias)
-	
-	--joins fields
-	queryexecuter.buildJoinsCols(self, sqls)
-	
-	--from
-	sqls[#sqls + 1] = 'FROM'
-	sqls[#sqls + 1] = model.__name
-	if #alias > 0 then
-		sqls[#sqls + 1] = self.alias
-	end
-
-	--joins conditions	
-	queryexecuter.buildJoinsConds(self, sqls)
-	
-	--where
-	local haveWheres = queryexecuter.buildWheres(self, sqls, 'WHERE', alias)
-	queryexecuter.buildWhereJoins(self, sqls, haveWheres)
-	
-	--order by
-	queryexecuter.buildOrder(self, sqls, alias)
-	--limit
-	queryexecuter.buildLimits(self, sqls)
-	
-	--end
-	self.db = nil
-	return table.concat(sqls, ' ')
-end
-	
-queryexecuter.UPDATE = function(self, model, db)
-	local sqls = {}
-	sqls[#sqls + 1] = 'UPDATE'
-	sqls[#sqls + 1] = model.__name
-	
-	--has join(s) then alias
-	local alias = ''
-	self.db = db
-	if self.joins and #self.joins > 0 then
-		self.alias = self.userAlias or '_A'
-		alias = self.alias .. '.'
-		
-		sqls[#sqls + 1] = self.alias
-	end	
-
-	--joins fields
-	if #alias > 0 then
-		queryexecuter.buildJoinsCols(self, nil)
-		
-		--joins conditions	
-		queryexecuter.buildJoinsConds(self, sqls)
-	end
-	
-	--all values
-	if queryexecuter.buildKeyValuesSet(self, model, sqls, alias) > 0 then
-		table.insert(sqls, #sqls, 'SET')
-	end
-	
-	--where
-	if not queryexecuter.buildWheres(self, sqls, 'WHERE', alias) then
-		if type(self.__where) == 'string' then
-			sqls[#sqls + 1] = 'WHERE'
-			sqls[#sqls + 1] = processTokenedString(self, alias, self.__where)
-		else
-			--find primary key
-			local haveWheres = false
-			local idx, vals = model.__fieldIndices, self.__vals
-			
-			if vals then
-				for k,v in pairs(idx) do
-					if v.type == 1 then
-						local v = vals[k]
-						if v and v ~= ngx.null then
-							processWhere(self, 1, k, v)
-							haveWheres = queryexecuter.buildWheres(self, sqls, 'WHERE', alias)
-							break
-						end
-					end
-				end
-			end
-
-			if not haveWheres then
-				error("Cannot do model update without any conditions")
-				return false
-			end
-		end
-	end
-	
-	--order by
-	if self.orderBy then
-		sqls[#sqls + 1] = string.format('ORDER BY %s %s', self.orderBy.name, self.orderBy.order)
-	end
-	--limit
-	queryexecuter.buildLimits(self, sqls, true)
-	
-	--end
-	return table.concat(sqls, ' ')
-end
-
-queryexecuter.INSERT = function(self, model, db)
-	local sqls = {}
-	sqls[#sqls + 1] = 'INSERT INTO'
-	sqls[#sqls + 1] = model.__name
-	
-	--all values
-	if queryexecuter.buildKeyValuesSet(self, model, sqls, '') > 0 then
-		table.insert(sqls, #sqls, 'SET')
-	end
-	
-	--end
-	return table.concat(sqls, ' ')
-end
-	
-queryexecuter.DELETE = function(self, model)
-	local sqls = {}
-	sqls[#sqls + 1] = 'DELETE'
-	sqls[#sqls + 1] = 'FROM'
-	sqls[#sqls + 1] = model.__name
-	
-	--where
-	if not queryexecuter.buildWheres(self, sqls, 'WHERE') then
-		if type(self.__where) == 'string' then
-			sqls[#sqls + 1] = 'WHERE'
-			sqls[#sqls + 1] = processTokenedString(self, '', self.__where)
-		else
-			--find primary or unique
-			local haveWheres = false
-			local idx, vals = model.__fieldIndices, self.__vals
-			if vals then
-				for k,v in pairs(idx) do
-					if (v.type == 1 or v.type == 2) and vals[k] then
-						processWhere(self, 1, k, vals[k])
-						haveWheres = queryexecuter.buildWheres(self, sqls, 'WHERE', '')
-						break
-					end
-				end
-			end
-
-			if not haveWheres then
-				error("Cannot do model delete without any conditions")
-				return false
-			end
-		end
-	end
-	
-	--limit
-	queryexecuter.buildLimits(self, sqls, true)
-	
-	--end
-	return table.concat(sqls, ' ')
-end
-
-
-queryexecuter.buildColumns = function(self, model, sqls, alias, returnCols)
-	--加入所有的表达式
-	local excepts, express = nil, nil
-	if self.expressions then
-		local fields = self.__m.__fields
-		local tbname = self.__m.__name
-		local skips = 0
-		
-		for i = 1, #self.expressions do
-			local expr = self.expressions[i]
-
-			if skips <= 0 and type(expr) == 'string' then
-				local adjust = 0
-				local tokens, poses = _parseExpression(expr)
-				if tokens then
-					local removeCol = false
-					for k = 1, #tokens do
-						local one, newone = tokens[k], nil
-
-						if one:byte(1) == 39 then
-							--这是一个字符串
-							newone = ngx.quote_sql_str(one:sub(2, -2))		
-							
-						elseif fields[one] then
-							--这是一个字段的名称
-							if removeCol then
-								if not excepts then
-									excepts = {}
-								end
-								if self.colExcepts then
-									for en,_ in pairs(self.colExcepts) do
-										excepts[en] = true
-									end
-								end
-								
-								excepts[one] = true
-							end
-							
-							newone = alias .. one
-
-						elseif one == tbname then
-							newone = alias
-							one = one .. '.'
-
-						else
-							--特殊处理
-							local spec = specialExprFunctions[one:lower()]
-							if spec == 1 then
-								--遇到这些定义的表达式，这个表达式所关联的字段就不会再在字段列表中出现
-								removeCol = true
-							elseif spec == 2 then
-								--构造出excepts数据，哪怕是为空，因为只要excepts数组存在，字段就不会以*形式出现，这样就不会组合出count(*),*的语句
-								if not excepts then excepts = {} end
-							elseif spec == 3 then
-								--AS命名之后需要德育下一个token直接复制即可
-								skips = 2
-							end
-
-						end
-
-						if newone then
-							expr = expr:subreplace(newone, poses[k] + adjust, #one)
-							adjust = adjust + #newone - #one
-						end
-					end
-
-					self.expressions[i] = expr
-				end
-
-			else
-				self.expressions[i] = tostring(expr)
-			end
-
-			skips = skips - 1
-		end
-		
-		express = table.concat(self.expressions, ',')
-	end
-	
-	if not excepts then
-		excepts = self.colExcepts
-	end
-	
-	local cols
-	if self.colSelects then
-		--只获取某几列
-		local plains = {}
-		if excepts then			
-			for k,v in pairs(self.colSelects) do
-				if not excepts[k] then
-					plains[#plains + 1] = k
-				end
-			end
-		else
-			for k,v in pairs(self.colSelects) do
-				plains[#plains + 1] = k
-			end
-		end
-
-		cols = table.concat(plains, ',' .. alias)		
-		
-	elseif excepts then
-		--只排除掉某几列
-		local fps = {}
-		local fieldPlain = model.__fieldsPlain
-		
-		for i = 1, #fieldPlain do
-			local n = fieldPlain[i]
-			if not excepts[n] then
-				fps[#fps + 1] = n
-			end
-		end
-		
-		cols = #fps > 0 and table.concat(fps, ',' .. alias) or '*'
-	else
-		--所有列
-		cols = '*'
-	end	
-
-	if #alias > 0 then
-		cols = #cols > 0 and (alias .. cols) or ''
-	end
-	if express then
-		cols = #cols > 0 and string.format('%s,%s', express, cols) or express
-	end
-
-	if #cols > 0 then
-		if returnCols == true then
-			return cols
-		end
-		
-		sqls[#sqls + 1] = cols
-	end
-end
-
-queryexecuter.buildKeyValuesSet = function(self, model, sqls, alias)
-	local fieldCfgs = model.__fields
-	local vals, full = self.__vals, self.__full	
-	local isUpdate = self.op == 'UPDATE' and true or false
-	local keyvals = {}
-
-	if not vals then
-		vals = self
-	end
-
-	for name,v in pairs(self.colSelects == nil and model.fields or self.colSelects) do
-		local cfg = fieldCfgs[name]
-		if cfg then
-			local v = vals[name]
-			local tp = type(v)
-
-			if cfg.ai then
-				--自增长值要么是fullCreate/fullSave要么被忽略
-				if not full or not string.checkinteger(v) then
-					v = nil
-				end
-			elseif v == nil then
-				--值为nil，那么判断是否使用字段的默认值
-				if not isUpdate then
-					if cfg.default then
-						v = cfg.default
-					elseif cfg.null then
-						v = 'NULL'
-					else
-						v = cfg.type == 1 and "''" or '0'
-					end
-				end
-			elseif v == ngx.null then
-				--NULL值直接设置
-				v = 'NULL'
-			elseif tp == 'table' then
-				--table类型则根据meta来进行判断是什么table
-				local mt = getmetatable(v)
-				if mt == datetimeMeta then
-					--日期时间
-					v = ngx.quote_sql_str(tostring(v))
-				elseif mt == queryMeta then	
-					--子查询
-				else
-					--字符串原值
-					v = v[1]
-				end
-			elseif cfg.type == 1 then
-				--字段要求为字符串，因此转字符串并转义
-				v = ngx.quote_sql_str(tostring(v))
-			elseif cfg.type == 4 then
-				--布尔型使用1或0来处理
-				v = toboolean(v) and '1' or '0'
-			elseif cfg.type == 3 then
-				--数值/浮点数类型，检测值必须为浮点数
-				if not string.checknumeric(v) then
-					print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, name))
-					v = nil
-				end
-			elseif not string.checkinteger(v) then
-				--否则就都是整数类型，检测值必须为整数
-				print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, name))
-				v = nil
-			end
-
-			if v ~= nil then
-				--如果到了这里值还不是nil，那么就可以使用了
-				if alias and #alias > 0 then
-					keyvals[#keyvals + 1] = string.format("%s%s=%s", alias, name, v)
-				else
-					keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
-				end
-			end
-		end
-	end
-
-	sqls[#sqls + 1] = table.concat(keyvals, ',')
-	return #keyvals
-end
-
-
---如果condValues非nil，说明现在处理的不是self代表的query自己的条件
-queryexecuter.buildWheres = function(self, sqls, condPre, alias, condValues)
-	if not alias then alias = '' end
-	
-	if not condValues then
-		if self.condString then
-			if condPre then
-				sqls[#sqls + 1] = condPre
-			end
-			sqls[#sqls + 1] = self.condString
-			return true
-		end
-		
-		condValues = self.condValues
-	end
-
-	if condValues and #condValues > 0 then
-		local wheres, conds = {}, queryexecuter.conds
-		local joinFrom = self.joinFrom
-		
-		for i = 1, #condValues do
-			local one, rsql = condValues[i], nil
-			
-			if i > 1 and one.c == 1 then
-				--如果没有指定条件连接方式，那么当不是第1个条件的时候，就会自动修改为and
-				one.c = 1
-			end			
-			
-			if one.sub then
-				--子查询
-				local subq = one.sub
-				subq.limitStart, subq.limitTotal = nil, nil
-				
-				local expr = processTokenedString(self, alias, one.n, joinFrom)
-				local subsql = queryexecuter.SELECT(subq, subq.__m, self.db)
-				
-				if subsql then
-					if one.puredkeyname then
-						rsql = string.format('%s IN(%s)', expr, subsql)
-					else
-						rsql = string.format('%s(%s)', expr, subsql)
-					end
-				end
-				
-			else
-				rsql = conds[one.c] .. processTokenedString(self, alias, one.expr, joinFrom)
-			end
-
-			wheres[#wheres + 1] = rsql
-		end
-		
-		if condPre then
-			sqls[#sqls + 1] = condPre
-		end
-		sqls[#sqls + 1] = table.concat(wheres, ' ')
-		
-		return true
-	end
-	
-	return false
-end
-
-queryexecuter.buildWhereJoins = function(self, sqls, haveWheres)
-	local cc = self.joins == nil and 0 or #self.joins
-	if cc < 1 then
-		return
-	end
-
-	for i = 1, cc do
-		local q = self.joins[i].q
-		q.joinFrom = self
-		queryexecuter.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.')
-		q.joinFrom = nil
-	end
-end
-
-queryexecuter.buildJoinsCols = function(self, sqls, indient)
-	local cc = self.joins == nil and 0 or #self.joins
-	if cc < 1 then
-		return
-	end
-	if indient == nil then
-		indient = 1
-	end	
-
-	for i = 1, cc do
-		local q = self.joins[i].q
-		q.alias = q.userAlias or ('_' .. string.char(65 + indient))
-
-		if sqls then
-			local cols = queryexecuter.buildColumns(q, q.__m, sqls, q.alias .. '.', true)
-			if cols then
-				sqls[#sqls + 1] = ','
-				sqls[#sqls + 1] = cols
-			end
-		end
-		
-		local newIndient = queryexecuter.buildJoinsCols(q, sqls, indient + 1)
-		indient = newIndient or (indient + 1)
-	end
-	
-	return indient
-end
-
-queryexecuter.buildJoinsConds = function(self, sqls, haveOns)
-	local cc = self.joins == nil and 0 or #self.joins
-	if cc < 1 then
-		return
-	end
-	
-	local validJoins = queryexecuter.validJoins
-	
-	for i = 1, cc do
-		local join = self.joins[i]
-		local q = join.q
-		
-		q.joinFrom = self
-
-		sqls[#sqls + 1] = validJoins[join.type]
-		sqls[#sqls + 1] = q.__m.__name
-		sqls[#sqls + 1] = q.alias
-		sqls[#sqls + 1] = 'ON('
-		if not queryexecuter.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues) then		
-			sqls[#sqls + 1] = '1'
-		end
-		sqls[#sqls + 1] = ')'
-		
-		q.joinFrom = nil
-		
-		queryexecuter.buildJoinsConds(q, sqls, haveOns)
-	end
-end
-
-queryexecuter.buildOrder = function(self, sqls, alias)
-	if self.orderBy then
-		if type(self.orderBy) == 'string' then
-			sqls[#sqls + 1] = 'ORDER BY'
-			sqls[#sqls + 1] = self.orderBy
-		else
-			sqls[#sqls + 1] = string.format('ORDER BY %s%s %s', alias, 		self.orderBy.name, self.orderBy.order)
-		end
-	end
-end
-
-queryexecuter.buildLimits = function(self, sqls, ignoreStart)
-	if self.limitTotal and self.limitTotal > 0 then
-		if ignoreStart then
-			sqls[#sqls + 1] = string.format('LIMIT %u', self.limitTotal)
-		else
-			sqls[#sqls + 1] = string.format('LIMIT %u,%u', self.limitStart, self.limitTotal)
-		end
-	end
-end
-
+local resultPub = require('reeme.orm.result')
 
 --query的原型类
 queryMeta = {
 	__index = {
 		--全部清空
 		reset = function(self)
-			local ignores = { __m = 1, op = 1, __reeme = 1 }
+			local ignores = { m = 1, op = 1, R = 1, builder = 1, keyvals = 1 }
 			for k,_ in pairs(self) do
 				if not ignores[k] then
 					self[k] = nil
@@ -792,36 +19,36 @@ queryMeta = {
 		
 		--设置条件
 		where = function(self, name, val)
-			return processWhere(self, 1, name, val)
+			return self.builder.processWhere(self, 1, name, val)
 		end,
 		andWhere = function(self, name, val)
-			return processWhere(self, 2, name, val)
+			return self.builder.processWhere(self, 2, name, val)
 		end,
 		orWhere = function(self, name, val)
-			return processWhere(self, 3, name, val)
+			return self.builder.processWhere(self, 3, name, val)
 		end,
 		xorWhere = function(self, name, val)
-			return processWhere(self, 4, name, val)
+			return self.builder.processWhere(self, 4, name, val)
 		end,
 		notWhere = function(self, name, val)
-			return processWhere(self, 5, name, val)
+			return self.builder.processWhere(self, 5, name, val)
 		end,
 		
 		--设置join on条件
 		on = function(self, name, val)
-			return processOn(self, 1, name, val)
+			return self.builder.processOn(self, 1, name, val)
 		end,
 		andOn = function(self, name, val)
-			return processOn(self, 2, name, val)
+			return self.builder.processOn(self, 2, name, val)
 		end,
 		orOn = function(self, name, val)
-			return processOn(self, 3, name, val)
+			return self.builder.processOn(self, 3, name, val)
 		end,
 		xorOn = function(self, name, val)
-			return processOn(self, 4, name, val)
+			return self.builder.processOn(self, 4, name, val)
 		end,
 		notOn = function(self, name, val)
-			return processOn(self, 5, name, val)
+			return self.builder.processOn(self, 5, name, val)
 		end,
 		
 		--设置调试
@@ -896,7 +123,7 @@ queryMeta = {
 				return self
 			end
 
-			local tbname = query.__m.__name
+			local tbname = query.m.__name
 			local j = { q = query, type = jt, on = self.joinOn }
 			
 			if not self.joins then
@@ -907,6 +134,9 @@ queryMeta = {
 			elseif not self.joinNames[tbname] then
 				self.joins[#self.joins + 1] = j
 				self.joinNames[tbname] = query
+				
+			else
+				error(string.format("mode:join() with table named '%s' already exists", tbname))
 			end
 			
 			return self
@@ -938,7 +168,7 @@ queryMeta = {
 					if asc == nil then asc = 'asc' end
 				end
 				
-				if field and self.__m.fields[field] and asc then
+				if field and self.m.fields[field] and asc then
 					asc = asc:lower()
 					if asc == 'asc' or asc == 'desc' then
 						self.orderBy = { name = field, order = asc:upper() }
@@ -983,26 +213,23 @@ queryMeta = {
 		execute = function(self, db, result)
 			if db then
 				if type(db) == 'string' then
-					db = self.__reeme(db)
+					db = self.R(db)
 				end
 			else
-				db = self.__reeme('maindb')
-				if not db then 
-					db = self.__reeme('mysqldb')
-				end
+				db = self.R(self.m.__dbtype .. 'db')
 			end
 			if not db then
 				return nil
 			end
 			
 			local setvnil = false
-			if not self.__vals and result then
-				self.__vals = result()
+			if not self.keyvals and result then
+				self.keyvals = result()
 				setvnil = true
 			end
 			
-			local model = self.__m
-			local sqls = queryexecuter[self.op](self, model, db)
+			local model = self.m
+			local sqls = self.builder[self.op](self, model, db)
 			
 			if sqls then			
 				--if self.debugMode then
@@ -1015,7 +242,7 @@ queryMeta = {
 			end
 			
 			if setvnil then
-				self.__vals = nil
+				self.keyvals = nil
 			end
 			
 			return res, res and result or nil
@@ -1097,7 +324,7 @@ local modelMeta = {
 			if fieldnames then
 				local tp = type(fieldnames)
 
-				keys = table.new(0, bit.rshift(#names, 1))
+				keys = table.new(0, #names / 2)
 				if tp == 'string' then
 					string.split(fieldnames, ',', string.SPLIT_ASKEY, keys)
 				elseif tp == 'table' then
@@ -1108,7 +335,7 @@ local modelMeta = {
 					return
 				end
 				
-				--default add all unique key
+				--default for add all unique key(s)
 				for k,v in pairs(self.__fieldIndices) do
 					if v.type == 1 or v.type == 2 then
 						keys[k] = true
@@ -1138,7 +365,7 @@ local modelMeta = {
 		
 		--按条件查找并返回所有的结果（其实不指定limit也是默认只是前50条而非真的全部），注意本函数返回为结果集实例而非结果行数组
 		find = function(self, p1, p2, p3, p4)
-			local q = setmetatable({ __m = self, __reeme = self.__reeme, op = 'SELECT' }, queryMeta)
+			local q = setmetatable({ m = self, R = self.__reeme, builder = self.__builder, op = 'SELECT' }, queryMeta)
 			
 			if p1 then
 				local tp = type(p1)
@@ -1165,11 +392,11 @@ local modelMeta = {
 		
 		--建立一个select查询器
 		query = function(self)
-			return setmetatable({ __m = self, __reeme = self.__reeme, op = 'SELECT', limitStart = 0, limitTotal = 50 }, queryMeta)
+			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 50 }, queryMeta)
 		end,
 		--建立一个执行表达式的查询器而忽略其它行或列
 		expression = function(self, expr)
-			return setmetatable({ __m = self, __reeme = self.__reeme, op = 'SELECT', limitStart = 0, limitTotal = 50 }, queryMeta):expr(expr):columns()
+			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 50 }, queryMeta):expr(expr):columns()
 		end,
 		
 		--和find一样，只不过返回的是结果行而非结果集实例，并且在没有任何结果的时候也不会返回Nil而是返回一个空table
@@ -1179,7 +406,7 @@ local modelMeta = {
 		end,
 		--和findAll一样，只不过可以限制只返回某些列而不是所有列
 		findAllWithNames = function(self, colnames, p1, p2, p3, p4)
-			local q = setmetatable({ __m = self, __reeme = self.__reeme, op = 'SELECT' }, queryMeta)
+			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
 			
 			if p1 then
 				local tp = type(p1)
@@ -1205,7 +432,7 @@ local modelMeta = {
 		end,
 		--和findFirst一样，但是仅查找第1行的指定的某1列，返回的将是一个所有行的这一列组成的一个新table(注意不是结果集实例)，并在没有结果集的时候并不会返回nil
 		findAllFirst = function(self, colname, name, val)
-			local q = setmetatable({ __m = self, __reeme = self.__reeme, op = 'SELECT' }, queryMeta)
+			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
 			
 			if name then q:where(name, val) end
 			return q:fetchAllFirst(colname, name, val)
@@ -1213,13 +440,13 @@ local modelMeta = {
 		
 		--和find一样但是仅查找第1行，其实就是find加上limit(1)
 		findFirst = function(self, name, val)
-			local q = setmetatable({ __m = self, __reeme = self.__reeme, op = 'SELECT' }, queryMeta)
+			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
 			if name then q:where(name, val) end
 			return q:limit(1):exec()
 		end,
 		--和find一样但是仅查找第1行，并且限制查找时的列名（不会将所有列都取出），如果列名只有1个，那么返回的将是单值或nil
 		findFirstWithNames = function(self, colnames, name, val)
-			local q = setmetatable({ __m = self, __reeme = self.__reeme, op = 'SELECT' }, queryMeta)
+			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
 			
 			if name then q:where(name, val) end
 			q = q:columns(colnames):limit(1):exec()
@@ -1232,12 +459,12 @@ local modelMeta = {
 		
 		--建立一个delete查询器
 		delete = function(self, where)
-			return setmetatable({ __m = self, __reeme = self.__reeme, op = 'DELETE', __where = where }, queryMeta)
+			return setmetatable({ m = self, R = self.__reeme, op = 'DELETE', builder = self.__builder, __where = where }, queryMeta)
 		end,
 		--建立一个update查询器，必须给出要更新的值的集合
 		update = function(self, vals, where)
 			if type(vals) == 'table' then
-				return setmetatable({ __m = self, __reeme = self.__reeme, op = 'UPDATE', __vals = vals, __where = where }, queryMeta)
+				return setmetatable({ m = self, R = self.__reeme, op = 'UPDATE', builder = self.__builder, keyvals = vals, __where = where }, queryMeta)
 			end
 		end,
 		
@@ -1272,6 +499,8 @@ local modelMeta = {
 				end
 			end
 		end,
+		
+		__queryMetaTable = queryMeta
 	}
 }
 
@@ -1279,7 +508,7 @@ local modelMeta = {
 --函数调用，一个用于生成一个模拟器
 local simFindFuncMeta = {
 	__call = function(self, value, p1, p2)
-		local func = modelMeta.__index[self.of and 'find' or 'findFirst']		
+		local func = modelMeta.__index[self.of and 'find' or 'findFirst']
 		return func(self.m, self.f, value, p1, p2)
 	end
 }
