@@ -109,15 +109,20 @@ builder.parseWhere = function(self, condType, name, value)
 
 	if type(name) == 'string' then
 		--key=value
-		if tv == 'string' then
-			value = ngx.quote_sql_str(value)
-			
-		elseif puredkeyname then
-			local f = self.m.__fields[name]
-			if f and f.type == 1 then
+		local f = puredkeyname and self.m.__fields[name] or nil
+		if f and tv == 'string' then
+			if f.type == 2 or f.type == 3 then
 				--如果是字段是字符串类型，则自动转字符串
-				value = ngx.quote_sql_str(tostring(value))
+				value = tonumber(value)
+				tv = nil
+			elseif f.type == 4 then
+				value = toboolean(value)
+				tv = nil
+			else
+				value = ngx.quote_sql_str(value)
 			end
+		else
+			value = ngx.quote_sql_str(tostring(value))
 		end
 		
 		return { expr = puredkeyname and string.format('%s=%s', name, value) or (name .. value), c = condType }
@@ -246,10 +251,10 @@ builder.SELECT = function(self, model, db)
 		alias = self.alias .. '.'
 	end	
 	
-	builder.buildColumns(self, model, sqls, alias)
+	local cols = builder.buildColumns(self, model, sqls, alias)
 	
 	--joins fields
-	builder.buildJoinsCols(self, sqls)
+	builder.buildJoinsCols(self, sqls, 1, #cols > 0 and true or false)
 	
 	--from
 	sqls[#sqls + 1] = 'FROM'
@@ -292,7 +297,7 @@ builder.UPDATE = function(self, model, db)
 
 	--joins fields
 	if #alias > 0 then
-		builder.buildJoinsCols(self, nil)
+		builder.buildJoinsCols(self, nil, 1)
 		
 		--joins conditions	
 		builder.buildJoinsConds(self, sqls)
@@ -517,20 +522,16 @@ builder.buildColumns = function(self, model, sqls, alias, returnCols)
 		cols = '*'
 	end	
 
-	if #alias > 0 then
-		cols = #cols > 0 and (alias .. cols) or ''
-	end
 	if express then
-		cols = #cols > 0 and string.format('%s,%s', express, cols) or express
+		cols = #cols > 0 and string.format('%s,%s%s', express, alias, cols) or express
+	elseif #cols > 0 then
+		cols = alias .. cols
 	end
 
-	if #cols > 0 then
-		if returnCols == true then
-			return cols
-		end
-		
+	if returnCols ~= true and #cols > 0 then
 		sqls[#sqls + 1] = cols
 	end
+	return cols
 end
 
 builder.buildKeyValuesSet = function(self, model, sqls, alias)
@@ -691,28 +692,30 @@ builder.buildWhereJoins = function(self, sqls, haveWheres)
 	end
 end
 
-builder.buildJoinsCols = function(self, sqls, indient)
+builder.buildJoinsCols = function(self, sqls, indient, haveCols)
 	local cc = self.joins == nil and 0 or #self.joins
 	if cc < 1 then
 		return
 	end
-	if indient == nil then
-		indient = 1
-	end	
 
 	for i = 1, cc do
+		local cols = nil
 		local q = self.joins[i].q
 		q.alias = q.userAlias or ('_' .. string.char(65 + indient))
 
 		if sqls then
-			local cols = builder.buildColumns(q, q.m, sqls, q.alias .. '.', true)
-			if cols then
-				sqls[#sqls + 1] = ','
+			cols = builder.buildColumns(q, q.m, sqls, q.alias .. '.', true)
+			if #cols > 0 then
+				if haveCols then
+					sqls[#sqls + 1] = ','
+				end
 				sqls[#sqls + 1] = cols
+			else
+				cols = false
 			end
 		end
 		
-		local newIndient = builder.buildJoinsCols(q, sqls, indient + 1)
+		local newIndient = builder.buildJoinsCols(q, sqls, indient + 1, cols or haveCols)
 		indient = newIndient or (indient + 1)
 	end
 	

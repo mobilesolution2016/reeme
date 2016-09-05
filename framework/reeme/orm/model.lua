@@ -234,9 +234,9 @@ queryMeta = {
 			
 			if sqls then			
 				--if self.debugMode then
-				--	self.lastSql = sqls
+					self.lastSql = sqls
 				--end
-				--ngx.say(sqls)
+				--print(sqls)
 
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 10)
