@@ -219,6 +219,30 @@ static int lua_table_new(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_table_in(lua_State* L)
+{
+	int r = 0;
+	if (lua_gettop(L) >= 2)
+	{
+		luaL_checktype(L, 1, LUA_TTABLE);
+
+		lua_pushnil(L);
+		while (lua_next(L, 1))
+		{
+			if (lua_rawequal(L, -1, 2))
+			{
+				r = 1;
+				break;
+			}
+			lua_pop(L, 1);
+		}
+	}
+
+	lua_pushboolean(L, r);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void luaext_table(lua_State *L)
 {
 	const luaL_Reg procs[] = {
@@ -230,6 +254,8 @@ static void luaext_table(lua_State *L)
 		{ "filter", &lua_table_filter },
 		// value和key互转
 		{ "val2key", &lua_table_val2key },
+		// 判断值是否在数组中出现
+		{ "in", &lua_table_in },
 
 		{ NULL, NULL }
 	};
