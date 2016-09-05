@@ -936,7 +936,7 @@ static int lua_string_checkboolean(lua_State* L)
 
 			if (len == 4 && stricmp(s, "true") == 0)
 				r = cc = 1;
-			else if (len = 5 && stricmp(s, "false") == 0)
+			else if (len == 5 && stricmp(s, "false") == 0)
 				cc = 1;
 			else if (len == 1)
 			{
