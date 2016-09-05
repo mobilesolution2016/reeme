@@ -174,13 +174,13 @@ local pub = {
 
 resultMeta.__index = {
 	save = function(self, db)
-		return execModelInstance(self, db, 'UPDATE', true, false)
+		return execModelInstance(self, db or self.__db, 'UPDATE', true, false)
 	end,
 	fullSave = function(self, db)
-		return execModelInstance(self, db, 'UPDATE', true, true)
+		return execModelInstance(self, db or self.__db, 'UPDATE', true, true)
 	end,
 	create = function(self, db)
-		local r = execModelInstance(self, db, 'INSERT', false, false)
+		local r = execModelInstance(self, db or self.__db, 'INSERT', false, false)
 		if r then
 			local ai = rawget(self, -10000):findAutoIncreasementField()
 			if ai then
@@ -190,10 +190,10 @@ resultMeta.__index = {
 		return r
 	end,
 	fullCreate = function(self, db)
-		return execModelInstance(self, db, 'INSERT', false, true)
+		return execModelInstance(self, db or self.__db, 'INSERT', false, true)
 	end,
 	delete = function(self, db)
-		return execModelInstance(self, db, 'DELETE', true, false)
+		return execModelInstance(self, db or self.__db, 'DELETE', true, false)
 	end,
 	
 	getModel = function(self)

@@ -830,6 +830,7 @@ static int lua_string_checknumeric(lua_State* L)
 		if (lua_isnumber(L, 1))
 		{
 			r = 1;
+			d = lua_tonumber(L, 1);
 		}
 		else
 		{
@@ -871,6 +872,7 @@ static int lua_string_checkinteger(lua_State* L)
 		if (lua_isnumber(L, 1))
 		{
 			r = 1;
+			v = lua_tointeger(L, 1);
 		}
 		else
 		{

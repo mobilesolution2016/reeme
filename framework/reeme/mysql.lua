@@ -7,7 +7,7 @@ local mysql = {
 	__index = {
 		--使用一个定义的模型
 		--不能使用require直接引用一个模型定义的Lua文件来进行使用，必须通过本函数来引用
-		use = function(self, name)
+		use = function(self, name, db)
 			local idxName = string.format('%s-%s', ngx.var.APP_NAME or ngx.var.APP_ROOT, name)
 			local m = models[idxName]
 			local reeme = self.R
@@ -29,8 +29,12 @@ local mysql = {
 				
 				m.__name = name
 				m.__oldm = oldm
-				if not parseFields(m) then
-					error(string.format("mysql:use('%s') parse failed: may be no valid field or field(s) declaration error", name))
+				m.__builder = builder
+				m.__dbtype = 'mysql'
+
+				local err = parseFields(m)
+				if err ~= true then
+					error(string.format("mysql:use('%s') parse failed: %s", name, err))
 					return nil
 				end
 
@@ -39,19 +43,23 @@ local mysql = {
 			end
 
 			m.__reeme = reeme
-			m.__builder = builder
-			m.__dbtype = 'mysql'
+			m.__db = type(db) == 'string' and reeme(db) or db
+			
 			return m
 		end,
 		
-		uses = function(self, names)
+		uses = function(self, names, db)
 			local tp = type(names)
+			
+			if type(db) == 'string' then
+				db = reeme(db)
+			end
 			
 			if tp == 'table' then
 				local r = table.new(0, #names)
 				for i = 1, #names do
 					local n = names[i]
-					r[n] = self:use(n)
+					r[n] = self:use(n, db)
 				end
 				return r
 			elseif tp == 'string' then
@@ -59,7 +67,7 @@ local mysql = {
 				string.split(names, ',', string.SPLIT_ASKEY, r)
 				
 				for k,v in pairs(r) do
-					r[k] = self:use(k)
+					r[k] = self:use(k, db)
 				end
 				return r
 			end
@@ -72,18 +80,18 @@ local mysql = {
 					setmetatable(m, m.__oldm)
 				end
 				
-				m.__name, m.__fields, m.__fieldPlain, m.__oldm = nil, nil, nil, nil
+				m.__name, m.__fields, m.__fieldPlain, m.__oldm, m.__db = nil, nil, nil, nil, nil
 			end
 			
 			models = {}
 		end,
 		
 		--重新加载指定的Model
-		reload = function(self, name)
+		reload = function(self, name, db)
 			local idxName = string.format('%s-%s', ngx.var.APP_NAME or ngx.var.APP_ROOT, name)
 			if models[idxName] then
 				models[idxName] = nil
-				return self:use(idxName)
+				return self:use(idxName, db)
 			end
 		end,
 	},

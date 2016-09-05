@@ -210,13 +210,14 @@ queryMeta = {
 			return self
 		end,
 		
-		execute = function(self, db, result)
+		execute = function(self, db, result)			
 			if db then
 				if type(db) == 'string' then
 					db = self.R(db)
 				end
 			else
-				db = self.R(self.m.__dbtype .. 'db')
+				local m = self.m
+				db = m.__db or self.R(m.__dbtype .. 'db')
 			end
 			if not db then
 				return nil
@@ -360,6 +361,7 @@ local modelMeta = {
 				end
 			end
 			
+			r.__db = self.__db
 			return r
 		end,
 		
@@ -386,7 +388,7 @@ local modelMeta = {
 			if type(p3) == 'number' then
 				q:limit(p3, p4)
 			end
-			
+
 			return q:exec()
 		end,
 		

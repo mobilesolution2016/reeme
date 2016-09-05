@@ -17,7 +17,7 @@ return {
 				elseif first == 42 then --*
 					v = v:sub(2)
 					if aiExists then
-						return false
+						return 'find the second auto-increasement field'
 					end
 					
 					aiExists = true
@@ -28,7 +28,7 @@ return {
 				if maxl then
 					local t = validTypes[v:sub(1, 1)]
 					if not t then
-						return false
+						return string.format('the data type [%s] of field(%s) is invalid', v:sub(1, 1), k) 
 					end
 					
 					local defv = v:find(')')
@@ -54,7 +54,7 @@ return {
 					fields[k] = newf
 					plains[#plains + 1] = k
 				else
-					return false
+					return string.format('no max-length of field(%s)', k)
 				end
 			end
 		end
@@ -82,6 +82,6 @@ return {
 			return true
 		end
 		
-		return false
+		return 'may be no valid field or field(s) declaration error'
 	end
 }
