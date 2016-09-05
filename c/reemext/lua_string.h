@@ -149,6 +149,8 @@ struct BMString
 
 
 //////////////////////////////////////////////////////////////////////////
+// 按参数1字符串按照参数2字符串中出现的每一个字符进行切分，切分时将根据参数3中设置的标志进行相应的处理，如果参数4存在且为true则切分的结果会以多返回值返回，否则将以table返回切分的结果
+// 即使参数1字符串完全不含有参数2字符串中的任何一个字符，也会进行一次切分，只是返回为整个参数1字符串
 static int lua_string_split(lua_State* L)
 {
 	bool exists = false;
@@ -293,6 +295,7 @@ _lastseg:
 }
 
 //////////////////////////////////////////////////////////////////////////
+// 对字符串进行左右非可见符号去除，参数2和3如果存在且为true|false分别表示是否要处理左边|右边。如果没有参数2或3则默认左右都处理
 static int lua_string_trim(lua_State* L)
 {
 	size_t len = 0;
@@ -333,12 +336,19 @@ static int lua_string_trim(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+// 对参数1和2的字符串进行比对，参数3可以为一个整数表示要比对的字符串长度，参数3可以是一个布尔值表示是否要忽略大小写比对。参数3如果没有，参数3可以成为参数3
 static int lua_string_cmp(lua_State* L)
 {	
 	int ignoreCase = 0, r = 0;
 	size_t alen = 0, blen = 0, cmplen = -1;
 	const char* a = luaL_checklstring(L, 1, &alen);
 	const char* b = luaL_checklstring(L, 2, &blen);
+
+	if (!a || !b)
+	{
+		lua_pushboolean(L, 0);
+		return 1;
+	}
 
 	if (lua_isnumber(L, 3))
 	{
@@ -375,19 +385,20 @@ static int lua_string_cmp(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+// 字符串中所含字符/串的查找，直接使用STL函数，比string.find(xx, xx, 1, true)快
 static int lua_string_findchar(lua_State* L)
 {
 	size_t len = 0, len2 = 0;
 	const char* s = luaL_checklstring(L, 1, &len);
 	const char* f = luaL_checklstring(L, 2, &len2);
 
-	if (len && len2)
+	if (len && len2 && len2 <= len)
 	{
 		long t = luaL_optinteger(L, 3, 0);
 		if (t > 0 && t <= len)
 			s += t - 1;
 
-		f = std::strchr(s, f[0]);
+		f = len2 > 1 ? std::strstr(s, f) : std::strchr(s, f[0]);
 		if (f)
 		{
 			lua_pushinteger(L, f - s + 1);
@@ -398,13 +409,14 @@ static int lua_string_findchar(lua_State* L)
 	return 0;
 }
 
+// 字符串中所含字符倒叙查找，仅支持对字符进行查找不支持字符串
 static int lua_string_rfindchar(lua_State* L)
 {
 	size_t len = 0, len2 = 0;
 	const char* s = luaL_checklstring(L, 1, &len);
 	const char* f = luaL_checklstring(L, 2, &len2);
 
-	if (len && len2)
+	if (len && len2 == 1)
 	{
 		long t = luaL_optinteger(L, 3, 0);
 		if (t > 0 && t <= len)
@@ -436,6 +448,7 @@ struct ReplacePosGreater : public std::binary_function <StringReplacePos&, Strin
 	}
 };
 
+// 各种对照模式的字符/字符串替换
 static int lua_string_replace(lua_State* L)
 {
 	int top = lua_gettop(L);
@@ -610,6 +623,7 @@ static int lua_string_replace(lua_State* L)
 	return 1;
 }
 
+// 将参数1字符串中由参数3指定的位置开始到结束位置（可以不指定或用参数4指定）的字符串，用参数2来进行替换
 static int lua_string_subreplaceto(lua_State* L)
 {
 	size_t srcLen = 0, repLen = 0;
@@ -651,6 +665,8 @@ static int lua_string_subreplaceto(lua_State* L)
 	return 1;
 }
 
+// 将参数1字符串中由参数3指定的位置开始到指定长度（可以不指定或用参数4指定）的字符串，用参数2来进行替换
+// 这个函数和上面的subreplaceto的唯一区别就是一个用的是开始+位置结束，一个用的是开始位置+长度
 static int lua_string_subreplace(lua_State* L)
 {
 	size_t srcLen = 0, repLen = 0;
@@ -687,6 +703,9 @@ static int lua_string_subreplace(lua_State* L)
 	return 1;
 }
 
+// 参数2指定开始位置，然后用参数3指定的结束位置或字符串进行查找以得到一个结束位置，将开始与结束位置之间的字符串取出后返回
+// 用法1：string.subto('abcdefghijklmn', 'hijkl') => abcdefg   hijkl是结束位置字符串，所以sub的起点是开始到h之前
+// 用法2：string.subto('abcdefghijklmn', 4, 'hijkl') => defg   同上一例，只不过指定了开始位置为第4个字符，因此前面的3个字符被扔掉了
 static int lua_string_subto(lua_State* L)
 {
 	size_t srcLen, toLen = 0;
@@ -739,6 +758,7 @@ static int lua_string_subto(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+// 计算参数2字符串中的每一个字符在参数1字符串中总共出现了多少次，注意统计的是参数2中每一个字符串在参数1中总共出现的次数
 static int lua_string_countchars(lua_State* L)
 {	
 	size_t srcLen = 0, byLen = 0;
@@ -764,7 +784,42 @@ static int lua_string_countchars(lua_State* L)
 	return 1;
 }
 
+// 计算参数2字符串中每一个字符分别在参数1字符串中出现了多少次，返回为一个table
+static int lua_string_counteachchars(lua_State* L)
+{	
+	size_t srcLen = 0, byLen = 0, i;
+	uint32_t counts[256] = { 0 };
+	uint8_t checker[256] = { 0 }, ch;	
+
+	const uint8_t* src = (const uint8_t*)luaL_checklstring(L, 1, &srcLen);
+	const uint8_t* by = (const uint8_t*)luaL_checklstring(L, 2, &byLen);
+
+	for(i = 0; i < byLen; ++ i)
+	{
+		checker[by[i]] = 1;
+		by ++;
+	}
+
+	for(i = 0; i < srcLen; ++ i)
+	{
+		uint8_t ch = src[i];
+		if (checker[ch])
+			counts[ch] ++;
+	}
+
+	int cc = 1;
+	lua_createtable(L, byLen, 0);
+	for(i = 0; i < byLen; ++ i)
+	{
+		lua_pushinteger(L, counts[by[i]]);
+		lua_rawseti(L, -2, cc ++);
+	}
+
+	return 1;
+}
+
 //////////////////////////////////////////////////////////////////////////
+// 检测是否是数值或其它方式表示整数的数值，如果符合检测条件，则返回转换后的数值，否则返回nil或参数2（如果有参数2的话）
 static int lua_string_checknumeric(lua_State* L)
 {
 	double d = 0;
@@ -791,24 +846,21 @@ static int lua_string_checknumeric(lua_State* L)
 		}
 	}
 
-	if (t >= 2)
+	if (r)
 	{
-		if (!r)
-			return 0;
-
-		lua_pushvalue(L, 2);
+		lua_pushnumber(L, d);
 		return 1;
 	}
-	else
+	if (t >= 2)
 	{
-		lua_pushboolean(L, r);
-		lua_pushnumber(L, d);
-		return 2;
+		lua_pushvalue(L, 2);
+		return 1;
 	}
 
 	return 0;
 }
 
+// 检测是否是整数或其它方式表示整数的值，如果符合检测条件，则返回转换后的整数，否则返回nil或参数2（如果有参数2的话）
 static int lua_string_checkinteger(lua_State* L)
 {
 	long long v = 0;
@@ -835,17 +887,8 @@ static int lua_string_checkinteger(lua_State* L)
 		}
 	}
 
-	if (t >= 2)
+	if (r)
 	{
-		if (!r)
-			return 0;
-
-		lua_pushvalue(L, 2);
-		return 1;
-	}
-	else
-	{
-		lua_pushboolean(L, r);
 #ifdef REEME_64
 		lua_pushinteger(L, v);
 #else
@@ -854,12 +897,18 @@ static int lua_string_checkinteger(lua_State* L)
 		else
 			lua_pushinteger(L, v);
 #endif
-		return 2;
+		return 1;
+	}
+	if (t >= 2)
+	{
+		lua_pushvalue(L, 2);
+		return 1;
 	}
 
 	return 0;
 }
 
+// 检测是否是布尔值或其它方式表示的布尔值，如果符合检测条件，则返回转换后的布尔值，否则返回nil或参数2（如果有参数2的话）
 static int lua_string_checkboolean(lua_State* L)
 {
 	int top = lua_gettop(L), r = 0, cc = 0;
@@ -874,7 +923,7 @@ static int lua_string_checkboolean(lua_State* L)
 		break;
 
 		case LUA_TBOOLEAN:
-			lua_pushvalue(L, 1);
+			r = lua_toboolean(L, 1);
 			cc = 1;
 			break;
 
@@ -884,7 +933,7 @@ static int lua_string_checkboolean(lua_State* L)
 			const char* s = lua_tolstring(L, 1, &len);
 
 			if (len == 4 && stricmp(s, "true") == 0)
-				r = 1;
+				r = cc = 1;
 			else if (len = 5 && stricmp(s, "false") == 0)
 				cc = 1;
 			else if (len == 1)
@@ -899,27 +948,39 @@ static int lua_string_checkboolean(lua_State* L)
 
 	if (cc)
 	{
-		if (top >= 2)
-			lua_pushvalue(L, 2);
-		else
-			lua_pushboolean(L, r);
+		lua_pushboolean(L, r);
+		return 1;
 	}
-	return cc;
+	if (top >= 2)
+	{
+		lua_pushvalue(L, 2);
+		return 1;
+	}
+	return 0;
 }
 
+// 检测是否是字符串，如果符合检测条件，则返回该字符串，否则返回nil
 static int lua_string_checkstring(lua_State* L)
 {
 	if (!lua_isstring(L, 1))
 		return 0;
 
 	size_t len = 0;
+	int top = lua_gettop(L);
 	const char* s = lua_tolstring(L, 1, &len);
 	if (!s)
+	{
+		if (top >= 2)
+		{
+			lua_pushvalue(L, 2);
+			return 1;
+		}
 		return 0;
-	
+	}
+
+	int utf8 = 0;
 	uint32_t flags = 0;
-	ptrdiff_t minl = 0, maxl = len;
-	int utf8 = 0, top = lua_gettop(L);
+	ptrdiff_t minl = 0, maxl = len;	
 
 	for(int n = 2; n <= top; n ++)
 	{
@@ -980,8 +1041,15 @@ static int lua_string_checkstring(lua_State* L)
 		else if (t == LUA_TSTRING)
 		{
 			// 正则表达式进行匹配
+#ifdef RE2_RE2_H_
+			if (!RE2::FullMatch(s, lua_tostring(L, n)))
+			{
+				flags = 0;
+				break;
+			}
+#else
 			lua_getglobal(L, "string");
-			lua_getfield(L, -1, "match");
+			lua_getfield(L, "match");
 			lua_pushvalue(L, 1);
 			lua_pushvalue(L, n);
 			lua_pcall(L, 2, 1, 0);
@@ -990,6 +1058,7 @@ static int lua_string_checkstring(lua_State* L)
 				flags = 0;
 				break;
 			}
+#endif
 		}
 		else if (t == LUA_TBOOLEAN)
 		{
@@ -1009,15 +1078,17 @@ static int lua_string_checkstring(lua_State* L)
 		}
 	}
 
-	if (flags)
+	if (flags || top == 1)
 	{
 		lua_pushvalue(L, 1);
 		return 1;
 	}
+
 	return 0;
 }
 
 //////////////////////////////////////////////////////////////////////////
+// 使用{N}或{name}做为语法来进行模板替换，连续两个{{表示转义输出一个{
 static int lua_string_template(lua_State* L)
 {	
 	luaL_Buffer buf;
@@ -1776,8 +1847,10 @@ static void luaext_string(lua_State *L)
 		{ "findchar", &lua_string_findchar },
 		// 单个字符反向查找
 		{ "rfindchar", &lua_string_rfindchar },
-		// 对字符串进行指定字符的计数
+		// 对字符串进行所有字符出现次数的总计数
 		{ "countchars", &lua_string_countchars },
+		// 对字符串进行每一个字符出现次数的分别计数
+		{ "counteachchars", &lua_string_counteachchars },
 
 		// 字符串快速替换
 		{ "replace", &lua_string_replace },
@@ -1802,7 +1875,7 @@ static void luaext_string(lua_State *L)
 		// 模板解析
 		{ "parseTemplate", &lua_string_parsetemplate },
 
-		// 编译Boyer-Moore子字符串
+		// 编译Boyer-Moore子字符串用于查找
 		{ "bmcompile", &lua_string_bmcompile },
 		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串越长性能越优）
 		{ "bmfind", &lua_string_bmfind },

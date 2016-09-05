@@ -1,5 +1,9 @@
 #include "reeme.h"
+
 #include "lua.hpp"
+#include "re2/re2.h"
+#include "re2/regexp.h"
+
 #include "json.h"
 #include "lua_utf8str.h"
 #include "lua_string.h"
