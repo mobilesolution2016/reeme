@@ -386,7 +386,7 @@ static int lua_string_cmp(lua_State* L)
 
 //////////////////////////////////////////////////////////////////////////
 // 字符串中所含字符/串的查找，直接使用STL函数，比string.find(xx, xx, 1, true)快
-static int lua_string_findchar(lua_State* L)
+static int lua_string_plainfind(lua_State* L)
 {
 	size_t len = 0, len2 = 0;
 	const char* s = luaL_checklstring(L, 1, &len);
@@ -1846,7 +1846,7 @@ static void luaext_string(lua_State *L)
 		{ "cmp", &lua_string_cmp },
 
 		// 单个字符正向查找（3~5倍性能于string.find(str, by, 1, true)）
-		{ "findchar", &lua_string_findchar },
+		{ "plainfind", &lua_string_plainfind },
 		// 单个字符反向查找
 		{ "rfindchar", &lua_string_rfindchar },
 		// 对字符串进行所有字符出现次数的总计数

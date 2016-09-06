@@ -3,9 +3,10 @@
 
 #include "preheader.h"
 
+#define LUA_TCDATA 10
+
 class DBuffer;
 
-// �ַ���Hash����
 template <typename T> static inline T hashString(const char *str)
 {
 	const T seed = 131;
@@ -29,7 +30,15 @@ template <typename T> static inline T hashString(const char *str, size_t len)
 	return hash;
 }
 
-// ���ٸ���ת�з�������
+template <typename T> static inline T alignbytes(T v)
+{
+#ifdef REEME_64
+	return v + 7 >> 3 << 3;
+#else
+	return v + 3 >> 2 << 2;
+#endif
+}
+
 union double2int
 {
 	double	dval;
@@ -43,7 +52,7 @@ static inline int32_t dtoi(double val)
 	return u.ivals[0];
 }
 
-// �̶��ߴ��ڴ���
+// 内存池
 template <typename T, size_t BlockSize = 4096> class TMemoryPool
 {
 public:
@@ -178,7 +187,7 @@ private:
 };
 
 //////////////////////////////////////////////////////////////////////////
-//!�ַ���ָ����HASH�ļ�ֵ
+// 指针字符串Key
 struct StringPtrKey
 {
 	const char*		pString;
@@ -342,6 +351,172 @@ public:
 
 	inline size_t size() const { return m_nodesCount; }
 };
+
+//自动处理对齐的内存块读写器
+template <typename AlignCheck> class MemoryBlockRW
+{
+public:
+	enum AlignBytes
+	{
+		kAlign1Bytes = 1,
+		kAlign2Bytes = 2,
+		kAlign4Bytes = 4,
+		kAlign8Bytes = 8
+	};
+
+public:
+	MemoryBlockRW()
+		: pMemory(0), pMemoryBegin(0), nTotal(0)
+	{}
+	MemoryBlockRW(void* mem, size_t size)
+		: pMemory((char*)mem), pMemoryBegin((char*)mem), nTotal(size)
+	{}
+
+	//!写入
+	template <typename T> void writeval(const T& val)
+	{
+		AlignCheck chk;
+		size_t offset = pMemory - pMemoryBegin;
+		assert(offset + sizeof(T) <= nTotal);
+
+		if (chk(offset, sizeof(T)))
+			*(T*)pMemory = val;
+		else
+			memcpy(pMemory, &val, sizeof(T));
+		pMemory += sizeof(T);
+	}
+	template <typename T> void writeval(const T& val, size_t pos)
+	{
+		AlignCheck chk;
+		assert(pos + sizeof(T) <= nTotal);
+
+		if (chk(pos, sizeof(T)))
+			*(T*)(pMemoryBegin + pos) = val;
+		else
+			memcpy(pMemoryBegin + pos, &val, sizeof(T));
+	}
+
+	//!写入任意字节数
+	inline void write(const void* src, size_t n)
+	{
+		assert(pMemory - pMemoryBegin + n <= nTotal);
+		memcpy(pMemory, src, n);
+		pMemory += n;
+	}
+	inline void write(const void* src, size_t n, size_t pos)
+	{
+		assert(pos + n <= nTotal);
+		memcpy(pMemoryBegin + pos, src, n);
+	}
+	//!填充0字节
+	inline void fillzero(size_t n)
+	{
+		if (n)
+		{
+			assert(pMemory - pMemoryBegin + n <= nTotal);
+			memset(pMemory, 0, n);
+			pMemory += n;
+		}
+	}
+
+	//!读出
+	template <typename T> void readval(T& val)
+	{
+		AlignCheck chk;
+		size_t offset = pMemory - pMemoryBegin;
+		assert(offset + sizeof(T) <= nTotal);
+
+		if (chk(offset, sizeof(T)))
+			val = *(T*)pMemory;
+		else
+			memcpy(&val, pMemory, sizeof(T));
+		pMemory += sizeof(T);
+	}
+	template <typename T> void readval(T& val, size_t pos)
+	{
+		AlignCheck chk;
+		assert(pos + sizeof(T) <= nTotal);
+
+		if (chk(pos, sizeof(T)))
+			val = *(T*)(pMemoryBegin + pos);
+		else
+			memcpy(&val, pMemoryBegin + pos, sizeof(T));
+	}
+	template <typename T> T readval()
+	{
+		T v;
+		readval(v);
+		return v;
+	}
+	template <typename T> T readval(size_t pos)
+	{
+		T v;
+		readval(v, pos);
+		return v;
+	}
+
+	//!读出做生意字节数
+	inline void read(void* dst, size_t n)
+	{
+		assert(pMemory - pMemoryBegin + n <= nTotal);
+		memcpy(dst, pMemory, n);
+		pMemory += n;
+	}
+	inline void read(void* dst, size_t n, size_t pos)
+	{
+		assert(pos + n <= nTotal);
+		memcpy(dst, pMemoryBegin + pos, n);
+	}
+
+	//!获取当前位置
+	inline char* get() { return pMemory; }
+	inline operator void* () { return pMemory; }
+	inline operator char* () { return pMemory; }
+	inline operator unsigned char* () { return pMemory; }
+	inline operator const void* () { return pMemory; }
+	inline operator const char* () { return pMemory; }
+	inline operator const unsigned char* () { return pMemory; }
+
+	//!获取已写入的字节数
+	inline size_t size() const { return pMemory - pMemoryBegin; }
+
+	//!移动位置
+	inline void move(size_t n) { pMemory += n; }
+
+public:
+	char	*pMemory, *pMemoryBegin;
+	size_t	nTotal;
+};
+
+struct MemoryAlignCheck1 {
+	inline bool operator ()(size_t i, size_t n)
+	{
+		return false;
+	}
+};
+struct MemoryAlignCheck2 {
+	inline bool operator ()(size_t i, size_t n)
+	{
+		return ((i & 1) == 0 && n == 2);
+	}
+};
+struct MemoryAlignCheck4 {
+	inline bool operator ()(size_t i, size_t n)
+	{
+		return ((i & 3) == 0 && n == 4);
+	}
+};
+struct MemoryAlignCheck8 {
+	inline bool operator ()(size_t i, size_t n)
+	{
+		return ((i & 7) == 0 && n == 8);
+	}
+};
+
+
+extern size_t ZLibCompress(const void* data, size_t size, char* outbuf, size_t outbufSize, int32_t level);
+extern size_t ZLibDecompress(const void* data, size_t size, void* outmem, size_t outsize);
+
 
 #ifndef _MSC_VER
 namespace std {

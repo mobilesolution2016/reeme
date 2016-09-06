@@ -453,7 +453,7 @@ local modelMeta = {
 			if name then q:where(name, val) end
 			q = q:columns(colnames):limit(1):exec()
 			
-			if string.findchar(colnames, ',') then
+			if string.plainfind(colnames, ',') then
 				return q and q(false) or nil
 			end
 			return q and q[colnames] or nil

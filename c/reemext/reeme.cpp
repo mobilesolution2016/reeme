@@ -3,6 +3,7 @@
 #include "lua.hpp"
 #include "re2/re2.h"
 #include "re2/regexp.h"
+#include "zlib/zlib.h"
 
 #include "json.h"
 #include "lua_utf8str.h"
@@ -10,6 +11,39 @@
 #include "lua_table.h"
 #include "sql.h"
 
+size_t ZLibCompress(const void* data, size_t size, char* outbuf, size_t outbufSize, int32_t level)
+{
+	if (size == 0)
+		return 0;
+
+	uLongf destLeng = outbufSize;
+
+	if (level > 9)
+		level = 9;
+	else if (level < 1)
+		level = 1;
+
+	int ret = compress2((Bytef*)outbuf, &destLeng, (const Bytef*)data, size, level);
+	if (ret != Z_OK || destLeng > size)
+		return 0;
+
+	return destLeng;
+}
+
+size_t ZLibDecompress(const void* data, size_t size, void* outmem, size_t outsize)
+{
+	uLongf destlen = outsize;
+	int ret = uncompress((Bytef*)outmem, &destlen, (const Bytef*)data, size);
+	if (ret != Z_OK)
+	{
+		memcpy(outmem, data, std::min(size, outsize));
+		return size;
+	}
+
+	return destlen;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static luaL_Reg cExtProcs[] = {
 	{ "sql_expression_parse", &lua_sql_expression_parse },
 	{ NULL, NULL }
@@ -120,6 +154,22 @@ static int lua_hasequal(lua_State* L)
 	return 0;
 }
 
+static int lua_rawhasequal(lua_State* L)
+{
+	int n = 2, top = lua_gettop(L);
+	while (n <= top)
+	{
+		if (lua_rawequal(L, 1, n))
+		{
+			lua_pushinteger(L, n);
+			return 1;
+		}
+		++ n;
+	}
+
+	return 0;
+}
+
 //////////////////////////////////////////////////////////////////////////
 const char initcodes[] = {
 	"table.unique = function(tbl)\n"
@@ -155,6 +205,9 @@ REEME_API int luaopen_reemext(lua_State* L)
 
 	lua_pushcfunction(L, &lua_hasequal);
 	lua_setglobal(L, "hasequal");
+
+	lua_pushcfunction(L, &lua_rawhasequal);
+	lua_setglobal(L, "rawhasequal");
 
 	int r = luaL_dostring(L, initcodes);
 	assert(r == 0);
