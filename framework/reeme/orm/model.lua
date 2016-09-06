@@ -274,7 +274,7 @@ queryMeta = {
 		--执行select查询并返回第一行，注意返回的是行而非结果集实例，如果不存在至少1行，则返回为nil
 		fetchFirst = function(self, db, result)
 			if self.op == 'SELECT' then
-				local res, r = self:execute(db, result)
+				local res, r = self:limit(1):execute(db, result)
 				if res then
 					return r + 1 and r(false) or nil
 				end
