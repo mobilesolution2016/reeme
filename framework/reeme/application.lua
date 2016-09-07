@@ -117,7 +117,11 @@ local function lazyLoaderProc(self, key, ...)
 		if type(fget) == "function" then
 			local r = fget(self, ...)
 			if r and type(ffree) == "function" then
-				rawget(self, "_lazyLoaders")[ffree] = r
+				local loader = {
+					params = { ... },
+					r = r
+				}
+				rawget(self, "_lazyLoaders")[ffree] = loader
 			end
 			return r
 		end
@@ -244,10 +248,11 @@ local appMeta = {
 		
 		run = function(self)
 			--require('mobdebug').start('192.168.3.13')
+			local c
 			local ok, err = pcall(function()
 				local router = configs.router or require("reeme.router")
 				local path, act = router(ngx.var.uri)
-				local c, mth, r
+				local mth, r
 
 				--载入控制器
 				c, mth, r = self:loadController(path, act)
@@ -306,16 +311,15 @@ local appMeta = {
 					end
 				end
 				--require('mobdebug').done()
-				
-				if c then
-					local lazyLoaders = rawget(c, "_lazyLoaders")
-					for k, v in pairs(lazyLoaders) do
-						k(c, v)
-					end
-					c = nil
-				end
 			end)
 
+			if c then
+				local lazyLoaders = rawget(c, "_lazyLoaders")
+				for ffree, loader in pairs(lazyLoaders) do
+					ffree(c, loader.r, loader.params)
+				end
+			end
+				
 			if not ok then
 				local msg = err.msg
 				local msgtp = type(msg)
@@ -331,6 +335,8 @@ local appMeta = {
 
 				ngx.eof()
 			end
+			
+			c = nil
 		end,
 	}
 }
