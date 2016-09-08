@@ -7,7 +7,7 @@ return function(reeme)
 			ngx.header[key] = value
 		end,
 		__call = function(self, hds)
-			for k,v in pairs(hds) do
+			for k, v in pairs(hds) do
 				ngx.header[k] = v
 			end
 		end
