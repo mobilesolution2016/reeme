@@ -14,6 +14,7 @@
 #include "lua_string.h"
 #include "lua_table.h"
 #include "sql.h"
+#include "lua_httpreq.h"
 
 #include "commonlib.h"
 #include "lua_deamon.h"
@@ -163,7 +164,7 @@ bool Service::openDB(const char* dbpath)
 	}
 
 	uint32_t flags = 0xFFFF;
-	const char* sqls[] = { SQLCreateTable_Schedule, SQLCreateTable_HttpReqTasks };
+	const char* sqls[] = { SQLCreateTable_Schedule, SQLCreateTable_HttpReqTasks, &SQLCreateTable_ScriptRunTasks };
 
 	DBSqlite::Result* result = db->query("SELECT name FROM sqlite_master WHERE type = 'table'", 0, 0, DBSqlite::kIndexNum);
 	if (!result)
@@ -176,6 +177,8 @@ bool Service::openDB(const char* dbpath)
 			flags &= ~(1 << 0);
 		else if (strcmp(s, "httpreq_tasks") == 0)
 			flags &= ~(1 << 1);
+		else if (strcmp(s, "scriptrun_tasks") == 0)
+			flags &= ~(1 << 2);
 	}
 	result->drop();
 
@@ -209,7 +212,7 @@ bool Service::openDB(const char* dbpath)
 
 void Service::flushPackets()
 {
-	tasksListLock.lock();
+	pcksListLock.lock();
 	while(packets.size())
 	{
 		PckHeader* hd = packets.front();
@@ -218,14 +221,14 @@ void Service::flushPackets()
 		packetExecute(this, L, hd, true);
 		free(hd);			
 	}
-	tasksListLock.unlock();
+	pcksListLock.unlock();
 }
 
 void Service::pushPacket(PckHeader* hd)
 {
-	tasksListLock.lock();
+	pcksListLock.lock();
 	packets.push_back(hd);
-	tasksListLock.unlock();
+	pcksListLock.unlock();
 
 	boost::recursive_mutex::scoped_lock lock(condLock);
 	taskCond.notify_one();
@@ -292,6 +295,17 @@ void Service::onAccept(Client* c, const boost::system::error_code& error)
 	c->start();
 
 	acceptOne();
+}
+
+void Service::addSchedule(ScheduleData* p)
+{
+	scheduleLock.lock();
+	ScheduleData* n = schedules.first();
+	while(n)
+	{
+		n = n->next();
+	}
+	scheduleLock.unlock();
 }
 
 bool Service::parserStartup(const char* pszStartupArgs, size_t nCmdLength)
@@ -503,13 +517,13 @@ void WorkThread::onThread()
 		while(service->bEventLooping)
 		{
 			hd = 0;
-			service->tasksListLock.lock();
+			service->pcksListLock.lock();
 			if (service->packets.size())
 			{
 				hd = service->packets.front();
 				service->packets.pop_front();
 			}		
-			service->tasksListLock.unlock();
+			service->pcksListLock.unlock();
 
 			if (!hd)
 				break;

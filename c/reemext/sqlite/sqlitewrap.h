@@ -13,6 +13,13 @@ public:
 		kIndexAll = 3
 	};
 
+	enum Action
+	{
+		kBegin,
+		kCommit,
+		kRollback
+	} ;
+
 	//!值类型
 	enum ValueType
 	{
@@ -121,6 +128,9 @@ public:
 	* \param count vals数组的大小
 	*/
 	virtual bool exec(const char* sql, const Value* vals = 0, uint32_t count = 0) = 0;
+
+	//!事务管理
+	virtual void action(Action k) = 0;
 
 	//!修改表
 	/*!

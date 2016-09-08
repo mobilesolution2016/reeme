@@ -378,6 +378,22 @@ public:
 		return doQuery(sql, vals, count, rowIndexType);
 	}
 
+	void action(Action k)
+	{
+		const char* szLeftover;
+		sqlite3_stmt* pStmt = 0;
+		const char* sqls[] = { "BEGIN", "COMMIT", "ROLLBACK" };
+
+		int rc = sqlite3_prepare_v2(db, sqls[k], -1, &pStmt, &szLeftover);
+		rc = sqlite3_step(pStmt);
+		if (rc != SQLITE_DONE)
+		{
+			LOGE("SQLITE: " << sqlite3_errmsg(db));
+			return false;
+		}
+		sqlite3_finalize(pStmt);
+	}
+
 	bool updateTable(const char* tableName, const char* tmpTableName, const ColumnsMap& reservedColumns)
 	{
 		//先组合出SQL

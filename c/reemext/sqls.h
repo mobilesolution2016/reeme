@@ -4,6 +4,7 @@ const char SQLCreateTable_Schedule[] = {
 	"	create_time DATETIME,"											// 创建这条计划的时间
 
 	"	mode INTEGER,"													// 任务执行模式，可用的值定义在枚举ScheduleMode中
+	"	flags INTEGER DEFAULT 0,"										// 任务的一些配置的组合标志
 
 	"	repeat_interval UNSIGNED INT DEFAULT 0,"						// 重复执行计划的间隔时间（单位：秒）
 	"	repeat_times UNSIGNED INT DEFAULT 0,"							// 重复执行的次数，0表示不重复执行。重复执行指的是达到执行条件之后
@@ -18,6 +19,18 @@ const char SQLCreateTable_HttpReqTasks[] = {
 	"	taskid INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
 	"	schid INTEGER DEFAULT 0,"
 	"	url VARCHAR(280) DEFAULT '',"
-	"	posts TEXT DFAULT ''"
+	"	download_to VARCHAR(280) DEFAULT NULL,"
+	"	posts TEXT DFAULT NULL,"	
+	"	result_force TEXT DFAULT NULL"	
 	")"
 };
+
+const char SQLCreateTable_ScriptRunTasks[] = {
+	"CREATE TABLE scriptrun_tasks("
+	"	taskid INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+	"	schid INTEGER DEFAULT 0,"
+	"	script_file VARCHAR(280) DEFAULT NULL,"
+	"	script_codes TEXT DFAULT NULL"
+	")"
+};
+
