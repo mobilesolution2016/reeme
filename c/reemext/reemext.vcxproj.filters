@@ -39,6 +39,9 @@
     <ClInclude Include="json.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="commonlib.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="reeme.cpp">
