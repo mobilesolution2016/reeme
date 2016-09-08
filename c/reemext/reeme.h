@@ -13,7 +13,7 @@ template <typename T> static inline T hashString(const char *str)
 
 	char ch;
 	T hash = 0;
-	while ((ch = *str) ++ != 0)
+	while ((ch = *str ++) != 0)
 		hash = hash * seed + ch;
 
 	return hash;
@@ -109,7 +109,7 @@ public:
 	pointer address(reference x) const throw() { return &x; }
 	const_pointer address(const_reference x) const throw() { return &x; }
 
-	inline pointer allocate(size_type n = 1, const_pointer hint = 0)
+	inline pointer allocate(const_pointer hint = 0)
 	{
 		slotsCount_ ++;
 		if (freeSlots_ != 0) {
@@ -122,7 +122,7 @@ public:
 			allocateBlock();
 		return reinterpret_cast<pointer>(currentSlot_++);
 	}
-	inline void deallocate(pointer p, size_type n = 1)
+	inline void deallocate(pointer p)
 	{
 		if (p != 0) {
 			slotsCount_ --;
@@ -281,11 +281,11 @@ public:
 		: m_pFirstNode(NULL), m_pLastNode(NULL), m_nodesCount(0)
 	{}
 
-	void append(T* node)
+	bool append(T* node)
 	{
 		Node* n = static_cast<Node*>(node);
 		if (!n || n->m_pOwningList)
-			return ;
+			return false;
 
 		if (m_pLastNode)
 		{
@@ -296,47 +296,48 @@ public:
 		else
 		{
 			m_pFirstNode = m_pLastNode = n;
-			n->m_pPrevious = NULL;
 		}
-		n->m_pNext = NULL;
+		n->m_pOwningList = this;
 
 		m_nodesCount ++;
+		return true;
 	}
 
-	void remove(T* node)
+	bool remove(T* node)
 	{
 		Node* n = static_cast<Node*>(node);
 		if (!n || n->m_pOwningList != this)
-			return ;
+			return false;
 
 		Node* pprev = n->m_pPrevious, *nnext = n->m_pNext;
 
-		pprev->m_pNext = nnext;
-		nnext->m_pPrevious = pprev;
+		if (pprev)
+			pprev->m_pNext = nnext;
+		if (nnext)
+			nnext->m_pPrevious = pprev;
 
-		if (pprev == m_pFirstNode)
+		if (n == m_pFirstNode)
 			m_pFirstNode = nnext;
-		if (nnext == m_pLastNode)
+		if (n == m_pLastNode)
 			m_pLastNode = pprev;
 
 		n->m_pPrevious = n->m_pNext = NULL;
 		n->m_pOwningList = NULL;
 		m_nodesCount --;
+
+		return true;
 	}
 
 	T* popFirst()
 	{
-		Node* r = 0;
-		if (m_pFirstNode)
+		Node* r = m_pFirstNode;
+		if (r)
 		{
-			r = m_pFirstNode;
-
-			Node* nnext = r->m_pNext;
-			m_pFirstNode = nnext;
-			if (nnext)
-				nnext->m_pPrevious = NULL;
-			else
-				m_pLastNode = 0;
+			m_pFirstNode = r->m_pNext;
+			if (m_pFirstNode)
+				m_pFirstNode->m_pPrevious = 0;
+			if (m_pLastNode == r)
+				m_pLastNode = m_pFirstNode;
 
 			r->m_pPrevious = r->m_pNext = NULL;
 			r->m_pOwningList = NULL;
@@ -516,7 +517,7 @@ struct MemoryAlignCheck8 {
 
 extern size_t ZLibCompress(const void* data, size_t size, char* outbuf, size_t outbufSize, int32_t level);
 extern size_t ZLibDecompress(const void* data, size_t size, void* outmem, size_t outsize);
-
+extern uint32_t CRC32Check(const void* data, size_t size);
 
 #ifndef _MSC_VER
 namespace std {

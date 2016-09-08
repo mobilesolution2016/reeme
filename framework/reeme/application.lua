@@ -78,7 +78,7 @@ local copybasees = {
 	},
 }
 
-local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1 }
+local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1 }
 local application = {
 	__index = function(self, key)	
 		local f = loadables[key]

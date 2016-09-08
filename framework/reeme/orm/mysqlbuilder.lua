@@ -357,6 +357,8 @@ builder.INSERT = function(self, model, db)
 	--all values
 	if builder.buildKeyValuesSet(self, model, sqls, '') > 0 then
 		table.insert(sqls, #sqls, 'SET')
+	else
+		sqls[#sqls + 1] = '() VALUES()'
 	end
 	
 	--end

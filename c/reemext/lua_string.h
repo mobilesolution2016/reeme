@@ -882,7 +882,24 @@ static int lua_string_checkinteger(lua_State* L)
 
 			if (len > 0)
 			{
-				v = strtoll(s, &endp, 10);
+				int digits = 10;
+				if (s[0] == '0')
+				{
+					if (s[1] == 'x')
+					{
+						digits = 16;
+						len -= 2;
+						s += 2;						
+					}
+					else
+					{
+						digits = 8;
+						len --;
+						s ++;						
+					}
+				}
+
+				v = strtoll(s, &endp, digits);
 				if (endp && endp - s == len)
 					r = 1;
 			}
@@ -899,6 +916,64 @@ static int lua_string_checkinteger(lua_State* L)
 		else
 			lua_pushinteger(L, v);
 #endif
+		return 1;
+	}
+	if (t >= 2)
+	{
+		lua_pushvalue(L, 2);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int lua_string_checkinteger32(lua_State* L)
+{
+	long v = 0;
+	int r = 0, t = lua_gettop(L);
+
+	if (t >= 1)
+	{
+		if (lua_isnumber(L, 1))
+		{
+			r = 1;
+			v = lua_tointeger(L, 1);
+		}
+		else
+		{
+			size_t len = 0;
+			char *endp = 0;
+			const char* s = (const char*)lua_tolstring(L, 1, &len);
+
+			if (len > 0)
+			{
+				int digits = 10;
+				if (s[0] == '0')
+				{
+					if (s[1] == 'x')
+					{
+						digits = 16;
+						len -= 2;
+						s += 2;						
+					}
+					else
+					{
+						digits = 8;
+						len --;
+						s ++;						
+					}
+				}
+
+				v = strtol(s, &endp, digits);
+				if (endp && endp - s == len)
+					r = 1;
+			}
+		}
+	}
+
+	if (r)
+	{
+		lua_pushinteger(L, v);
 		return 1;
 	}
 	if (t >= 2)
@@ -1805,19 +1880,22 @@ static int lua_string_json(lua_State* L)
 		return 0;
 
 	size_t len = 0;
+	bool copy = true;
 	int needSetMarker = 0;
 	const char* str = luaL_checklstring(L, 1, &len);
 
 	if (!str || len < 2)
 		return 0;
 
-	if (top >= 2)
+	if (top >= 2 && !lua_isnil(L, 2))
 		needSetMarker = 2;
+	if (top >= 3)
+		copy = lua_toboolean(L, 3) ? true : false;
 
 	lua_newtable(L);
 
 	JSONFile f(L);
-	size_t readlen = f.parse(str, len, true, needSetMarker);
+	size_t readlen = f.parse(str, len, copy, needSetMarker);
 	if (readlen == 0)
 	{
 		// error
@@ -1867,6 +1945,7 @@ static void luaext_string(lua_State *L)
 		{ "checknumeric", &lua_string_checknumeric },
 		// 整数字符串检测
 		{ "checkinteger", &lua_string_checkinteger },
+		{ "checkinteger32", &lua_string_checkinteger32 },
 		// 布尔型检测（允许数值、字符串和boolean类型）
 		{ "checkboolean", &lua_string_checkboolean },
 		// 字符串检测

@@ -16,6 +16,7 @@
 
 #ifdef _WINDOWS
 #	include <windows.h>
+#	include <tchar.h>
 #	include <boost/unordered_map.hpp>
 #	include <boost/unordered_set.hpp>
 
@@ -27,7 +28,8 @@
 
 #	define REEME_API extern "C" __declspec(dllexport)
 
-// �޸�VS2015��������
+#	define PATH_STRING std::wstring
+
 #if _MSC_VER >= 1900
 #	define STDC99
 #else
@@ -35,6 +37,8 @@
 #endif
 
 #elif defined(__GUNC__) || defined(__unix__) || defined(__APPLE__)
+#	define TCHAR char
+
 #   include <sys/time.h>
 #	include <unordered_map>
 #	include <unordered_set>
@@ -43,6 +47,8 @@
 #	define SET_CLASS_NAME std::unordered_set
 
 #	define REEME_API extern "C" __attribute__ ((visibility("default")))
+
+#	define PATH_STRING std::string
 
 #	ifndef offsetof
 #		define offsetof(s, m) ((size_t)(&reinterpret_cast<s*>(100000)->m) - 100000)

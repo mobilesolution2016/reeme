@@ -39,11 +39,6 @@ public:
 	{
 	}
 
-	inline void end()
-	{
-		if (pString)
-			pString[nLength] = 0;
-	}
 	inline void empty()
 	{
 		pString = 0;
@@ -98,7 +93,24 @@ public:
 			return 0;\
 		}\
 		pReadPos ++;\
-	}
+	}\
+	if (pReadPos >= m_pMemEnd) return 0;
+
+#define SKIP_TO(dst)\
+	m_pLastPos = pReadPos;\
+	while(pReadPos != m_pMemEnd)\
+	{\
+		uint8_t ch = pReadPos[0];\
+		if (ch > 32 || ch == dst)\
+			break;\
+		if (json_invisibles_allowed[ch] != 1)\
+		{\
+			m_iErr = kErrorSymbol;\
+			return 0;\
+		}\
+		pReadPos ++;\
+	}\
+	if (pReadPos >= m_pMemEnd) return 0;
 
 class JSONFile
 {
@@ -372,14 +384,10 @@ private:
 					return 0;
 
 				//取下一个符号：冒号
-				pReadPos = parseSkipTo(pReadPos, ':');
-				if (!pReadPos)
-					return 0;
+				SKIP_TO(':');
 
 				pReadPos ++;
 				SKIP_WHITES();
-
-				attr->name.end();		
 
 				//判断是数组还是单值
 				if (pReadPos[0] == '[')
@@ -421,7 +429,6 @@ private:
 						attr->kValType = m_kValType;
 
 					endChar = pReadPos[0];
-					attr->value.end();
 					onAddAttr(attr, 0);
 				}
 
@@ -479,53 +486,70 @@ private:
 		m_pLastPos = pReadPos;
 
 		if (m_bQuoteStart)
-		{			
+		{
+			// 字符串型值
 			pReadPos ++;
 			str.pString = pEndPos = pReadPos;
 
-			while(pReadPos != m_pMemEnd)
+			size_t i;
+			uint8_t ch;
+			for(i = 0; i < m_pMemEnd - pReadPos; ++ i)
 			{
-				uint8_t ch = *pReadPos;
+				ch = pReadPos[i];
 				if (ch == 0)
 				{
 					m_iErr = kErrorEnd;
 					break;
 				}
 
-				if (ch == '"')
+				if (ch == '"' || ch == '\\')
 					break;
-
-				if (ch == '\\')
-				{
-					char next = pReadPos[1];
-					if (next == 'u')
-					{
-						//Unicode字符
-						uint32_t unicode = readUnicode(pReadPos + 2);
-						pEndPos = unicode2utf8(unicode, pEndPos);
-						pReadPos += 4;
-					}
-					else if (next == 'n' || next == 't')
-						*pEndPos ++ = next;
-					else if (next != 'r')
-						*pEndPos ++ = next;
-
-					*pReadPos ++;
-				}
-				else if (pEndPos < pReadPos)
-				{
-					*pEndPos ++ = ch;
-				}
-				else
-				{
-					pEndPos ++;
-				}
-
-				pReadPos ++;
 			}
+
+			pReadPos += i;
+			pEndPos = pReadPos;
+
+			if (ch == '\\')
+			{
+				// 如果此时ch为\则说明字符串中含有转义符号，因此进入带有转义的字符串的处理过程。否则，上面的处理就直接结束了整个字符串值的获取过程
+				while(pReadPos < m_pMemEnd)
+				{
+					if (ch == '\\')
+					{
+						char next = pReadPos[1];
+						if (next == 'u')
+						{
+							//Unicode字符
+							uint32_t unicode = readUnicode(pReadPos + 2);
+							pEndPos = unicode2utf8(unicode, pEndPos);
+							pReadPos += 6;
+						}
+						else 
+						{
+							*pEndPos ++ = next;
+							pReadPos += 2;
+						}						
+					}
+					else if (ch == '"')
+					{
+						break;
+					}
+					else
+					{
+						*pEndPos ++ = ch;
+						pReadPos ++;
+					}
+
+					ch = pReadPos[0];
+				}
+			}
+
+			if (pReadPos >= m_pMemEnd)
+				m_iErr = kErrorEnd;
 		}
 		else
 		{
+			// 数值或特殊值
 			m_kValType = JVTNone;
 			while(pReadPos != m_pMemEnd)
 			{
@@ -679,7 +703,6 @@ private:
 				if (m_bQuoteStart)
 					attr->kType = JATString;
 
-				attr->value.end();
 				onAddAttr(attr, cc);
 			}
 			else
@@ -695,28 +718,6 @@ private:
 		}
 
 		return pReadPos;
-	}
-
-	inline char* parseSkipTo(char* pReadPos, char dst)
-	{
-		m_pLastPos = pReadPos;
-		while(pReadPos != m_pMemEnd)
-		{
-			uint8_t ch = pReadPos[0];
-			if (ch == dst)
-				return pReadPos;
-			if (ch > 32)
-				break;
-			if (json_invisibles_allowed[ch] != 1)
-			{
-				m_iErr = kErrorSymbol;
-				return 0;
-			}
-			pReadPos ++;
-		}
-
-		m_iErr = kErrorSymbol;
-		return 0;
 	}
 
 	inline uint32_t readUnicode(const char* p)
