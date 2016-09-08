@@ -201,7 +201,6 @@ local appMeta = {
 						return nil, nil, true
 					end
 				else
-					ngx.say(errmsg)
 					return nil, nil, true
 				end
 			end
@@ -248,19 +247,18 @@ local appMeta = {
 		
 		run = function(self)
 			--require('mobdebug').start('192.168.3.13')
-			local c
-			local ok, err = pcall(function()
-				local router = configs.router or require("reeme.router")
-				local path, act = router(ngx.var.uri)
-				local mth, r
+			local router = configs.router or require("reeme.router")
+			local path, act = router(ngx.var.uri)
+			local c, mth, r
 
-				--载入控制器
-				c, mth, r = self:loadController(path, act)
-				if r == true then
-					--halt it
-					return
-				end
-				
+			--载入控制器
+			c, mth, r = self:loadController(path, act)
+			if r == true then
+				--halt it
+				return
+			end
+			
+			local ok, err = pcall(function()
 				if self.preProc then
 					--执行动作前响应函数
 					r = self.preProc(self, c, path, act, mth)
