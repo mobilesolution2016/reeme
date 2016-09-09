@@ -41,9 +41,19 @@ public:
 			double		d;
 			int32_t		i;
 			int64_t		i64;
+			uint64_t	u64;
 			const char	*s;
 			const void	*p;
 		} v;
+
+		inline void make(int32_t n) { type = kValueInt; len = 4; v.i = n; }
+		inline void make(uint32_t n) { type = kValueInt; len = 4; v.i = n; }
+		inline void make(int64_t n) { type = kValueInt; len = 8; v.i64 = n; }
+		inline void make(uint64_t n) { type = kValueInt; len = 8; v.u64 = n; }
+		inline void make(double n) { type = kValueNumeric; len = 8; v.d = n; }
+		inline void make(const char* n, size_t l) { type = kValueText; len = l; v.s = n; }
+		inline void make(const void* n, size_t l) { type = kValueBlob; len = l; v.p = n; }
+		inline void make() { type = kValueNull; len = 0; }
 	};
 
 	//!结果集
@@ -130,7 +140,7 @@ public:
 	virtual bool exec(const char* sql, const Value* vals = 0, uint32_t count = 0) = 0;
 
 	//!事务管理
-	virtual void action(Action k) = 0;
+	virtual bool action(Action k) = 0;
 
 	//!修改表
 	/*!

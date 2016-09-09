@@ -281,6 +281,30 @@ public:
 		: m_pFirstNode(NULL), m_pLastNode(NULL), m_nodesCount(0)
 	{}
 
+	void prepend(T* p)
+	{
+		assert(p);
+
+		Node* n = static_cast<Node*>(p);
+		assert(n->m_pOwningList == 0);
+
+		if (m_pFirstNode)
+		{
+			m_pFirstNode->m_pPrevious = n;
+			n->m_pNext = m_pFirstNode;			
+			m_pFirstNode = n;
+		}
+		else
+		{
+			m_pFirstNode = m_pLastNode = n;
+			n->m_pNext = NULL;
+		}
+
+		n->m_pPrevious = NULL;
+		n->m_pOwningList = this;
+		m_nodesCount ++;
+	}
+
 	bool append(T* node)
 	{
 		Node* n = static_cast<Node*>(node);
@@ -296,10 +320,46 @@ public:
 		else
 		{
 			m_pFirstNode = m_pLastNode = n;
+			n->m_pPrevious = NULL;
 		}
+
+		n->m_pNext = NULL;
 		n->m_pOwningList = this;
 
 		m_nodesCount ++;
+		return true;
+	}
+
+	bool append(TList<T>& list)
+	{		
+		m_nodesCount += list.size();
+
+		Node* n = list.m_pFirstNode, *nn;
+		while(n)
+		{
+			nn = n->m_pNext;
+
+			if (m_pLastNode)
+			{
+				m_pLastNode->m_pNext = n;
+				n->m_pPrevious = m_pLastNode;
+				m_pLastNode = n;
+			}
+			else
+			{
+				m_pFirstNode = m_pLastNode = n;
+				n->m_pPrevious = NULL;
+			}
+
+			n->m_pNext = NULL;
+			n->m_pOwningList = this;
+
+			n = nn;
+		}
+
+		list.m_pFirstNode = list.m_pLastNode = NULL;
+		list.m_nodesCount = 0;
+
 		return true;
 	}
 
@@ -330,21 +390,95 @@ public:
 
 	T* popFirst()
 	{
-		Node* r = m_pFirstNode;
-		if (r)
+		Node* n = m_pFirstNode;
+		if (n)
 		{
-			m_pFirstNode = r->m_pNext;
+			m_pFirstNode = n->m_pNext;
 			if (m_pFirstNode)
 				m_pFirstNode->m_pPrevious = 0;
-			if (m_pLastNode == r)
+			if (m_pLastNode == n)
 				m_pLastNode = m_pFirstNode;
 
-			r->m_pPrevious = r->m_pNext = NULL;
-			r->m_pOwningList = NULL;
+			n->m_pPrevious = n->m_pNext = NULL;
+			n->m_pOwningList = NULL;
 			m_nodesCount --;
 		}
 
-		return static_cast<T*>(r);
+		return static_cast<T*>(n);
+	}
+
+	T* popLast()
+	{
+		Node* pNode = m_pLastNode;
+		if (pNode)
+		{
+			m_pLastNode = pNode->m_pPrevious;
+			if (m_pLastNode)
+				m_pLastNode->m_pNext = 0;
+			if (m_pFirstNode == pNode)
+				m_pFirstNode = m_pLastNode;
+
+			pNode->m_pPrevious = pNode->m_pNext = NULL;
+			pNode->m_pOwningList = NULL;
+
+			m_nodesCount --;
+		}
+
+		return static_cast<T*>(pNode);
+	}
+
+	void insertBefore(T *p, T *before)
+	{
+		assert(p);
+
+		Node* n = static_cast<Node*>(p);
+		assert(n->m_pOwningList == 0);		
+
+		if (before)
+		{
+			assert(before->m_pOwningList == this);
+
+			n->m_pNext = before;
+			Node* after = ((Node*)before)->m_pPrevious;
+			n->m_pPrevious = after;
+			if (after) after->m_pNext = n;
+			else m_pFirstNode = n;
+			((Node*)before)->m_pPrevious = n;
+			n->m_pOwningList = this;
+
+			m_nodesCount ++;
+		}
+		else
+		{
+			prepend(p);
+		}
+	}
+
+	void insertAfter(T *p, T *after)
+	{
+		assert(p);
+
+		Node* n = static_cast<Node*>(p);
+		assert(n->m_pOwningList == 0);
+
+		if (after)
+		{
+			assert(after->m_pOwningList == this);
+
+			n->m_pPrevious = after;
+			Node* before = ((Node*)after)->m_pNext;
+			n->m_pNext = before;
+			if (before) before->m_pPrevious = n;
+			else m_pLastNode = n;
+			((Node*)after)->m_pNext = n;
+			n->m_pOwningList = this;
+
+			m_nodesCount ++;
+		}
+		else
+		{
+			append(p);
+		}
 	}
 
 	inline T* first() const { return static_cast<T*>(m_pFirstNode); }

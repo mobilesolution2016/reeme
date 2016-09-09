@@ -17,7 +17,15 @@ enum ScheduleFlags {
 	kSFlagHaltWhenResultNotMatched = 0x2,
 	// 一旦有任何一个请求发生超时或错误，就中断执行
 	kSFlagHaltWhenHttpRequestFailed = 0x4,
+	// 所有的任务执行完才算整个计划完成，否则就重新执行
+	kSFlagCompleteWithAllTasks = 0x8,
 } ;
+
+enum ScheduleStatus {
+	kScheduleReady,
+	kScheduleRunning,
+	kScheduleEnded,
+};
 
 /* 所有可用的URL Tag
 	{$totaltasks}  总任务数（不含汇报进度的任务）
@@ -25,7 +33,7 @@ enum ScheduleFlags {
 */
 
 
-class TaskDataBase
+class TaskDataBase : public TListNode<TaskDataBase>
 {
 public:
 	enum TaskType {
@@ -35,6 +43,9 @@ public:
 
 	uint32_t		taskid;
 	TaskType		taskType;
+
+	inline TaskDataBase() {}
+	virtual ~TaskDataBase() {}
 } ;
 
 class HTTPRequestTask : public TaskDataBase
@@ -45,6 +56,9 @@ public:
 	std::string		strDownloadTo;
 	std::string		strResultForce;
 
+	inline HTTPRequestTask() { taskType = kTaskHttpReq; }
+	virtual ~HTTPRequestTask() { }
+
 	inline const HTTPRequestTask& operator = (const HTTPRequestTask& ) { return *this; }
 };
 
@@ -54,27 +68,47 @@ public:
 	bool			bDataIsFilename;
 	std::string		strData;
 
+	inline ScriptTask() { taskType = kTaskScript; }
+	virtual ~ScriptTask() {}
+
 	inline const ScriptTask& operator = (const ScriptTask& ) { return *this; }
 };
 
 class ScheduleData : public TListNode<ScheduleData>
 {
 public:
-	typedef std::list<TaskData> TasksList;
+	typedef TList<TaskDataBase> TasksList;
+	typedef TMemoryPool<HTTPRequestTask> HTTPRequestTasksPool;
+	typedef TMemoryPool<ScriptTask> ScriptTasksPool;
 
-	TasksList		tasks;
+public:
+	TasksList				tasks;
+	HTTPRequestTasksPool	hpool;
+	ScriptTasksPool			spool;
 
-	ScheduleMode	mode;
-	uint32_t		flags;
-	uint32_t		scheduleId;
-	uint32_t		repeatTimes, repeatInterval;	// 重复运行的次数以及每次重复间隔的时间
-	uint64_t		startTime;						// 在这个时间点后才开始运行，如果为0则表示立即运行
+	ScheduleMode			mode;
+	uint32_t				flags;
+	uint32_t				scheduleId;
+	uint32_t				repeatTimes, repeatInterval;	// 重复运行的次数以及每次重复间隔的时间
+	uint64_t				startTime;						// 在这个时间点后才开始运行，如果为0则表示立即运行
 
 public:
 	ScheduleData()
 		: repeatTimes(0), repeatInterval(0), flags(0), startTime(0)
 	{
 
+	}
+
+	~ScheduleData()
+	{
+		TaskDataBase* n;
+		while ((n = tasks.popFirst()) != NULL)
+		{
+			if (n->taskType == TaskDataBase::kTaskHttpReq)
+				((HTTPRequestTask*)n)->~HTTPRequestTask();
+			else if (n->taskid == TaskDataBase::kTaskScript)
+				((ScriptTask*)n)->~ScriptTask();
+		}
 	}
 };
 
@@ -128,10 +162,11 @@ public:
 class WorkThread : public TListNode<WorkThread>
 {
 public:
-	WorkThread(Service* s) 
+	WorkThread(Service* s, bool isi, bool ist) 
 		: service(s) 
-		, thread(boost::bind(&WorkThread::onThread, this))
+		, thread(boost::bind(isi ? &WorkThread::onThread2 : &WorkThread::onThread, this))
 		, isRunning(false)
+		, isTimeThread(ist)
 	{
 		L = luaL_newstate();
 		luaL_openlibs(L);
@@ -144,6 +179,7 @@ public:
 	}
 
 	void onThread();
+	void onThread2();
 	void start()
 	{
 		thread.detach();
@@ -159,6 +195,7 @@ public:
 	boost::thread		thread;
 	lua_State			*L;
 	bool				isRunning;
+	bool				isTimeThread;
 } ;
 
 class Service
@@ -207,9 +244,13 @@ public:
 	boost::mutex threadsListLock;
 	boost::mutex pcksListLock;
 	boost::mutex scheduleLock;
+	boost::mutex scheduleExecLock;
 
-	boost::recursive_mutex condLock;
+	boost::recursive_mutex taskCondLock;
 	boost::condition_variable_any taskCond;
+
+	boost::recursive_mutex timerCondLock;
+	boost::condition_variable_any timerCond;
 
 	boost::shared_ptr< boost::asio::io_service > ioService;
 	boost::shared_ptr< boost::asio::io_service::work > work;
@@ -218,7 +259,7 @@ public:
 	Clients	clients;
 	WorkThreads workThreads;
 	WaitingPackets packets;
-	SchedulesList schedules;
+	SchedulesList schedules, schedulesExecuting;
 
 	lua_State* L;
 	DBSqlite* db;

@@ -21,8 +21,6 @@ struct AutoRestoreTop
 static void packetExecute(Service* service, lua_State* L, PckHeader* hd, bool bForceOnlySaveIt)
 {
 	AutoRestoreTop art(L);
-	ScriptTask scripttmp;
-	HTTPRequestTask httpreqtmp;	
 	ScheduleData* s = art.s = bForceOnlySaveIt ? 0 : new ScheduleData();
 
 	lua_pushcfunction(L, &lua_string_json);
@@ -81,34 +79,40 @@ static void packetExecute(Service* service, lua_State* L, PckHeader* hd, bool bF
 
 	// 取其它标志位配置
 	lua_getfield(L, tblIdx, "cpufreed");
-	if (luaL_optboolean(L, -1, false))
+	if (lua_toboolean(L, -1))
 		s->flags |= kSFlagCPUFreed;
 
 	lua_getfield(L, tblIdx, "halt_result");
-	if (luaL_optboolean(L, -1, false))
+	if (lua_toboolean(L, -1))
 		s->flags |= kSFlagHaltWhenResultNotMatched;
 
 	lua_getfield(L, tblIdx, "halt_anyerrors");
-	if (luaL_optboolean(L, -1, false))
+	if (lua_toboolean(L, -1))
 		s->flags |= kSFlagHaltWhenHttpRequestFailed;
+
+	lua_getfield(L, tblIdx, "complete_withall");
+	if (lua_toboolean(L, -1))
+		s->flags |= kSFlagCompleteWithAllTasks;
 
 
 	// 构造SQL保存下来这个计划
 	DBSqlite::Value vals1[] = {
-		{ DBSqlite::kValueInt, 0, { (int)kScheduleRepeat } },
+		{ DBSqlite::kValueInt, 0, { (int)kScheduleImmediate } },
 		{ DBSqlite::kValueInt, 0, { 0 } },
 		{ DBSqlite::kValueInt, 0, { 0 } },
 		{ DBSqlite::kValueInt, 0, { 0 } },
 		{ DBSqlite::kValueNull, 0, { 0 } },
 	};
 
-	servoce->db->action(DBSqlite::kBegin);
+	service->db->action(DBSqlite::kBegin);
 	service->db->exec("INSERT INTO schedules(create_time,mode,repeat_interval,repeat_times,weekdays,day_time_ranges) VALUES(datetime('now','localtime'),?,?,?,?,?)", vals1, sizeof(vals1) / sizeof(vals1[0]));
-	uint64_t insertId = service->db->getLastInsertId();
+	s->scheduleId = service->db->getLastInsertId();
 
 	// 然后保存所有的任务
 	DBSqlite::Value vals2[] = {
-		{ DBSqlite::kValueText, 0, { (int)insertId } },
+		{ DBSqlite::kValueInt, 8, { s->scheduleId } },
+		{ DBSqlite::kValueText, 0, { 0 } },
+		{ DBSqlite::kValueText, 0, { 0 } },
 		{ DBSqlite::kValueText, 0, { 0 } },
 		{ DBSqlite::kValueText, 0, { 0 } },
 	};
@@ -132,52 +136,53 @@ static void packetExecute(Service* service, lua_State* L, PckHeader* hd, bool bF
 		if (strcmp(type, "httpreq") == 0)
 		{
 			// http请求任务
-			lua_getfield(L, -1, "url");
-			lua_getfield(L, -2, "posts");
-			lua_getfield(L, -2, "downto");
-			lua_getfield(L, -2, "result");
+			lua_getfield(L, tasksIdx + 1, "url");
+			lua_getfield(L, tasksIdx + 1, "posts");
+			lua_getfield(L, tasksIdx + 1, "downto");
+			lua_getfield(L, tasksIdx + 1, "result");
 
 			size_t urllen = 0, postslen = 0, downtolen = 0, resultlen = 0;
-			const char* url = luaL_optlstring(L, -2, "", &urllen);
-			const char* posts = luaL_optlstring(L, -1, "", &postslen);
-			const char* downto = luaL_optlstring(L, -1, "", &downtolen);
+			const char* url = luaL_optlstring(L, -4, "", &urllen);
+			const char* posts = luaL_optlstring(L, -3, "", &postslen);
+			const char* downto = luaL_optlstring(L, -2, "", &downtolen);
 			const char* result = luaL_optlstring(L, -1, "", &resultlen);
 
 			if (postslen == 0)
 			{
 				// 可能是用base64编码了post数据
-				lua_getfield(L, -2, "b64posts");
+				lua_getfield(L, tasksIdx + 1, "b64posts");
 				posts = luaL_optlstring(L, -1, "", &postslen);
 			}
 
 			if (url)
 			{
 				// 至少要有URL才能认为有效
-				vals2[1].len = urllen;
-				vals2[1].v.s = url;
+				vals2[1].make(url, urllen);
 				if (postslen > 1)
-				{
-					vals2[2].type = DBSqlite::kValueText;
-					vals2[2].len = postslen;
-					vals2[2].v.s = posts;
-				}
+					vals2[2].make(posts, postslen);
 				else
-				{
-					vals2[2].type = DBSqlite::kValueNull;
-				}
+					vals2[2].make();
+				if (downtolen > 1)
+					vals2[3].make(downto, downtolen);
+				else
+					vals2[3].make();
+				if (resultlen > 1)
+					vals2[4].make(result, resultlen);
+				else
+					vals2[4].make();
 
-				if (service->db->exec("INSERT INTO httpreq_tasks(schid,url,posts) VALUES(?,?,?)", vals2, sizeof(vals2) / sizeof(vals2[0])))
+				if (service->db->exec("INSERT INTO httpreq_tasks(schid,url,posts,download_to,result_force) VALUES(?,?,?,?,?)", vals2, sizeof(vals2) / sizeof(vals2[0])))
 				{
 					if (s)
 					{
 						// 记录任务
-						s.tasks.push_back(httpreqtmp);
-						HTTPRequestTask& httpreq = s.tasks.back();
+						HTTPRequestTask* httpreq = s->hpool.newElement();
+						s->tasks.append(httpreq);
 
-						httpreq.strUrl.append(url, urllen);
-						httpreq.strPosts.append(posts, postslen);
-						httpreq.strDownloadTo.append(downto, downtolen);
-						httpreq.strResultForce.append(result, resultlen);
+						httpreq->strUrl.append(url, urllen);
+						httpreq->strPosts.append(posts, postslen);
+						httpreq->strDownloadTo.append(downto, downtolen);
+						httpreq->strResultForce.append(result, resultlen);
 					}
 					validcc ++;
 				}
@@ -193,14 +198,14 @@ static void packetExecute(Service* service, lua_State* L, PckHeader* hd, bool bF
 		lua_settop(L, tasksIdx);
 	}
 
-	if (validcc)
+	if (validcc == 0)
 	{
-		servoce->db->action(DBSqlite::kRollback);
+		service->db->action(DBSqlite::kRollback);
 		LOGFMTE("Packet Json have no task after parsed [bodylength=%u]", hd->bodyLeng);
 		return ;
 	}
 
-	servoce->db->action(DBSqlite::kCommit);
+	service->db->action(DBSqlite::kCommit);
 
 	if (bForceOnlySaveIt)
 		return ;
@@ -209,4 +214,143 @@ static void packetExecute(Service* service, lua_State* L, PckHeader* hd, bool bF
 	service->addSchedule(s);
 
 	art.s = NULL;
+}
+
+
+static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
+{
+	// 查询该任务在数据库中是否存在，以及其状态
+	DBSqlite::Value bindValues[5];
+
+	bindValues[0].make(sch->scheduleId);
+	DBSqlite::Result* schResult = service->db->query("SELECT status FROM schedules WHERE schid=?", bindValues, 1, DBSqlite::kIndexNum);
+	if (!schResult)
+	{
+		LOGFMTW("Schedule [id=%llu] need execute but cannot find its db record", sch->scheduleId);
+		return ;
+	}
+
+	int schStatus = schResult->getInt(0);
+	if (schStatus != kScheduleReady)
+	{
+		LOGFMTW("Schedule [id=%llu] need execute but the status [%d] is not ready", sch->scheduleId, schStatus);
+		return ;
+	}
+
+	LOGFMTI("Schedule [id=%llu] executin started", sch->scheduleId);
+
+	// 更改状态为执行
+	service->db->exec("UPDATE schedules SET status=1 WHERE schid=?", bindValues, 1);
+
+	// 执行所有的task	
+	TaskDataBase* next;
+	uint32_t tIndex = 1, taskOks = 0, taskTotal = sch->tasks.size();
+	while ((next = sch->tasks.popFirst()) != NULL)
+	{
+		if (next->taskType == TaskDataBase::kTaskHttpReq)
+		{
+			HTTPRequestTask* task = (HTTPRequestTask*)next;
+
+			CURL* c;
+			CURLcode code;
+			std::string strResult;
+			std::string& strUrl = task->strUrl;
+
+			if (task->strPosts.length())
+				c = curlInitOne(strUrl.c_str(), task->strPosts.c_str());
+			else
+				c = curlInitOne(strUrl.c_str());
+
+			if (task->strDownloadTo.length())
+			{
+				FILE* fp = fopen(task->strDownloadTo.c_str(), "wb");
+				if (!fp)
+				{
+					LOGFMTE("Schedule [id=%llu] task index [%u] create download to file [%s] failed", sch->scheduleId, tIndex, task->strDownloadTo.c_str());
+					goto _end_hr;
+				}
+
+				code = curlExecOne(c, fp);
+				fclose(fp);
+			}
+			else
+			{
+				code = curlExecOne(c, strResult);
+				if (task->strResultForce.length() && task->strResultForce != strResult)
+				{
+					LOGFMTE("Schedule [id=%llu] task index [%u] responses not equal to result forced", sch->scheduleId, tIndex, task->strResultForce.c_str(), strResult.c_str());
+					goto _end_hr;
+				}
+			}
+
+			taskOks ++;
+
+		_end_hr:
+			if (!(sch->flags & kSFlagCompleteWithAllTasks))
+			{
+				// 执行完一条删除一条
+				bindValues[0].make(sch->scheduleId);
+				service->db->exec("DELETE FROM httpreq_tasks WHERE taskid=?", bindValues, 1);
+			}
+			task->~HTTPRequestTask();
+		}
+		else if (next->taskType == TaskDataBase::kTaskScript)
+		{
+			ScriptTask* task = (ScriptTask*)next;
+			int top = lua_gettop(L);
+
+			if (task->bDataIsFilename)
+			{
+				FILE* fp = fopen(task->strData.c_str(), "rb");
+				if (!fp)
+				{
+					LOGFMTE("Schedule [id=%llu] task index [%u] open script file [%s] failed", sch->scheduleId, tIndex, task->strData.c_str());
+					goto _end_st;
+				}
+
+				fseek(fp, 0L, SEEK_END);
+				long size = ftell(fp);
+				fseek(fp, 0L, SEEK_SET);
+
+				task->strData.resize(size);
+				fread(const_cast<char*>(task->strData.c_str()), 1, size, fp);
+				fclose(fp);
+			}
+
+			int Lr = luaL_dostring(L, task->strData.c_str());
+			if (Lr)
+			{
+				LOGFMTE("Schedule [id=%llu] task index [%u] do script code failed: %s", sch->scheduleId, tIndex, lua_tostring(L, -1));
+				goto _end_st;
+			}
+
+			taskOks ++;
+
+		_end_st:
+			if (!(sch->flags & kSFlagCompleteWithAllTasks))
+			{
+				// 执行完一条删除一条
+				bindValues[0].make(sch->scheduleId);
+				service->db->exec("DELETE FROM scriptrun_tasks WHERE taskid=?", bindValues, 1);
+			}
+
+			lua_settop(L, top);
+			task->~ScriptTask();
+		}
+
+		++ tIndex;
+	}
+
+	// 删除记录
+	bindValues[0].make(sch->scheduleId);
+	service->db->exec("DELETE FROM schedules WHERE schid=?", bindValues, 1);
+
+	if (sch->flags & kSFlagCompleteWithAllTasks)
+	{
+		// 全部执行完了一次性删除
+		bindValues[0].make(sch->scheduleId);
+		service->db->exec("DELETE FROM scriptrun_tasks WHERE schid=?", bindValues, 1);
+	}
+
+	LOGFMTI("Schedule [id=%llu] executin completed, task ok=%u, total=%u", sch->scheduleId, taskOks, taskTotal);
 }

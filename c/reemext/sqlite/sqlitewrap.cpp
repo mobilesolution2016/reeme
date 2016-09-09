@@ -378,7 +378,7 @@ public:
 		return doQuery(sql, vals, count, rowIndexType);
 	}
 
-	void action(Action k)
+	bool action(Action k)
 	{
 		const char* szLeftover;
 		sqlite3_stmt* pStmt = 0;
@@ -392,6 +392,8 @@ public:
 			return false;
 		}
 		sqlite3_finalize(pStmt);
+
+		return true;
 	}
 
 	bool updateTable(const char* tableName, const char* tmpTableName, const ColumnsMap& reservedColumns)

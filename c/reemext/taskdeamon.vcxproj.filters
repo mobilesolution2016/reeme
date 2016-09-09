@@ -98,5 +98,8 @@
     <ClInclude Include="console_windows.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="win_curlwrap.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

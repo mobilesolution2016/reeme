@@ -24,6 +24,7 @@
 #include "log4z.h"
 #include "packets.h"
 #include "deamon.h"
+#include "win_curlwrap.h"
 
 ILog4zManager* logs = 0;
 Service* pService = 0;
@@ -103,7 +104,7 @@ void Service::run()
 		}
 	}
 
-	// 结束
+	// 结束，全部清理并等待到正常退出
 	boost::system::error_code ec;
 	acceptor->close(ec);
 
@@ -119,7 +120,10 @@ void Service::run()
 	threadsListLock.lock();
 	WorkThread* wt;
 	for(size_t i = 0; i < workThreads.size(); ++ i)
+	{
+		boost::recursive_mutex::scoped_lock lock(taskCondLock);
 		taskCond.notify_one();
+	}
 	while(wt = workThreads.popFirst())
 	{
 		taskCond.notify_one();
@@ -164,7 +168,7 @@ bool Service::openDB(const char* dbpath)
 	}
 
 	uint32_t flags = 0xFFFF;
-	const char* sqls[] = { SQLCreateTable_Schedule, SQLCreateTable_HttpReqTasks, &SQLCreateTable_ScriptRunTasks };
+	const char* sqls[] = { SQLCreateTable_Schedule, SQLCreateTable_HttpReqTasks, SQLCreateTable_ScriptTasks };
 
 	DBSqlite::Result* result = db->query("SELECT name FROM sqlite_master WHERE type = 'table'", 0, 0, DBSqlite::kIndexNum);
 	if (!result)
@@ -192,21 +196,6 @@ bool Service::openDB(const char* dbpath)
 		}
 	}
 
-	// 然后查询数据库，读取已经安排了的任务
-	result = db->query("SELECT * FROM schedules");
-	if (!result)
-		return false;
-
-	while(result->next())
-	{
-		ScheduleData* sd = new ScheduleData();
-		sd->scheduleId = result->getInt("schid");
-		sd->mode = (ScheduleMode)result->getInt("mode");
-		sd->repeatInterval = result->getInt("repeat_interval");
-		sd->repeatTimes = result->getInt("repeat_times");
-	}
-	result->drop();
-
 	return true;
 }
 
@@ -230,7 +219,7 @@ void Service::pushPacket(PckHeader* hd)
 	packets.push_back(hd);
 	pcksListLock.unlock();
 
-	boost::recursive_mutex::scoped_lock lock(condLock);
+	boost::recursive_mutex::scoped_lock lock(taskCondLock);
 	taskCond.notify_one();
 }
 
@@ -300,12 +289,23 @@ void Service::onAccept(Client* c, const boost::system::error_code& error)
 void Service::addSchedule(ScheduleData* p)
 {
 	scheduleLock.lock();
-	ScheduleData* n = schedules.first();
+	ScheduleData* n = schedules.first(), *before = NULL;
 	while(n)
 	{
+		if (p->startTime + 1 <= n->startTime)
+			break;
+
+		before = n;
 		n = n->next();
 	}
+	if (n)
+		schedules.insertBefore(p, before);
+	else
+		schedules.append(p);
 	scheduleLock.unlock();
+
+	boost::recursive_mutex::scoped_lock lock(taskCondLock);
+	taskCond.notify_one();
 }
 
 bool Service::parserStartup(const char* pszStartupArgs, size_t nCmdLength)
@@ -447,12 +447,18 @@ bool Service::parserStartup(const char* pszStartupArgs, size_t nCmdLength)
 		return false;
 
 	// 启动服务成功，初始化线程池
+	WorkThread* wt;
 	for(uint32_t i = 0; i < nbWorkThreads; ++ i)
 	{
-		WorkThread* wt = new WorkThread(this);
+		wt = new WorkThread(this, false, i == 0);
 		workThreads.append(wt);
 		wt->start();
 	}
+
+	// 还有一个初始化从数据库中加载数据的线程
+	wt = new WorkThread(this, true, false);
+	workThreads.append(wt);
+	wt->start();
 
 	lua_settop(L, 0);
 	return true;
@@ -508,12 +514,64 @@ void WorkThread::onThread()
 	isRunning = true;
 
 	PckHeader* hd;
-	boost::recursive_mutex& mtx = service->condLock;
+	int64_t waitTime = 1000;
+	SchedulesList reached;
+	boost::posix_time::ptime sTime, eTime;
+
 	while(service->bEventLooping)
 	{
-		boost::recursive_mutex::scoped_lock locker(mtx);
-		service->taskCond.wait(mtx);
+		if (isTimeThread)
+		{
+			// 如果是时间线程，那么就在这里执行计划任务是否到了该运行时的检测
+			if (waitTime > 0)
+			{
+				boost::recursive_mutex& mtx = service->timerCondLock;
+				boost::recursive_mutex::scoped_lock locker(mtx);
+				service->taskCond.timed_wait(locker, boost::get_system_time() + boost::posix_time::milliseconds(waitTime));
+			}
 
+			sTime = boost::posix_time::microsec_clock::local_time();
+
+			service->scheduleLock.lock();
+			ScheduleData* n = service->schedules.first();
+			if (n)
+			{				
+				uint64_t msCurrent = sTime.time_of_day().total_milliseconds();
+
+				while(n && service->bEventLooping)
+				{
+					// 一旦有一个没有达到时间，那么后面的就都不需要检测了，因为所有的执行都是已经按开始时间排序好了的
+					if (msCurrent < n->startTime)
+						break;
+
+					ScheduleData* nn = n->next();
+					service->schedules.remove(n);
+					reached.append(n);
+					n = nn;
+				}
+			}
+			service->scheduleLock.unlock();
+
+			if (!service->bEventLooping)
+				break;
+
+			if (reached.size())
+			{
+				// 加到正在执行的列表中去
+				service->scheduleExecLock.lock();
+				service->schedulesExecuting.append(reached);
+				service->scheduleExecLock.unlock();
+			}
+		}
+		else
+		{
+			// 非时间线程，就等待条件通知，通知到了再运行
+			boost::recursive_mutex& mtx = service->taskCondLock;
+			boost::recursive_mutex::scoped_lock locker(mtx);
+			service->taskCond.wait(mtx);
+		}
+
+		// 再解释packets
 		while(service->bEventLooping)
 		{
 			hd = 0;
@@ -522,7 +580,7 @@ void WorkThread::onThread()
 			{
 				hd = service->packets.front();
 				service->packets.pop_front();
-			}		
+			}
 			service->pcksListLock.unlock();
 
 			if (!hd)
@@ -530,8 +588,92 @@ void WorkThread::onThread()
 
 			packetExecute(service, L, hd, false);
 			free(hd);
+
+			if (isTimeThread)
+				break;	// 时间线程一次只运行一个包，然后交给别的线程去运行
+		}
+
+		// 执行计划
+		ScheduleData* sch;
+		boost::mutex& mtxExec = service->scheduleExecLock;
+
+		mtxExec.lock();
+		while((sch = service->schedulesExecuting.popFirst()) != NULL)
+		{
+			mtxExec.unlock();
+
+			scheduleExecute(pService, L, sch);
+			delete sch;
+
+			mtxExec.lock();
+		}
+		mtxExec.unlock();
+
+		if (isTimeThread)
+		{
+			// 计算下一次时间线程再做检测的时候，要等待多长时间。这个时间取决于本次线程体中代码运行的耗时，正常等待是1秒，如果线程体执行耗掉了300ms，那么等待时间就会变成700ms
+			eTime = boost::posix_time::microsec_clock::local_time();
+			waitTime = (eTime - sTime).total_milliseconds();
+			if (waitTime > 1000)
+				waitTime = 0;
+			else
+				waitTime = 1000 - waitTime;
 		}
 	}
+
+	isRunning = false;
+}
+
+void WorkThread::onThread2()
+{
+	isRunning = true;
+
+	// 然后查询数据库，读取已经安排了的任务
+	DBSqlite* db = service->db;
+	DBSqlite::Result* r1 = db->query("SELECT * FROM schedules WHERE status=0");
+	if (!r1)
+		return ;
+
+	DBSqlite::Value bindValues[1];	
+
+	while(r1->next() && service->bEventLooping)
+	{
+		ScheduleData* sc = new ScheduleData();
+		sc->scheduleId = r1->getInt("schid");
+		sc->mode = (ScheduleMode)r1->getInt("mode");
+		sc->flags = r1->getInt("flags");
+		sc->repeatInterval = r1->getInt("repeat_interval");
+		sc->repeatTimes = r1->getInt("repeat_times");
+
+		bindValues[0].make(sc->scheduleId);
+
+		// 读其所有的任务
+		DBSqlite::Result* r2 = db->query("SELECT url,download_to,posts,result_force FROM httpreq_tasks WHERE schid=?", bindValues, 1, DBSqlite::kIndexNum);
+		if (r2)
+		{
+			while(r2->next() && service->bEventLooping)
+			{
+				HTTPRequestTask* httpreq = sc->hpool.newElement();
+				sc->tasks.append(httpreq);
+
+				uint32_t urllen = 0, postslen = 0, downtolen = 0, resultlen = 0;
+				const char* url = r2->getString(0, &urllen);
+				const char* posts = r2->getString(1, &postslen);
+				const char* downto = r2->getString(2, &downtolen);
+				const char* result = r2->getString(3, &resultlen);
+
+				httpreq->strUrl.append(url, urllen);
+				if (postslen) httpreq->strPosts.append(posts, postslen);
+				if (downtolen) httpreq->strDownloadTo.append(downto, downtolen);
+				if (resultlen) httpreq->strResultForce.append(result, resultlen);
+			}
+			r2->drop();
+		}
+		
+		// 添加
+		service->addSchedule(sc);
+	}
+	r1->drop();
 
 	isRunning = false;
 }
@@ -559,6 +701,22 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 		CloseHandle(hSingleInstance);
 		return 0;
 	}
+
+	// 加载curl库
+	HMODULE hCurl = GetModuleHandleW(L"libcurl");
+	if (!hCurl)
+	{
+		hCurl = LoadLibrary(L"libcurl");
+		if (!hCurl)
+			return 0;
+	}
+
+	p_curl_easy_init = (fn_curl_easy_init)GetProcAddress(hCurl, "curl_easy_init");
+	p_curl_easy_setopt = (fn_curl_easy_setopt)GetProcAddress(hCurl, "curl_easy_setopt");
+	p_curl_easy_perform = (fn_curl_easy_perform)GetProcAddress(hCurl, "curl_easy_perform");
+	p_curl_easy_cleanup = (fn_curl_easy_cleanup)GetProcAddress(hCurl, "curl_easy_cleanup");
+	p_curl_easy_getinfo = (fn_curl_easy_getinfo)GetProcAddress(hCurl, "curl_easy_getinfo");
+
 #else
 int main(int argc, char* argv[])
 {
@@ -582,6 +740,7 @@ int main(int argc, char* argv[])
 	if (logs) logs->stop();
 
 #ifdef _WINDOWS
+	FreeLibrary(hCurl);
 	CloseHandle(hSingleInstance);
 #else
 #endif
