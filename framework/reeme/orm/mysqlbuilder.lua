@@ -636,7 +636,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 			
 			if i > 1 and one.c == 1 then
 				--如果没有指定条件连接方式，那么当不是第1个条件的时候，就会自动修改为and
-				one.c = 1
+				one.c = 2
 			end			
 			
 			if one.sub then
