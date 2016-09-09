@@ -26,7 +26,7 @@ static void packetExecute(Service* service, lua_State* L, PckHeader* hd, bool bF
 	lua_pushcfunction(L, &lua_string_json);
 	lua_pushlstring(L, (char*)(hd + 1), hd->bodyLeng);
 	lua_pushnil(L);
-	lua_pushboolean(L, 0);
+	lua_pushinteger(L, 0x1);
 	lua_pcall(L, 3, 1, 0);
 	int tblIdx = lua_gettop(L);
 	if (!lua_istable(L, tblIdx))

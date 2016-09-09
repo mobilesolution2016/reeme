@@ -33,6 +33,10 @@ queryMeta = {
 		notWhere = function(self, name, val)
 			return self.builder.processWhere(self, 5, name, val)
 		end,
+		clearWheres = function(self)
+			self.condValues, self.condString = nil, nil
+			return self
+		end,
 		
 		--设置join on条件
 		on = function(self, name, val)
@@ -49,6 +53,10 @@ queryMeta = {
 		end,
 		notOn = function(self, name, val)
 			return self.builder.processOn(self, 5, name, val)
+		end,
+		clearOns = function(self)
+			self.onValues = nil
+			return self
 		end,
 		
 		--设置调试
@@ -236,7 +244,7 @@ queryMeta = {
 				--if self.debugMode then
 					self.lastSql = sqls
 				--end
-				--print(sqls)
+				ngx.say(sqls)
 
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 10)

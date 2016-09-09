@@ -76,12 +76,10 @@ builder.parseWhere = function(self, condType, name, value)
 		return { expr = name, c = condType }
 	end
 	
-	puredkeyname = name:match('^[0-9A-Za-z-_]+')
-	if puredkeyname and #puredkeyname == #name then
+	local keyname, puredkeyname = name:match('^[0-9A-Za-z-_]+'), false
+	if keyname and #keyname == #name then
 		--key没有多余的符号，只是一个纯粹的列名
 		puredkeyname = true
-	else
-		puredkeyname = false
 	end
 	
 	local tv = type(value)
@@ -99,9 +97,9 @@ builder.parseWhere = function(self, condType, name, value)
 		end
 		
 		--{value}这种表达式
-		assert(#value > 0)
-		return { expr = puredkeyname and string.format('%s=%s', name, value[1]) or value[1], c = condType }
-		
+		value = value[1]
+		tv = type(value)
+
 	elseif value == ngx.null then
 		--设置为null值
 		return { expr = puredkeyname and string.format('%s IS NULL', name) or (name .. 'NULL'), c = condType }
@@ -109,17 +107,12 @@ builder.parseWhere = function(self, condType, name, value)
 
 	if type(name) == 'string' then
 		--key=value
-		local f = puredkeyname and self.m.__fields[name] or nil
-		if f and tv == 'string' then
-			if f.type == 2 or f.type == 3 then
-				--如果是字段是字符串类型，则自动转字符串
-				value = tonumber(value)
-				tv = nil
-			elseif f.type == 4 then
-				value = toboolean(value)
-				tv = nil
-			else
-				value = ngx.quote_sql_str(value)
+		local f = keyname and self.m.__fields[keyname] or nil
+		if f and f.type >= 2 and f.type <= 4 then
+			--数值型的字段，可以使用纯数值
+			value = tonumber(value)
+			if not value then
+				return
 			end
 		else
 			value = ngx.quote_sql_str(tostring(value))

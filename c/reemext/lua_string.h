@@ -1871,45 +1871,280 @@ static int lua_string_bmfind(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+#define NODESIZE 4096 - sizeof(JsonMemNode)
+class JsonMemNode : public TListNode<JsonMemNode>
+{
+public:
+	size_t		used;
+};
+class JsonMemList : public TList<JsonMemNode>
+{
+public:
+	lua_State		*L;
+
+	JsonMemNode* newNode(size_t size = NODESIZE)
+	{
+		JsonMemNode* n = (JsonMemNode*)malloc(size + sizeof(JsonMemNode));
+		new (n) JsonMemNode();
+		n->used = 0;
+
+		append(n);
+		return n;
+	}
+	void addChar(char ch)
+	{
+		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
+		if (n->used >= NODESIZE)
+			n = newNode();
+
+		char* ptr = (char*)(n + 1);
+		ptr[n->used ++] = ch;
+	}
+	void addChar2(char ch1, char ch2)
+	{
+		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
+		if (n->used + 1 >= NODESIZE)
+			n = newNode();
+
+		char* ptr = (char*)(n + 1);
+		size_t used = n->used;
+		ptr[used] = ch1;
+		ptr[used + 1] = ch2;
+		n->used += 2;
+	}
+	void addString(const char* s, size_t len)
+	{
+		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
+		char* ptr = (char*)(n + 1);
+
+		size_t copy = std::min(NODESIZE - n->used, len);
+		memcpy(ptr + n->used, s, copy);
+		s += copy;
+		len -= copy;
+		n->used += copy;
+
+		if (len > 0)
+		{
+			// 剩下的直接一次分配够
+			n = newNode(std::max(NODESIZE, len));
+			ptr = (char*)(n + 1);
+
+			memcpy(ptr + n->used, s, copy);
+			n->used += copy;
+		}
+	}
+};
+
+#define jsonConvValue()\
+	switch(lua_type(L, -1))\
+	{\
+	case LUA_TTABLE:\
+		switch(recursionJsonEncode(L, mem, base + 1, eqSymbolRepeats, funcsIdx))\
+		{\
+		case -1: return -1;\
+		case 0:\
+			mem->addChar2('[', ']');\
+			break;\
+		}\
+		break;\
+	case LUA_TNUMBER:\
+		v = lua_tonumber(L, -1);\
+		if (ceil(v) == v)\
+		{\
+			if (v <= (double)0xFFFFFFFF)\
+			{\
+				int32_t iv = dtoi(v);\
+				if (v >= 0)\
+					len = sprintf(buf, "%u", (uint32_t)iv);\
+				else\
+					len = sprintf(buf, "%d", iv);\
+			}\
+			else\
+				len = sprintf(buf, "%0.0f", v);\
+		}\
+		else\
+		{\
+			len = sprintf(buf, "%f", v);\
+		}\
+		mem->addString(buf, len);\
+		break;\
+	case LUA_TSTRING:\
+		ptr = lua_tolstring(L, -1, &len);\
+		mem->addChar('"');\
+		mem->addString((const char*)ptr, len);\
+		mem->addChar('"');\
+		break;\
+	case LUA_TBOOLEAN:\
+		if (lua_toboolean(L, -1))\
+			mem->addString("true", 4);\
+		else\
+			mem->addString("false", 5);\
+		break;\
+	case LUA_TLIGHTUSERDATA:\
+	case LUA_TUSERDATA:\
+		if (lua_touserdata(L, -1) == NULL)\
+			mem->addString("null", 4);\
+		break;\
+	case LUA_TCDATA:\
+		ptr = lua_topointer(L, -1);\
+		lua_pushvalue(L, funcsIdx[1]);\
+		lua_pushvalue(L, -2);\
+		lua_pcall(L, 2, 1, 0);\
+		len = lua_tointeger(L, -1);\
+		break;\
+	}
+
+static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, int32_t eqSymbolRepeats, int* funcsIdx)
+{
+	double v;
+	size_t len;	
+	char buf[32];
+	const void* ptr;	
+
+	size_t arr = lua_objlen(L, tblIdx), cc = 0;
+	if (arr == 0)
+	{
+		int base = lua_gettop(L) + 1;
+
+		lua_pushnil(L);
+		while(lua_next(L, tblIdx))
+		{
+			ptr = lua_tolstring(L, -2, &len);
+
+			if (cc == 0)
+				mem->addChar('{');
+
+			mem->addChar('"');
+			mem->addString((const char*)ptr, len);
+			mem->addChar('"');
+			mem->addChar(':');
+
+			jsonConvValue();
+
+			lua_settop(L, base);
+			cc ++;
+		}
+
+		if (cc)
+			mem->addChar('}');
+	}
+	else
+	{
+		int base = lua_gettop(L);
+
+		mem->addChar('[');
+
+		for (size_t i = 1; i <= arr; ++ i)
+		{
+			lua_rawgeti(L, tblIdx, i);
+
+			if (i > 0)
+				mem->addChar(',');
+
+			jsonConvValue();
+
+			lua_pop(L, 1);
+		}
+
+		mem->addChar(']');
+	}
+
+	return cc;
+}
+
 // 参数1是JSON字符串，返回值有两个，一个是解出来的Table，另外一个是用掉的字符串的长度。如果第2个返回值为nil则表示解析JSON的时候出错了
 // 参数2可以在当{}或[]为空的时候，标识出这是一个Object还是一个Array
 static int lua_string_json(lua_State* L)
 {
 	int top = lua_gettop(L);
-	if (!lua_isstring(L, 1))
-		return 0;
+	int tp = lua_type(L, 1);
 
-	size_t len = 0;
-	bool copy = true;
-	int needSetMarker = 0;
-	const char* str = luaL_checklstring(L, 1, &len);
-
-	if (!str || len < 2)
-		return 0;
-
-	if (top >= 2 && !lua_isnil(L, 2))
-		needSetMarker = 2;
-	if (top >= 3)
-		copy = lua_toboolean(L, 3) ? true : false;
-
-	lua_newtable(L);
-
-	JSONFile f(L);
-	size_t readlen = f.parse(str, len, copy, needSetMarker);
-	if (readlen == 0)
+	if (tp == LUA_TSTRING)
 	{
-		// error
-		char err[512], summary[64] = { 0 };
+		// json string to lua table
+		size_t len = 0;
+		bool copy = true;		
+		int needSetMarker = 0;
+		const char* str = luaL_checklstring(L, 1, &len);
+
+		if (!str || len < 2)
+			return 0;
+
+		if (top >= 2 && !lua_isnil(L, 2))
+			needSetMarker = 2;
+		if (top >= 3)
+		{
+			lua_Integer flags = luaL_optinteger(L, 3, 0);
+			if (flags & 0x1)
+				copy = false;
+		}
+
+		lua_newtable(L);
+
+		JSONFile f(L);
+		size_t readlen = f.parse(str, len, copy, needSetMarker);
+		if (readlen == 0)
+		{
+			// error
+			char err[512], summary[64] = { 0 };
 		
-		f.summary(summary, 63);
-		size_t errl = snprintf(err, 512, "JSON parse error: %s, position is approximately at: %s", f.getError(), summary);
+			f.summary(summary, 63);
+			size_t errl = snprintf(err, 512, "JSON parse error: %s, position is approximately at: %s", f.getError(), summary);
 		
-		lua_pushlstring(L, err, errl);
-		return 1;
+			lua_pushlstring(L, err, errl);
+			return 1;
+		}
+
+		lua_pushinteger(L, readlen);
+		return 2;
+	}
+	else if (tp == LUA_TTABLE)
+	{
+		// lua table to json string
+		JsonMemList memList;
+		int funcs[2] = { 0 };
+		int32_t eqSymbolRepeats = -1;
+
+		memList.L = L;
+		memList.newNode();
+
+		if (top >= 2)
+		{
+			eqSymbolRepeats = luaL_optinteger(L, 2, 0);
+
+			lua_getglobal(L, "require");
+			lua_pushliteral(L, "ffi");
+			lua_pcall(L, 1, 1, 0);
+
+			lua_pushliteral(L, "new");
+			lua_gettable(L, -2);
+
+			lua_pushliteral(L, "sizeof");
+			lua_gettable(L, -3);
+
+			funcs[0] = lua_gettop(L);
+			funcs[1] = funcs[0] - 1;
+		}
+
+		if (recursionJsonEncode(L, &memList, 1, eqSymbolRepeats, funcs) != -1)
+		{
+			int idx = 1;
+			JsonMemNode* n;
+
+			lua_createtable(L, memList.size(), 0);
+			while ((n = memList.popFirst()) != NULL)
+			{
+				lua_pushlstring(L, (char*)(n + 1), n->used);
+				lua_rawseti(L, -2, idx ++);
+				free(n);
+			}
+
+			lua_concat(L, -1);
+			return 1;
+		}
 	}
 
-	lua_pushinteger(L, readlen);
-	return 2;
+	return 0;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -1977,6 +2212,10 @@ static void luaext_string(lua_State *L)
 
 	lua_pushliteral(L, "SPLIT_TRIM");
 	lua_pushinteger(L, 0x20000000);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "JSON_NOCOPY");
+	lua_pushinteger(L, 0x1);
 	lua_rawset(L, -3);
 
 	// 所有扩展的函数

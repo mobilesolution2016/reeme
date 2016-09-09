@@ -252,7 +252,7 @@ template <typename T> class TList;
 template <typename T> class TListNode
 {
 	friend class TList<T>;
-private:
+protected:
 	typedef TListNode<T> Node;
 	typedef TList<T> List;
 
@@ -270,7 +270,7 @@ public:
 
 template <typename T> class TList
 {
-private:
+protected:
 	typedef TListNode<T> Node;
 
 	Node			*m_pFirstNode, *m_pLastNode;
