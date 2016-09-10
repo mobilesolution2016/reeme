@@ -3,6 +3,7 @@
 // https://github.com/miloyip/dtoa-benchmark
 // лл
 #include <stdint.h>
+#include <memory.h>
 #include <cassert>
 #include <math.h>
 
@@ -106,7 +107,8 @@ inline __m128i ShiftDigits_SSE2(__m128i a, unsigned digit) {
     return a; // should not execute here.
 }
 
-void opt_u32toa(uint32_t value, char* buffer) {
+size_t opt_u32toa(uint32_t value, char* dst) {
+	char* buffer = dst;
     if (value < 10000) {
         const uint32_t d1 = (value / 100) << 1;
         const uint32_t d2 = (value % 100) << 1;
@@ -118,31 +120,8 @@ void opt_u32toa(uint32_t value, char* buffer) {
         if (value >= 10)
             *buffer++ = gDigitsLut[d2];
         *buffer++ = gDigitsLut[d2 + 1];
-        *buffer++ = '\0';
     }
     else if (value < 100000000) {
-        // Experiment shows that this case SSE2 is slower
-#if 0
-        const __m128i a = Convert8DigitsSSE2(value);
-        
-        // Convert to bytes, add '0'
-        const __m128i va = _mm_add_epi8(_mm_packus_epi16(a, _mm_setzero_si128()), reinterpret_cast<const __m128i*>(kAsciiZero)[0]);
-
-        // Count number of digit
-        const unsigned mask = _mm_movemask_epi8(_mm_cmpeq_epi8(va, reinterpret_cast<const __m128i*>(kAsciiZero)[0]));
-        unsigned long digit;
-#ifdef _MSC_VER
-        _BitScanForward(&digit, ~mask | 0x8000);
-#else
-        digit = __builtin_ctz(~mask | 0x8000);
-#endif
-
-        // Shift digits to the beginning
-        __m128i result = ShiftDigits_SSE2(va, digit);
-        //__m128i result = _mm_srl_epi64(va, _mm_cvtsi32_si128(digit * 8));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(buffer), result);
-        buffer[8 - digit] = '\0';
-#else
         // value = bbbbcccc
         const uint32_t b = value / 10000;
         const uint32_t c = value % 10000;
@@ -165,8 +144,6 @@ void opt_u32toa(uint32_t value, char* buffer) {
         *buffer++ = gDigitsLut[d3 + 1];
         *buffer++ = gDigitsLut[d4];
         *buffer++ = gDigitsLut[d4 + 1];
-        *buffer++ = '\0';
-#endif
     }
     else {
         // value = aabbbbbbbb in decimal
@@ -186,11 +163,15 @@ void opt_u32toa(uint32_t value, char* buffer) {
         const __m128i ba = _mm_add_epi8(_mm_packus_epi16(_mm_setzero_si128(), b), reinterpret_cast<const __m128i*>(kAsciiZero)[0]);
         const __m128i result = _mm_srli_si128(ba, 8);
         _mm_storel_epi64(reinterpret_cast<__m128i*>(buffer), result);
-        buffer[8] = '\0';
+        
+		return 8;
     }
+
+	return buffer - dst;
 }
 
-void opt_u64toa(uint64_t value, char* buffer) {
+size_t opt_u64toa(uint64_t value, char* dst) {
+	char* buffer = dst;
     if (value < 100000000) {
         uint32_t v = static_cast<uint32_t>(value);
         if (v < 10000) {
@@ -204,30 +185,8 @@ void opt_u64toa(uint64_t value, char* buffer) {
             if (v >= 10)
                 *buffer++ = gDigitsLut[d2];
             *buffer++ = gDigitsLut[d2 + 1];
-            *buffer++ = '\0';
         }
         else {
-            // Experiment shows that this case SSE2 is slower
-#if 0
-            const __m128i a = Convert8DigitsSSE2(v);
-        
-            // Convert to bytes, add '0'
-            const __m128i va = _mm_add_epi8(_mm_packus_epi16(a, _mm_setzero_si128()), reinterpret_cast<const __m128i*>(kAsciiZero)[0]);
-
-            // Count number of digit
-            const unsigned mask = _mm_movemask_epi8(_mm_cmpeq_epi8(va, reinterpret_cast<const __m128i*>(kAsciiZero)[0]));
-            unsigned long digit;
-#ifdef _MSC_VER
-            _BitScanForward(&digit, ~mask | 0x8000);
-#else
-            digit = __builtin_ctz(~mask | 0x8000);
-#endif
-
-            // Shift digits to the beginning
-            __m128i result = ShiftDigits_SSE2(va, digit);
-            _mm_storel_epi64(reinterpret_cast<__m128i*>(buffer), result);
-            buffer[8 - digit] = '\0';
-#else
             // value = bbbbcccc
             const uint32_t b = v / 10000;
             const uint32_t c = v % 10000;
@@ -250,8 +209,6 @@ void opt_u64toa(uint64_t value, char* buffer) {
             *buffer++ = gDigitsLut[d3 + 1];
             *buffer++ = gDigitsLut[d4];
             *buffer++ = gDigitsLut[d4 + 1];
-            *buffer++ = '\0';
-#endif
         }
     }
     else if (value < 10000000000000000) {
@@ -276,7 +233,8 @@ void opt_u64toa(uint64_t value, char* buffer) {
         // Shift digits to the beginning
         __m128i result = ShiftDigits_SSE2(va, digit);
         _mm_storeu_si128(reinterpret_cast<__m128i*>(buffer), result);
-        buffer[16 - digit] = '\0';
+
+        return 16 - digit;
     }
     else {
         const uint32_t a = static_cast<uint32_t>(value / 10000000000000000); // 1 to 1844
@@ -314,13 +272,16 @@ void opt_u64toa(uint64_t value, char* buffer) {
         // Convert to bytes, add '0'
         const __m128i va = _mm_add_epi8(_mm_packus_epi16(a0, a1), reinterpret_cast<const __m128i*>(kAsciiZero)[0]);
         _mm_storeu_si128(reinterpret_cast<__m128i*>(buffer), va);
-        buffer[16] = '\0';
+
+		return 16;
     }
+	return buffer - dst;
 }
 
 #else	// ITOA_SSE_OPT
 
-void opt_u32toa(uint32_t value, char* buffer) {
+size_t opt_u32toa(uint32_t value, char* dst) {
+	char* buffer = dst;
     if (value < 10000) {
         const uint32_t d1 = (value / 100) << 1;
         const uint32_t d2 = (value % 100) << 1;
@@ -389,10 +350,11 @@ void opt_u32toa(uint32_t value, char* buffer) {
         *buffer++ = gDigitsLut[d4];
         *buffer++ = gDigitsLut[d4 + 1];
     }
-    *buffer++ = '\0';
+    return buffer - dst;
 }
 
-void opt_u64toa(uint64_t value, char* buffer) {
+size_t opt_u64toa(uint64_t value, char* dst) {
+	char* buffer = dst;
     if (value < 100000000) {
         uint32_t v = static_cast<uint32_t>(value);
         if (v < 10000) {
@@ -545,8 +507,7 @@ void opt_u64toa(uint64_t value, char* buffer) {
         *buffer++ = gDigitsLut[d8];
         *buffer++ = gDigitsLut[d8 + 1];
     }
-    
-    *buffer = '\0';
+    return buffer - dst;
 }
 
 #endif	// end ITOA_SSE_OPT
@@ -843,7 +804,9 @@ inline void Grisu2(double value, char* buffer, int* length, int* K) {
 	DigitGen(W, Wp, Wp.f - Wm.f, buffer, length, K);
 }
 
-inline void WriteExponent(int K, char* buffer) {
+inline int WriteExponent(int K, char* dst) {
+	char* buffer = dst;
+
 	if (K < 0) {
 		*buffer++ = '-';
 		K = -K;
@@ -864,10 +827,10 @@ inline void WriteExponent(int K, char* buffer) {
 	else
 		*buffer++ = '0' + static_cast<char>(K);
 
-	*buffer = '\0';
+	return buffer - dst;
 }
 
-inline void Prettify(char* buffer, int length, int k) {
+inline int Prettify(char* buffer, int length, int k) {
 	const int kk = length + k;	// 10^(kk-1) <= v < 10^kk
 
 	if (length <= kk && kk <= 21) {
@@ -876,15 +839,20 @@ inline void Prettify(char* buffer, int length, int k) {
 			buffer[i] = '0';
 		buffer[kk] = '.';
 		buffer[kk + 1] = '0';
-		buffer[kk + 2] = '\0';
+
+		return kk + 2;
 	}
-	else if (0 < kk && kk <= 21) {
+
+	if (0 < kk && kk <= 21) 
+	{
 		// 1234e-2 -> 12.34
 		memmove(&buffer[kk + 1], &buffer[kk], length - kk);
 		buffer[kk] = '.';
-		buffer[length + 1] = '\0';
+
+		return length + 1;
 	}
-	else if (-6 < kk && kk <= 0) {
+	
+	if (-6 < kk && kk <= 0) {
 		// 1234e-6 -> 0.001234
 		const int offset = 2 - kk;
 		memmove(&buffer[offset], &buffer[0], length);
@@ -892,41 +860,48 @@ inline void Prettify(char* buffer, int length, int k) {
 		buffer[1] = '.';
 		for (int i = 2; i < offset; i++)
 			buffer[i] = '0';
-		buffer[length + offset] = '\0';
+		
+		return length + offset;
 	}
-	else if (length == 1) {
+	
+	if (length == 1) {
 		// 1e30
 		buffer[1] = 'e';
-		WriteExponent(kk - 1, &buffer[2]);
+		return 2 + WriteExponent(kk - 1, &buffer[2]);
 	}
-	else {
-		// 1234e30 -> 1.234e33
-		memmove(&buffer[2], &buffer[1], length - 1);
-		buffer[1] = '.';
-		buffer[length + 1] = 'e';
-		WriteExponent(kk - 1, &buffer[0 + length + 2]);
-	}
+	
+	// 1234e30 -> 1.234e33
+	memmove(&buffer[2], &buffer[1], length - 1);
+	buffer[1] = '.';
+	buffer[length + 1] = 'e';
+
+	length += 2;
+	return length + WriteExponent(kk - 1, &buffer[length]);
 }
 
-void opt_dtoa(double value, char* buffer) 
+size_t opt_dtoa(double value, char* dst) 
 {
 	// Not handling NaN and inf
 	assert(!isnan(value));
 	assert(!isinf(value));
 
+	char* buffer = dst;
 	if (value == 0) {
 		buffer[0] = '0';
 		buffer[1] = '.';
 		buffer[2] = '0';
-		buffer[3] = '\0';
+		return 3;
 	}
-	else {
-		if (value < 0) {
-			*buffer++ = '-';
-			value = -value;
-		}
-		int length, K;
-		Grisu2(value, buffer, &length, &K);
-		Prettify(buffer, length, K);
+
+	if (value < 0) 
+	{
+		*buffer++ = '-';
+		value = -value;
 	}
+
+	int length, K;
+	Grisu2(value, buffer, &length, &K);
+	length = Prettify(buffer, length, K);
+
+	return buffer - dst + length;
 }

@@ -11,7 +11,19 @@ static uint8_t sql_where_splits[128] =
 	1, 1, 1, 1, 1,
 };
 
+enum StringSplitFlags {
+	kSplitAsKey = 0x40000000,
+	kSplitTrim = 0x20000000,
+};
 
+enum StringJsonFlags {
+	kJsonNoCopy = 0x80000000,
+	kJsonRetCData = 0x40000000,
+	kJsonLuaString = 0x20000000,
+	kJsonUnicodes = 0x10000000,
+};
+
+//////////////////////////////////////////////////////////////////////////
 static void lua_string_addbuf(luaL_Buffer* buf, const char* str, size_t len)
 {
 	size_t lenleft = len, copy;
@@ -195,7 +207,7 @@ static int lua_string_split(lua_State* L)
 		{
 			int n1 = std::max(maxSplits, 4U), n2 = 0;
 
-			if (nFlags & 0x40000000)
+			if (nFlags & kSplitAsKey)
 				std::swap(n1, n2);
 
 			lua_createtable(L, n1, n2);
@@ -221,7 +233,7 @@ static int lua_string_split(lua_State* L)
 			continue;
 
 		endpos = i;
-		if (nFlags & 0x20000000)
+		if (nFlags & kSplitTrim)
 		{
 			// trim
 			while(start < endpos && src[start] <= 32)
@@ -237,7 +249,7 @@ _lastseg:
 			if (tblVal)
 			{
 				lua_pushlstring(L, (const char*)src + start, endpos - start);
-				if (nFlags & 0x40000000)
+				if (nFlags & kSplitAsKey)
 				{
 					// as key
 					lua_pushboolean(L, 1);
@@ -275,7 +287,7 @@ _lastseg:
 		lua_pushvalue(L, 1);
 		if (tblVal)
 		{
-			if (nFlags & 0x40000000)
+			if (nFlags & kSplitAsKey)
 			{
 				// as key
 				lua_pushboolean(L, 1);
@@ -1871,12 +1883,14 @@ static int lua_string_bmfind(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-#define NODESIZE 4096 - sizeof(JsonMemNode)
+#define NODESIZE 8192 - sizeof(JsonMemNode)
+
 class JsonMemNode : public TListNode<JsonMemNode>
 {
 public:
 	size_t		used;
 };
+
 class JsonMemList : public TList<JsonMemNode>
 {
 public:
@@ -1918,8 +1932,7 @@ public:
 		char* ptr = (char*)(n + 1);
 
 		size_t copy = std::min(NODESIZE - n->used, len);
-		memcpy(ptr + n->used, s, copy);
-		s += copy;
+		memcpy(ptr + n->used, s, copy);		
 		len -= copy;
 		n->used += copy;
 
@@ -1929,18 +1942,129 @@ public:
 			n = newNode(std::max(NODESIZE, len));
 			ptr = (char*)(n + 1);
 
-			memcpy(ptr + n->used, s, copy);
-			n->used += copy;
+			memcpy(ptr + n->used, s + copy, len);
+			n->used += len;
 		}
 	}
+	char* reserve(size_t len)
+	{
+		char* ptr;
+		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
+		if (n->used + len < NODESIZE)
+		{
+			ptr = (char*)(n + 1);
+			ptr += n->used;
+		}
+		else
+		{
+			n = newNode(std::max(NODESIZE, len));
+			ptr = (char*)(n + 1);
+		}
+
+		n->used += len;
+		return ptr;
+	}
 };
+static void escapeJsonString(JsonMemList& mems, const char* src, size_t len)
+{
+	uint8_t ch, v, unicode;
+	size_t i = 0, spos = 0;
+	while(i < len)
+	{
+		uint8_t ch = src[i];
+		v = json_escape_chars[ch];
+
+		if (v == 0)
+		{
+			// defered
+			++ i;
+			continue;
+		}
+
+		if (i > spos)
+			mems.addString(src + spos, i - spos);
+
+		if (v == 1)
+		{
+			// escape some chars
+			mems.addChar2('\\', ch);
+			spos = ++ i;
+		}
+		else if (v == 2)
+		{
+			// check utf8
+			uint8_t* utf8src = (uint8_t*)src + i;
+			if ((ch & 0xE0) == 0xC0)
+			{
+				//2 bit count
+				unicode = ch & 0x1F;
+				unicode = (unicode << 6) | (utf8src[1] & 0x3F);
+				i += 2;
+			}
+			else if ((ch & 0xF0) == 0xE0)
+			{
+				//3 bit count
+				unicode = ch & 0xF;
+				unicode = (unicode << 6) | (utf8src[1] & 0x3F);
+				unicode = (unicode << 6) | (utf8src[2] & 0x3F);
+				i += 3;
+			}
+			else if ((ch & 0xF8) == 0xF0)
+			{
+				//4 bit count
+				unicode = ch & 0x7;
+				unicode = (unicode << 6) | (utf8src[1] & 0x3F);
+				unicode = (unicode << 6) | (utf8src[2] & 0x3F);
+				unicode = (unicode << 6) | (utf8src[3] & 0x3F);
+				i += 4;
+			}
+			else
+			{
+				assert(0);
+			}
+
+			char* utf8dst = mems.reserve(6);
+			utf8dst[0] = '\\';
+			utf8dst[1] = 'u';
+			opt_u32toa_hex(unicode, utf8dst + 2, false);
+
+			spos = i;
+		}
+		else
+		{
+			// invisible(s) to visibled
+			mems.addChar2('\\', v);
+			spos = ++ i;
+		}
+	}
+
+	if (i > spos)
+		mems.addString(src + spos, i - spos);
+}
+static void copyLuaString(JsonMemList* mems, const char* src, size_t len, uint32_t eqSymbols)
+{
+	char* dst;
+	uint32_t i;
+
+	dst = mems->reserve(eqSymbols + 2);
+	*dst ++ = '[';
+	for(i = 0; i < eqSymbols; ++ i)
+		dst[i] = '=';
+	dst[i] = '[';
+
+	mems->addString(src, len);
+
+	dst = mems->reserve(eqSymbols + 2);
+	*dst ++ = ']';
+	for(i = 0; i < eqSymbols; ++ i)
+		dst[i] = '=';
+	dst[i] = ']';
+}
 
 #define jsonConvValue()\
-	switch(lua_type(L, -1))\
-	{\
+	switch(lua_type(L, -1)) {\
 	case LUA_TTABLE:\
-		switch(recursionJsonEncode(L, mem, base + 1, eqSymbolRepeats, funcsIdx))\
-		{\
+		switch(recursionJsonEncode(L, mem, base + 1, flags, funcsIdx)) {\
 		case -1: return -1;\
 		case 0:\
 			mem->addChar2('[', ']');\
@@ -1949,30 +2073,31 @@ public:
 		break;\
 	case LUA_TNUMBER:\
 		v = lua_tonumber(L, -1);\
-		if (ceil(v) == v)\
-		{\
-			if (v <= (double)0xFFFFFFFF)\
-			{\
-				int32_t iv = dtoi(v);\
-				if (v >= 0)\
-					len = sprintf(buf, "%u", (uint32_t)iv);\
+		i = lua_tointeger(L, -1);\
+		if (i == v) {\
+			if (i < 0) {\
+				if (i < INT_MIN)\
+					len = opt_i64toa(i, buf);\
 				else\
-					len = sprintf(buf, "%d", iv);\
-			}\
+					len = opt_i32toa(i, buf);\
+			} else if (i <= UINT_MAX)\
+				len = opt_u32toa(i, buf);\
 			else\
-				len = sprintf(buf, "%0.0f", v);\
-		}\
-		else\
-		{\
-			len = sprintf(buf, "%f", v);\
+				len = opt_u64toa(i, buf);\
+		} else {\
+			len = opt_dtoa(v, buf);\
 		}\
 		mem->addString(buf, len);\
 		break;\
 	case LUA_TSTRING:\
 		ptr = lua_tolstring(L, -1, &len);\
-		mem->addChar('"');\
-		mem->addString((const char*)ptr, len);\
-		mem->addChar('"');\
+		if (flags & kJsonLuaString) {\
+			copyLuaString(mem, (const char*)ptr, len, flags & 0xFFFFFF);\
+		} else {\
+			mem->addChar('"');\
+			mem->addString((const char*)ptr, len);\
+			mem->addChar('"');\
+		}\
 		break;\
 	case LUA_TBOOLEAN:\
 		if (lua_toboolean(L, -1))\
@@ -1994,11 +2119,12 @@ public:
 		break;\
 	}
 
-static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, int32_t eqSymbolRepeats, int* funcsIdx)
+static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint32_t flags, int* funcsIdx)
 {
 	double v;
 	size_t len;	
-	char buf[32];
+	char buf[64];
+	lua_Integer i;
 	const void* ptr;	
 
 	size_t arr = lua_objlen(L, tblIdx), cc = 0;
@@ -2034,11 +2160,11 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, int32
 
 		mem->addChar('[');
 
-		for (size_t i = 1; i <= arr; ++ i)
+		for (size_t n = 1; n <= arr; ++ n)
 		{
-			lua_rawgeti(L, tblIdx, i);
+			lua_rawgeti(L, tblIdx, n);
 
-			if (i > 0)
+			if (n > 0)
 				mem->addChar(',');
 
 			jsonConvValue();
@@ -2050,6 +2176,66 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, int32
 	}
 
 	return cc;
+}
+
+static int pushJsonString(lua_State* L, const char* v, size_t len, uint32_t retLuaString, int32_t* funcs)
+{
+	if (retLuaString)
+	{
+		lua_pushlstring(L, v, len);
+		return 1;
+	}
+
+	lua_pushvalue(L, funcs[0]);
+	lua_pushliteral(L, "uint8_t[?]");
+	lua_pushinteger(L, len);
+	lua_pcall(L, 2, 1, 0);
+
+	void* dst = const_cast<void*>(lua_topointer(L, -1));
+	if (dst)
+	{
+		memcpy(dst, v, len);
+		return 1;
+	}
+
+	return 0;
+}
+static int pushJsonString(lua_State* L, JsonMemList& mems, size_t total, uint32_t retLuaString, int32_t* funcs)
+{
+	JsonMemNode* n;
+	if (retLuaString)
+	{
+		char* dst = (char*)malloc(total), *ptr = dst;
+		while ((n = mems.popFirst()) != NULL)
+		{
+			memcpy(ptr, (char*)(n + 1), n->used);
+			ptr += n->used;
+			free(n);
+		}
+
+		lua_pushlstring(L, dst, total);
+		return 1;
+	}
+
+	lua_pushvalue(L, funcs[0]);
+	lua_pushliteral(L, "uint8_t[?]");
+	lua_pushinteger(L, total);
+	lua_pcall(L, 2, 1, 0);
+
+	char* dst = (char*)const_cast<void*>(lua_topointer(L, -1));
+	if (dst)
+	{
+		while ((n = mems.popFirst()) != NULL)
+		{
+			memcpy(dst, (char*)(n + 1), n->used);
+			dst += n->used;
+			free(n);
+		}
+
+		return 1;
+	}
+
+	return 0;
 }
 
 // 参数1是JSON字符串，返回值有两个，一个是解出来的Table，另外一个是用掉的字符串的长度。如果第2个返回值为nil则表示解析JSON的时候出错了
@@ -2075,7 +2261,7 @@ static int lua_string_json(lua_State* L)
 		if (top >= 3)
 		{
 			lua_Integer flags = luaL_optinteger(L, 3, 0);
-			if (flags & 0x1)
+			if (flags & kJsonNoCopy)
 				copy = false;
 		}
 
@@ -2102,45 +2288,56 @@ static int lua_string_json(lua_State* L)
 	{
 		// lua table to json string
 		JsonMemList memList;
-		int funcs[2] = { 0 };
-		int32_t eqSymbolRepeats = -1;
+		int32_t funcs[2] = { 0 };
+		uint32_t flags = 0;
 
 		memList.L = L;
 		memList.newNode();
 
 		if (top >= 2)
 		{
-			eqSymbolRepeats = luaL_optinteger(L, 2, 0);
+			flags = luaL_optinteger(L, 2, 0);
+			if (flags & kJsonRetCData)
+			{
+				lua_getglobal(L, "require");
+				lua_pushliteral(L, "ffi");
+				lua_pcall(L, 1, 1, 0);
 
-			lua_getglobal(L, "require");
-			lua_pushliteral(L, "ffi");
-			lua_pcall(L, 1, 1, 0);
+				lua_pushliteral(L, "new");
+				lua_gettable(L, -2);
 
-			lua_pushliteral(L, "new");
-			lua_gettable(L, -2);
+				lua_pushliteral(L, "sizeof");
+				lua_gettable(L, -3);
 
-			lua_pushliteral(L, "sizeof");
-			lua_gettable(L, -3);
-
-			funcs[0] = lua_gettop(L);
-			funcs[1] = funcs[0] - 1;
+				funcs[0] = lua_gettop(L);
+				funcs[1] = funcs[0] - 1;
+			}
 		}
 
-		if (recursionJsonEncode(L, &memList, 1, eqSymbolRepeats, funcs) != -1)
+		if (recursionJsonEncode(L, &memList, 1, flags, funcs) != -1)
 		{
-			int idx = 1;
-			JsonMemNode* n;
-
-			lua_createtable(L, memList.size(), 0);
-			while ((n = memList.popFirst()) != NULL)
+			// 过程中没有任何问题，于是返回结果。如果参数2的标志位中含有kJsonRetCData，那么将返回一个uint8_t型的cdata内存块，否则将返回一个lua string
+			int r = 0;
+			JsonMemNode* n = memList.first();
+			if (memList.size() == 1)
 			{
-				lua_pushlstring(L, (char*)(n + 1), n->used);
-				lua_rawseti(L, -2, idx ++);
+				r = pushJsonString(L, (char*)(n + 1), n->used, flags & kJsonRetCData, funcs);
 				free(n);
+			}
+			else
+			{
+				size_t total = 0;
+				while (n)
+				{
+					total += n->used;
+					n = n->next();
+				}
+
+				r = pushJsonString(L, memList, total, flags & kJsonRetCData, funcs);
 			}
 
 			lua_concat(L, -1);
-			return 1;
+			return r;
 		}
 	}
 
@@ -2206,16 +2403,28 @@ static void luaext_string(lua_State *L)
 	lua_getglobal(L, "string");
 
 	// 字符串切分时可用的标志位
-	lua_pushliteral(L, "SPLIT_ASKEY");
-	lua_pushinteger(L, 0x40000000);
+	lua_pushliteral(L, "SPLIT_ASKEY");		// 用切出来的值做为key
+	lua_pushinteger(L, kSplitAsKey);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "SPLIT_TRIM");
-	lua_pushinteger(L, 0x20000000);
+	lua_pushliteral(L, "SPLIT_TRIM");		// 每一个切出来的值先做左右trim
+	lua_pushinteger(L, kSplitTrim);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "JSON_NOCOPY");
-	lua_pushinteger(L, 0x1);
+	lua_pushliteral(L, "JSON_NOCOPY");		// 解码时直接在原字符串上操作（原字符串内存将遭到破坏，但如果之后将不可能再使用的话，破坏也没关系了，又可以少一次copy）
+	lua_pushinteger(L, kJsonNoCopy);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "JSON_RETCDATA");	// 编码时返回uint8_t型的cdata数据而不是string
+	lua_pushinteger(L, kJsonRetCData);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "JSON_LUASTRING");	// 遇到字符串时直接使用本库支持的扩展 [[ ]] 来表示而不使用标准的json字符串表示法，因此也就没有escape和转义utf8/unicode的过程
+	lua_pushinteger(L, kJsonLuaString);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "LUA_UNICODES");		// 字符串中的utf8/unicode不要转义，直接保留使用。上一个标志JSON_LUASTRING存在时，本标志被忽略
+	lua_pushinteger(L, kJsonUnicodes);
 	lua_rawset(L, -3);
 
 	// 所有扩展的函数

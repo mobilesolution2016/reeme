@@ -23,6 +23,43 @@ static uint8_t json_invisibles_allowed[33] =
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
 };
 
+static uint8_t json_escape_chars[256] = { 0 };
+static uint8_t json_unescape_chars[256] = { 0 };
+
+struct initJsonEscapeChars
+{
+	initJsonEscapeChars()
+	{
+		json_escape_chars['\\'] = 1;
+		json_escape_chars['/'] = 1;
+		json_escape_chars['"'] = 1;
+		json_escape_chars['\\'] = 1;
+		json_escape_chars['\n'] = 'n';
+		json_escape_chars['\r'] = 'r';
+		json_escape_chars['\t'] = 't';
+		json_escape_chars['\a'] = 'a';
+		json_escape_chars['\f'] = 'f';
+		json_escape_chars['\v'] = 'v';
+		json_escape_chars['\b'] = 'b';
+		for(uint32_t i = 0x80; i < 256; ++ i)
+			json_escape_chars[i] = 2;
+
+		json_unescape_chars['n'] = '\n';
+		json_unescape_chars['r'] = '\r';
+		json_unescape_chars['t'] = '\t';
+		json_unescape_chars['a'] = '\a';
+		json_unescape_chars['f'] = '\f';
+		json_unescape_chars['v'] = '\v';
+		json_unescape_chars['b'] = '\b';
+
+		json_unescape_chars['u'] = 'u';
+		json_unescape_chars['/'] = '/';
+		json_unescape_chars['\\'] = '\\';
+		json_unescape_chars['\''] = '\'';
+		json_unescape_chars['"'] = '"';
+	}
+};
+
 class JSONString
 {
 public:
@@ -366,9 +403,9 @@ private:
 
 		SKIP_WHITES();
 
-		// 解析属性
-		uint32_t cc = 0;
+		// 解析属性		
 		char endChar = 0;
+		uint32_t cc = 0, eqSyms = 0;
 		JSONValueType kValType = JVTNone;
 
 		m_pLastPos = pReadPos;
@@ -392,15 +429,39 @@ private:
 				//判断是数组还是单值
 				if (pReadPos[0] == '[')
 				{
-					//处理数组
-					attr->kType = JATArray;
+					for (eqSyms = 1; ; ++ eqSyms)
+					{
+						char ch = pReadPos[eqSyms];
+						if (ch != '=')
+							break;
+						if (!ch)
+						{
+							m_iErr = kErrorSymbol;
+							return 0;
+						}
+					}
 
-					onAddAttr(attr, 0);
+					if (pReadPos[eqSyms] == '[')
+					{
+						// Lua多行字符串
+						attr->kType = JATString;
 
-					pReadPos = parseArray(pReadPos + 1);
+						pReadPos = parseFetchLuaString(pReadPos + eqSyms + 1, eqSyms - 1, attr->value);
+
+						onAddAttr(attr, 0);
+					}
+					else
+					{
+						//处理数组
+						attr->kType = JATArray;
+
+						onAddAttr(attr, 0);
+
+						pReadPos = parseArray(pReadPos + 1);
+					}
+
 					if (!pReadPos)
 						return 0;
-
 					endChar = pReadPos[0];
 				}
 				else if (pReadPos[0] == '{')
@@ -463,7 +524,7 @@ private:
 
 				return pReadPos + 1;
 			}
-			else if (endChar == ',')
+			else if (endChar == ',' || endChar == ']')
 			{
 				pReadPos ++;
 			}
@@ -499,7 +560,7 @@ private:
 				if (ch == 0)
 				{
 					m_iErr = kErrorEnd;
-					break;
+					return 0;
 				}
 
 				if (ch == '"' || ch == '\\')
@@ -516,10 +577,16 @@ private:
 				{
 					if (ch == '\\')
 					{
-						char next = pReadPos[1];
+						uint8_t next = json_unescape_chars[pReadPos[1]];
+						if (next == 0)
+						{
+							m_iErr = kErrorSymbol;
+							return 0;
+						}
+
 						if (next == 'u')
 						{
-							//Unicode字符
+							// 解Unicode到UTF8
 							uint32_t unicode = readUnicode(pReadPos + 2);
 							pEndPos = unicode2utf8(unicode, pEndPos);
 							pReadPos += 6;
@@ -530,22 +597,23 @@ private:
 							pReadPos += 2;
 						}						
 					}
-					else if (ch == '"')
-					{
-						break;
-					}
-					else
+					else if (ch != '"')
 					{
 						*pEndPos ++ = ch;
 						pReadPos ++;
 					}
+					else
+						break;
 
 					ch = pReadPos[0];
 				}
 			}
 
 			if (pReadPos >= m_pMemEnd)
+			{
 				m_iErr = kErrorEnd;
+				return 0;
+			}
 		}
 		else
 		{
@@ -559,7 +627,7 @@ private:
 					if (!json_invisibles_allowed[ch])
 					{
 						m_iErr = kErrorSymbol;
-						break;
+						return 0;
 					}
 
 					if (!pEndPos)
@@ -571,7 +639,7 @@ private:
 				if (ch >= 127)
 				{
 					m_iErr = kErrorSymbol;
-					break;
+					return 0;
 				}
 
 				uint8_t flag = json_value_char_tbl[ch];
@@ -581,7 +649,7 @@ private:
 				if (pEndPos)
 				{
 					m_iErr = m_kValType != JVTNone ? kErrorValue : kErrorEnd;
-					break;
+					return 0;
 				}
 
 				//数字表达式是可以的
@@ -620,9 +688,6 @@ private:
 			}
 		}
 
-		if (m_iErr)
-			return 0;
-
 		if (pEndPos)
 			str.nLength = pEndPos - pStart;
 		else
@@ -634,6 +699,37 @@ private:
 		}
 
 		return pReadPos;
+	}
+
+	//读取Lua多行字符串
+	char* parseFetchLuaString(char* pReadPos, uint32_t eqSyms, JSONString& str)
+	{
+		m_pLastPos = pReadPos;
+
+		char* src = pReadPos;
+		size_t i, k, ik, iend = m_pMemEnd - pReadPos - 2;
+		for(i = 0; i < iend; ++ i)
+		{
+			if (src[i] == ']')
+			{
+				for (k = 1; k < eqSyms; ++ k)
+				{
+					if (src[i + k] != '=')
+						break;
+				}
+
+				ik = i + k;
+				if (ik < iend && k - 1 == eqSyms && src[ik] == ']')
+				{
+					str.pString = src;
+					str.nLength = i;
+					return src + ik;
+				}
+			}
+		}
+
+		m_iErr = kErrorEnd;
+		return 0;
 	}
 
 	//读取数组

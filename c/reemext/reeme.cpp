@@ -7,6 +7,7 @@
 #endif
 
 #include "reeme.h"
+#include "crtopt.h"
 
 #include "lua.hpp"
 #include "re2/re2.h"
