@@ -5,8 +5,13 @@
 
 #define LUA_TCDATA 10
 
-class DBuffer;
+enum LuaRegistryFixedValue {
+	kLuaRegVal_FFINew = -99990,
+	kLuaRegVal_FFISizeof,
+	kLuaRegVal_tostring
+};
 
+//////////////////////////////////////////////////////////////////////////
 template <typename T> static inline T hashString(const char *str)
 {
 	const T seed = 131;

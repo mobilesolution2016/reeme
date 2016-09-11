@@ -12,7 +12,10 @@ static inline size_t opt_i32toa(int32_t value, char* buffer)
 	{
 		*buffer ++ = '-';
 		u = ~u + 1;
+
+		return opt_u32toa(u, buffer) + 1;
 	}
+
 	return opt_u32toa(u, buffer);
 }
 
@@ -23,6 +26,8 @@ static inline size_t opt_i64toa(int64_t value, char* buffer)
 	{
 		*buffer ++ = '-';
 		u = ~u + 1;
+
+		return opt_u64toa(u, buffer) + 1;
 	}
 
 	return opt_u64toa(u, buffer);

@@ -26,10 +26,14 @@ static uint8_t json_invisibles_allowed[33] =
 static uint8_t json_escape_chars[256] = { 0 };
 static uint8_t json_unescape_chars[256] = { 0 };
 
+static uint8_t integer64_valid_bits[256] = { 0 };
+
 struct initJsonEscapeChars
 {
 	initJsonEscapeChars()
 	{
+		uint32_t i;
+
 		json_escape_chars['\\'] = 1;
 		json_escape_chars['/'] = 1;
 		json_escape_chars['"'] = 1;
@@ -41,7 +45,7 @@ struct initJsonEscapeChars
 		json_escape_chars['\f'] = 'f';
 		json_escape_chars['\v'] = 'v';
 		json_escape_chars['\b'] = 'b';
-		for(uint32_t i = 0x80; i < 256; ++ i)
+		for(i = 0x80; i < 256; ++ i)
 			json_escape_chars[i] = 2;
 
 		json_unescape_chars['n'] = '\n';
@@ -57,8 +61,17 @@ struct initJsonEscapeChars
 		json_unescape_chars['\\'] = '\\';
 		json_unescape_chars['\''] = '\'';
 		json_unescape_chars['"'] = '"';
+
+		for(i = 0; i < 255; ++ i)
+			integer64_valid_bits[i] = 0xFF;
+		integer64_valid_bits['U'] = 1;
+		integer64_valid_bits['L'] = 2;
+		integer64_valid_bits['u'] = 3;
+		integer64_valid_bits['l'] = 4;
+		for(i = 0; i < 10; ++ i)
+			integer64_valid_bits['0' + i] = 0;
 	}
-};
+} _g_initJsonEscapeChars;
 
 class JSONString
 {

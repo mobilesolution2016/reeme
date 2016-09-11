@@ -190,6 +190,7 @@
     <ClInclude Include="sql.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="crtopt.cpp" />
     <ClCompile Include="reeme.cpp" />
     <ClCompile Include="zlib\adler32.c" />
     <ClCompile Include="zlib\compress.c" />

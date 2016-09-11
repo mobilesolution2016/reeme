@@ -195,6 +195,8 @@ const char initcodes[] = {
 
 static void initCommonLib(lua_State* L)
 {
+	int top = lua_gettop(L);
+
 	luaext_string(L);
 	luaext_table(L);
 	luaext_utf8str(L);
@@ -213,4 +215,19 @@ static void initCommonLib(lua_State* L)
 
 	int r = luaL_dostring(L, initcodes);
 	assert(r == 0);
+	
+	lua_getglobal(L, "require");
+	lua_pushliteral(L, "ffi");
+	lua_pcall(L, 1, 1, 0);
+
+	lua_getfield(L, -1, "new");
+	lua_rawseti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFINew);
+	
+	lua_getfield(L, -1, "sizeof");
+	lua_rawseti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFISizeof);
+
+	lua_getglobal(L, "tostring");
+	lua_rawseti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
+
+	lua_settop(L, top);
 }

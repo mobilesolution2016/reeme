@@ -550,16 +550,7 @@ static int lua_table_serialize(lua_State* L)
 		if (asCData)
 		{
 			// 以cdata的uint8_t类型返回压缩后的数据
-			lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
-			lua_getfield(L, 2, "ffi");
-			if (lua_isnil(L, -1))
-			{
-				lua_getglobal(L, "require");
-				lua_pushliteral(L, "ffi");
-				lua_pcall(L, 1, 1, 0);
-			}
-
-			lua_getfield(L, -1, "new");
+			lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFINew);
 			lua_pushlstring(L, "uint8_t[?]", 10);
 			lua_pushinteger(L, needMemSize);
 			lua_pcall(L, 2, 1, 0);

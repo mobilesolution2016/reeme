@@ -83,5 +83,8 @@
     <ClCompile Include="zlib\zutil.c">
       <Filter>源文件\zlib</Filter>
     </ClCompile>
+    <ClCompile Include="crtopt.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

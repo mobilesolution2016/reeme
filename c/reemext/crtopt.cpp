@@ -164,7 +164,7 @@ size_t opt_u32toa(uint32_t value, char* dst) {
         const __m128i result = _mm_srli_si128(ba, 8);
         _mm_storel_epi64(reinterpret_cast<__m128i*>(buffer), result);
         
-		return 8;
+		return buffer - dst + 8;
     }
 
 	return buffer - dst;
@@ -273,7 +273,7 @@ size_t opt_u64toa(uint64_t value, char* dst) {
         const __m128i va = _mm_add_epi8(_mm_packus_epi16(a0, a1), reinterpret_cast<const __m128i*>(kAsciiZero)[0]);
         _mm_storeu_si128(reinterpret_cast<__m128i*>(buffer), va);
 
-		return 16;
+		return buffer - dst + 16;
     }
 	return buffer - dst;
 }
