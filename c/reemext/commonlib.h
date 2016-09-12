@@ -176,8 +176,32 @@ static int lua_rawhasequal(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+REEME_API int64_t str2int64(const char* str)
+{
+	char* endp;
+	long long r = strtoll(str, &endp, 10);
+	return r;
+}
+
+REEME_API uint64_t str2uint64(const char* str)
+{
+	char* endp;
+	long long r = strtoull(str, &endp, 10);
+	return r;
+}
+
+REEME_API uint32_t cdataisint64(const char* str, size_t len)
+{
+	size_t outl;
+	int postfix = cdataValueIsInt64((const uint8_t*)str, len, &outl);
+	if (outl + postfix == len)
+		return postfix;
+	return 0;
+}
+
+//////////////////////////////////////////////////////////////////////////
 const char initcodes[] = {
-	"table.unique = function(tbl)\n"
+	"_G['table'].unique = function(tbl)\n"
 	"	local cc = #tbl\n"
 	"	local s, r = table.new(0, cc), table.new(cc, 0)\n"
 	"	for i = 1, cc do\n"
@@ -189,6 +213,22 @@ const char initcodes[] = {
 	"		i = i + 1\n"
 	"	end\n"
 	"	return r\n"
+	"end\n"
+	""
+	"local ffi = require('ffi')\n"
+	"local reemext = ffi.load('reemext')\n"
+	"_G['ffi'] = ffi\n"
+	"ffi.cdef[[\n"
+	"	int64_t str2int64(const char* str);\n"
+	"	uint64_t str2uint64(const char* str);\n"
+	"	uint32_t cdataisint64(const char* str, size_t len);\n"
+	"]]\n"
+	"string.int64, string.uint64, string.cdataIsInt64 = reemext.str2int64, reemext.str2uint64, function(str)\n"
+	"	if type(str) == 'cdata' then"
+	"		local s = tostring(str)\n"
+	"		return reemext.cdataisint64(s, #s), s\n"
+	"	end\n"
+	"	return 0\n"
 	"end\n"
 };
 

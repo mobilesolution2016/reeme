@@ -50,6 +50,11 @@ return {
 						newf.maxlen = 19
 						newf.isDate, newf.isDateTime = true, true
 					end
+					
+					--如果是数值型并且maxl超过11位，就认为是64位整数
+					if t == 2 and newf.maxlen > 11 then
+						newf.isint64 = true
+					end
 
 					fields[k] = newf
 					plains[#plains + 1] = k

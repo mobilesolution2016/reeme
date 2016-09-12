@@ -43,47 +43,51 @@ static void lua_string_addbuf(luaL_Buffer* buf, const char* str, size_t len)
 	}
 }
 
-static bool cdataValueIsInt64(const uint8_t* ptr, size_t len, size_t* lenout, uint32_t minDigits = 1)
+static uint32_t cdataValueIsInt64(const uint8_t* ptr, size_t len, size_t* lenout, uint32_t minDigits = 1)
 {
-	uint8_t ch, chExpet = 0, digits = 0;
-	size_t i = 0, postfix = 2, backc;
+	size_t i = 0;
+	uint32_t postfix = 2, backc = 0;
+	uint8_t ch, chExpet = 0, digits = 0;	
 
 	if (ptr[0] == '-')
+	{
+		postfix = 3;
 		i ++;
+	}
 
 	for (; i < len; ++ i)
 	{
 		ch = integer64_valid_bits[ptr[i]];
 		if (ch == 0xFF)
-			return false;
+			return 0;
 
 		if (ch != chExpet)
 		{
 			if (chExpet)
-				return false;
+				return 0;
 
 			switch (ch)
 			{
 			case 1:
-				postfix = 3;
+				postfix = 3;	// ULL
 			case 2:
-				chExpet = 2;
+				chExpet = 2;	// LL
 				break;
 			case 3:
-				postfix = 3;
+				postfix = 3;	// ull
 			case 4:
-				chExpet = 2;
+				chExpet = 2;	// ll
 				break;
 			default:
-				return false;
+				return 0;
 			}
 
 			backc = postfix;
 		}
 		else if (chExpet)
 		{
-			if (backc == 1)
-				return false;
+			if (backc <= 1)
+				return 0;
 			backc --;
 		}
 		else
@@ -91,10 +95,12 @@ static bool cdataValueIsInt64(const uint8_t* ptr, size_t len, size_t* lenout, ui
 	}
 
 	if (digits < minDigits)
-		return false;
+		return 0;
 
 	*lenout = len - postfix;
-	return true;
+
+	// 返回3表示为unsigned int64，2表示signed int64
+	return postfix;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -931,14 +937,15 @@ static int lua_string_checknumeric(lua_State* L)
 
 // 检测是否是整数或其它方式表示整数的值，如果符合检测条件，则返回转换后的整数，否则返回nil或参数2（如果有参数2的话）
 static int lua_string_checkinteger(lua_State* L)
-{
+{	
+	size_t len = 0;
 	long long v = 0;
-	int r = 0, t = lua_gettop(L), tp = 0;
+	const char* s = 0;
+	uint32_t i64type = 0;
+	int r = 0, t = lua_gettop(L), tp = 0;	
 
 	if (t >= 1)
 	{
-		size_t len = 0;
-		const char* s;
 		char *endp = 0;
 
 		tp = lua_type(L, 1);
@@ -984,8 +991,9 @@ static int lua_string_checkinteger(lua_State* L)
 			s = lua_tolstring(L, -1, &len);
 			if (s && len >= 3)
 			{
+				size_t endplen;
 				v = strtoll(s, &endp, 10);
-				if (endp && cdataValueIsInt64((const uint8_t*)endp, len - (endp - s), &len, 0))
+				if (endp && (i64type = cdataValueIsInt64((const uint8_t*)endp, len - (endp - s), &endplen, 0)) != 0)
 					r = 1;
 			}
 		}
@@ -1003,10 +1011,14 @@ static int lua_string_checkinteger(lua_State* L)
 			else
 				lua_pushinteger(L, v);
 #endif
+			return 1;
 		}
 		else
+		{
 			lua_pushvalue(L, 1);
-		return 1;
+			lua_pushlstring(L, s, len - i64type);
+			return 2;
+		}
 	}
 	if (t >= 2)
 	{
