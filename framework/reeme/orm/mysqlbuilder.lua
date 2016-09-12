@@ -67,10 +67,11 @@ builder.parseWhere = function(self, condType, name, value)
 		end
 
 		if f then
-			--有明确的字段就可以按照字段的配置进行检测和转换
-			newv = tostring(value)
+			--有明确的字段就可以按照字段的配置进行检测和转换			
 			if quoted then
-				newv = newv:sub(2, #newv - 1)
+				newv = value:sub(2, #newv - 1)
+			else
+				newv = tostring(value)
 			end
 			if #newv > f.maxlen then
 				return nil
@@ -78,16 +79,16 @@ builder.parseWhere = function(self, condType, name, value)
 			
 			--判断是否cdata
 			if tv == 'cdata' then
-				value, newv = string.checkinteger(value)
+				value, newv = string.checkinteger(newv)
 				value = newv
 			end
 			
 			if f.type == 1 then
-				value = ngx.quote_sql_str(value)
+				value = ngx.quote_sql_str(newv)
 			elseif f.type == 2 or f.type == 3 then
-				value = tonumber(value)
+				value = tonumber(newv)
 			elseif f.type == 4 then
-				value = toboolean(value)
+				value = toboolean(newv)
 			else
 				value = nil
 			end
@@ -96,10 +97,9 @@ builder.parseWhere = function(self, condType, name, value)
 				return nil
 			end
 
-		elseif quote then
+		elseif not quote then
+			--未引用的字符串进行转义
 			value = ngx.quote_sql_str(value)
-		else
-			value = ngx.quote_sql_str(string.format("'%s'", value))
 		end
 		
 		return { expr = puredkeyname and string.format('%s=%s', name, value) or (name .. value), c = condType }
