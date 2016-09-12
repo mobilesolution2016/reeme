@@ -3,9 +3,6 @@ local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
 --date/datetime类型的原型
 local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
 local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
-
---处理where条件的值，与field字段的配置类型做比对，然后根据是否有左右引号来决定是否要做反斜杠处理
-local booleanValids = { TRUE = '1', ['true'] = '1', FALSE = '0', ['false'] = '0' }
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
 
 --合并器
@@ -16,51 +13,6 @@ builder.conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }
 --允许的联表方式
 builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN' }
 
-local processWhereValue = function(self, field, value)
-	local tp = type(value)
-	value = tostring(value)
-
-	local l, quoted = #value, false
-	if value:byte(1) == 39 and value:byte(l) == 39 then
-		quoted = true
-	end
-	
-	if field.type == 1 then
-		--字符串/Binary型的字段
-		if l == 0 then
-			return "''"
-		end
-		if not quoted then
-			return ngx.quote_sql_str(value)
-		end
-		return value
-	end
-	
-	if field.type == 2 then
-		--整数型的字段
-		if quoted then
-			l = l - 2
-		end
-		if l <= field.maxlen then
-			return quoted and value:sub(2, l + 1) or value
-		end
-		return nil
-	end
-	
-	if field.type == 3 then
-		--小数型的字段
-		if quoted then
-			l = l - 2
-		end
-		return quoted and value:sub(2, l + 1) or value
-	end
-	
-	--布尔型的字段
-	if quoted then
-		value = value:sub(2, l - 1)
-	end
-	return booleanValids[value]
-end
 
 --解析一个where条件，本函数被processWhere调用
 builder.parseWhere = function(self, condType, name, value)
@@ -108,14 +60,46 @@ builder.parseWhere = function(self, condType, name, value)
 	if type(name) == 'string' then
 		--key=value
 		local f = keyname and self.m.__fields[keyname] or nil
-		if f and f.type >= 2 and f.type <= 4 then
-			--数值型的字段，可以使用纯数值
-			value = tonumber(value)
-			if not value then
-				return
+		local newv, quoted = nil, false		
+
+		if tv == 'string' and value:byte(1) == 39 and value:byte(vlen) == 39 then
+			quoted = true
+		end
+
+		if f then
+			--有明确的字段就可以按照字段的配置进行检测和转换			
+			if quoted then
+				newv = value:sub(2, #newv - 1)
+			else
+				newv = tostring(value)
 			end
-		else
-			value = ngx.quote_sql_str(tostring(value))
+			if #newv > f.maxlen then
+				return nil
+			end
+			
+			--判断是否cdata
+			if tv == 'cdata' then
+				value, newv = string.checkinteger(newv)
+				value = newv
+			end
+			
+			if f.type == 1 then
+				value = ngx.quote_sql_str(newv)
+			elseif f.type == 2 or f.type == 3 then
+				value = tonumber(newv)
+			elseif f.type == 4 then
+				value = toboolean(newv)
+			else
+				value = nil
+			end
+
+			if value == nil then
+				return nil
+			end
+
+		elseif not quote then
+			--未引用的字符串进行转义
+			value = ngx.quote_sql_str(value)
 		end
 		
 		return { expr = puredkeyname and string.format('%s=%s', name, value) or (name .. value), c = condType }
@@ -577,30 +561,45 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 					--字符串原值
 					v = v[1]
 				end
-			elseif cfg.type == 1 then
-				--字段要求为字符串，因此转字符串并转义
-				v = ngx.quote_sql_str(tostring(v))
-			elseif cfg.type == 4 then
-				--布尔型使用1或0来处理
-				v = toboolean(v) and '1' or '0'
-			elseif cfg.type == 3 then
-				--数值/浮点数类型，检测值必须为浮点数
-				if not string.checknumeric(v) then
-					print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, name))
-					v = nil
-				end
-			elseif not string.checkinteger(v) then
-				--否则就都是整数类型，检测值必须为整数
-				print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, name))
-				v = nil
+			elseif tp == 'cdata' then
+				--cdata类型，检测是否是boxed int64
+				local i64type, newv = string.cdataIsInt64(v)
+				v = i64type > 0 and newv:sub(1, #newv - i64type) or newv
 			end
-
+			
 			if v ~= nil then
-				--如果到了这里值还不是nil，那么就可以使用了
-				if alias and #alias > 0 then
-					keyvals[#keyvals + 1] = string.format("%s%s=%s", alias, name, v)
+				if cfg.type == 1 then
+					--字段要求为字符串，所以引用
+					v = ngx.quote_sql_str(v)
+				elseif cfg.type == 4 then
+					--布尔型使用1或0来处理
+					v = toboolean(v) and '1' or '0'
+				elseif cfg.type == 3 then
+					--数值/浮点数类型，检测值必须为浮点数
+					if not string.checknumeric(v) then
+						print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, name))
+						v = nil
+					end
 				else
-					keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
+					local reti, newv = string.checkinteger(v)
+					if not reti then
+						--否则就都是整数类型，检测值必须为整数
+						print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, name))
+						v = nil
+					end
+					
+					if newv then
+						v = newv
+					end
+				end
+				
+				if v ~= nil then
+					--到了这里v还不是nil，就可以记录了
+					if alias and #alias > 0 then
+						keyvals[#keyvals + 1] = string.format("%s%s=%s", alias, name, v)
+					else
+						keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
+					end
 				end
 			end
 		end
