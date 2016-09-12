@@ -2,7 +2,7 @@
 static uint8_t sql_where_splits[128] = 
 {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	1,		// 0~32
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1,	// 33~47
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 4, 1,	// 33~47
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,	// 48~57
 	1, 1, 1, 1, 1, 1, 1,	// 58~64
 	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,	// 65~92
@@ -829,6 +829,52 @@ static int lua_string_subto(lua_State* L)
 
 	lua_pushlstring(L, src + start, endp - start + 1);
 	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
+static int lua_string_findvarname(lua_State* L)
+{
+	size_t i, len = 0;
+	const char* s = luaL_checklstring(L, 1, &len);
+	ptrdiff_t off = luaL_optinteger(L, 2, 1) - 1;
+
+	if (len < 1 || off < 0 || off >= len)
+		return 0;
+
+	for(i = off; i < len; ++ i)
+	{
+		uint8_t ch = s[i];
+		if (ch <= 32)
+		{
+			if (i > off)
+				goto _return;
+			off = i + 1;
+			continue;
+		}
+		if (ch >= 128)
+		{
+			if (i > off)
+				goto _return;
+			return 0;
+		}
+
+		ch = sql_where_splits[ch];
+		if (ch != 2 && ch != 3)
+		{
+			if (i > off)
+				goto _return;
+			off = i + 1;
+		}
+	}
+
+	if (i > off)
+	{
+_return:
+		lua_pushlstring(L, s + off, i - off);
+		lua_pushinteger(L, i + 1);
+		return 2;
+	}
+	return 0;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -2487,6 +2533,9 @@ static void luaext_string(lua_State *L)
 		{ "subreplace", &lua_string_subreplace },
 		// 字符串查找带截取
 		{ "subto", &lua_string_subto },
+
+		// 从指定的位置开始取一个标准变量名长度的字符串
+		{ "findvarname", lua_string_findvarname },
 
 		// 数值+浮点数字符串检测
 		{ "checknumeric", &lua_string_checknumeric },
