@@ -4,6 +4,7 @@ local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
 local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
 local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
+local mysqlwords = require('reeme.orm.mysqlwords')
 
 --合并器
 local builder = table.new(0, 24)
@@ -28,7 +29,20 @@ builder.parseWhere = function(self, condType, name, value)
 		return { expr = name, c = condType }
 	end
 	
-	local keyname, puredkeyname = name:match('^[0-9A-Za-z-_]+'), false
+	local keyname, puredkeyname, findpos = nil, false, 1
+	while true do
+		--找到第一个不是mysql函数的名字时停止
+		keyname, findpos = name:findvarname(findpos)
+		ngx.say(keyname, ',', findpos, '<br/>')
+		if not keyname then
+			keyname = nil
+			break
+		end
+		if not mysqlwords[keyname:upper()] then
+			break
+		end
+	end
+
 	if keyname and #keyname == #name then
 		--key没有多余的符号，只是一个纯粹的列名
 		puredkeyname = true
@@ -36,7 +50,7 @@ builder.parseWhere = function(self, condType, name, value)
 	
 	local tv = type(value)
 	if tv == 'table' then
-		local mt = getmetatable(value)		
+		local mt = getmetatable(value)
 		if mt == queryMeta then
 			--子查询
 			return { puredkeyname = puredkeyname, n = name, sub = value, c = condType }
@@ -83,8 +97,11 @@ builder.parseWhere = function(self, condType, name, value)
 				value = newv
 			end
 			
+			--再根据字段的值类型做相应的转换
 			if f.type == 1 then
-				value = ngx.quote_sql_str(newv)
+				if not quoted then
+					value = ngx.quote_sql_str(newv)
+				end
 			elseif f.type == 2 or f.type == 3 then
 				value = tonumber(newv)
 			elseif f.type == 4 then
