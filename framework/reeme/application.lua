@@ -296,7 +296,7 @@ local appMeta = {
 					local out = self.outputProc or outputRedirect
 
 					if tp == 'table' then
-						out(self, getmetatable(r) and r:content() or c.utils.jsonEncode(r))
+						out(self, getmetatable(r) and r:content() or string.json(r))
 					elseif tp == 'string' then
 						out(self, r)
 					elseif r == false then

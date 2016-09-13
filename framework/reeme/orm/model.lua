@@ -288,6 +288,18 @@ queryMeta = {
 				end
 			end
 		end,
+		--执行select查询并返回第一行的唯一一个值，注意返回的是行而非结果集实例，如果不存在至少1行，则返回为nil
+		fetchSingle = function(self, db, result)
+			if self.op == 'SELECT' then
+				local res, r = self:limit(1):execute(db, result)
+				if res and r + 1 then
+					r = r(false)
+					for _,v in pairs(r) do
+						return v
+					end
+				end
+			end
+		end,
 		--执行select查询并获取所有的行，然后将这些行的指定的一个字段形成为一个新的table返回，如果没有结果集或不是查询指令时返回一个空的table而非nil
 		fetchAllFirst = function(self, colname, db, result)
 			if self.op == 'SELECT' then
@@ -478,9 +490,11 @@ local modelMeta = {
 			end
 		end,
 		
+		--按名称字段配置
 		getField = function(self, name)
 			return self.__fields[name]
 		end,
+		--获取字段类型的字符串表示
 		getFieldType = function(self, name)
 			local f = self.__fields[name]
 			if f then
@@ -491,10 +505,13 @@ local modelMeta = {
 				return typeStrings[f.type]
 			end
 		end,
+		
+		--判断字段是否可以为null
 		isFieldNullable = function(self, name)
 			local f = self.__fields[name]
 			return f and f.null or false
 		end,
+		--寻找自增字段如果找到返回其配置否则返回nil
 		findAutoIncreasementField = function(self)
 			for n,f in pairs(self.__fields) do
 				if f.ai then
@@ -502,12 +519,37 @@ local modelMeta = {
 				end
 			end
 		end,
+		--寻找一个unique字段或primary key字段，找到返回其配置否则返回nil
 		findUniqueKey = function(self)
 			for k,v in pairs(self.__fieldIndices) do
 				if v.type == 1 or v.type == 2 then
 					return k
 				end
 			end
+		end,
+		
+		--验证给定的长度是否超过了字段配置的限制
+		validlen = function(self, name, value, minlength)
+			local f = self.__fields[name]
+			if not f then
+				error(string.format("valid value length by field config failed, field name '%s' not exists", name))
+			end
+			if type(value) ~= 'string' then
+				if value == nil then
+					error(string.format("valid value length by field config failed, field name '%s', value is nil", name))
+				end
+				value = tostring(value)
+			end
+			
+			local l = #value
+			if l > f.maxl then
+				error(string.format("valid value length by field config failed, field name '%s', length is (%u) but max length allowed is (%u)", name, l, f.maxl))
+			end
+			if minlength and l < minlength then
+				error(string.format("valid value length by field config failed, field name '%s', length is (%u) but min length allowed is (%u)", name, l, minlength))
+			end
+			
+			return true
 		end,
 		
 		__queryMetaTable = queryMeta

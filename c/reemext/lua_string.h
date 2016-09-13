@@ -466,7 +466,7 @@ static int lua_string_plainfind(lua_State* L)
 	const char* s = luaL_checklstring(L, 1, &len);
 	const char* f = luaL_checklstring(L, 2, &len2);
 
-	if (len && len2 && len2 <= len)
+	if (len2 && len2 <= len)
 	{
 		long t = luaL_optinteger(L, 3, 0);
 		if (t > 0 && t <= len)
@@ -834,12 +834,17 @@ static int lua_string_subto(lua_State* L)
 //////////////////////////////////////////////////////////////////////////
 static int lua_string_findvarname(lua_State* L)
 {
-	size_t i, len = 0;
+	size_t i, len = 0, addonLen = 0;
 	const char* s = luaL_checklstring(L, 1, &len);
 	ptrdiff_t off = luaL_optinteger(L, 2, 1) - 1;
 
 	if (len < 1 || off < 0 || off >= len)
 		return 0;
+
+	uint8_t addons[128] = { 0 };
+	const char* addon = luaL_optlstring(L, 3, "", &addonLen);
+	for(i = 0; i < addonLen; ++ i)
+		addons[(uint8_t)addon[i]] = 1;
 
 	for(i = off; i < len; ++ i)
 	{
@@ -858,8 +863,8 @@ static int lua_string_findvarname(lua_State* L)
 			return 0;
 		}
 
-		ch = sql_where_splits[ch];
-		if (ch != 2 && ch != 3)
+		uint8_t flag = sql_where_splits[ch];
+		if (flag != 2 && flag != 3 && addons[ch] == 0)
 		{
 			if (i > off)
 				goto _return;
@@ -2377,12 +2382,8 @@ public:
 #define jsonConvValue()\
 	switch(lua_type(L, -1)) {\
 	case LUA_TTABLE:\
-		switch(recursionJsonEncode(L, mem, base + 1, flags, funcsIdx)) {\
-		case -1: return -1;\
-		case 0:\
-			mem->addChar2('[', ']');\
-			break;\
-		}\
+		if (recursionJsonEncode(L, mem, base + 1, flags, funcsIdx) == -1)\
+			return -1;\
 		break;\
 	case LUA_TNUMBER:\
 		v = lua_tonumber(L, -1);\
@@ -2450,20 +2451,15 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 	if (arr == 0)
 	{
 		int base = lua_gettop(L) + 1;
-		mem->addChar('{');
 
 		lua_pushnil(L);
 		while(lua_next(L, tblIdx))
 		{
 			ptr = lua_tolstring(L, -2, &len);
 
-			if (cc)
-				mem->addChar(',');
-
-			mem->addChar('"');
+			mem->addChar2(cc ? ',' : '{', '"');
 			mem->addString(ptr, len);
-			mem->addChar('"');
-			mem->addChar(':');
+			mem->addChar2('"', ':');
 
 			jsonConvValue();
 
@@ -2471,7 +2467,10 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 			cc ++;
 		}
 
-		mem->addChar('}');
+		if (cc)
+			mem->addChar('}');
+		else
+			mem->addChar2('[', ']');
 	}
 	else
 	{
