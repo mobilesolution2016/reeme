@@ -1323,11 +1323,14 @@ static int lua_string_checkstring(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-// 使用可大体兼容string.format相同的语法来格式化字符串，但是更追求速度，同时支持cdata类型。可用的模式有：
+// 可用的模式有：
 // %s：字符串
 // %u：无符号数字
 // %d：有符号数字
-// %f：浮点数
+// %x：十六进制数字
+// %f %g：浮点数
+// %c：单个ansi码转字符
+// 支持整数、小数、字符串的列宽控制，小数点位数控制
 static int lua_string_fmt(lua_State* L)
 {	
 	luaL_Buffer buf;
@@ -1344,7 +1347,11 @@ static int lua_string_fmt(lua_State* L)
 	luaL_Buffer* pBuf = &buf;
 	luaL_buffinit(L, pBuf);
 
+	double dv;
 	int64_t lli;
+	uint64_t lln;
+	uint32_t flags, flag;
+	bool hasLen = false, hasDigits = false;
 	size_t start = 0, valLen, len, digits, carry;
 	for (int cc = 2, tp; ; )
 	{
@@ -1370,13 +1377,25 @@ static int lua_string_fmt(lua_State* L)
 			continue;
 		}
 
-		// 长度
-		len = 0;
+		// 标志位
+		flags = 0;
+		flag = string_fmt_valid_fmt[ctl];
+		while((flag >> 4) > 0)
+		{
+			flags |= flag;
+			foundpos ++;
+			ctl = foundpos[0];
+			flag = string_fmt_valid_fmt[ctl];
+		}
+
+		// 长/宽度
 		carry = 1;
-		digits = UINT_MAX;		
+		len = digits = 0;
 		while (ctl >= '0' && ctl <= '9')
 		{
-			len += (ctl - '0') * carry;
+			hasLen = true;
+			len *= carry;
+			len += ctl - '0';
 			foundpos ++;
 			carry *= 10;
 			ctl = foundpos[0];
@@ -1386,13 +1405,13 @@ static int lua_string_fmt(lua_State* L)
 		if (ctl == '.')
 		{
 			carry = 1;
-			digits = 0;
-
 			foundpos ++;
-			ctl = foundpos[0];
+			hasDigits = true;
+			ctl = foundpos[0];	
 			while (ctl >= '0' && ctl <= '9')
 			{
-				digits += (ctl - '0') * carry;
+				digits *= carry;
+				digits += ctl - '0';
 				foundpos ++;
 				carry *= 10;
 				ctl = foundpos[0];
@@ -1406,10 +1425,9 @@ static int lua_string_fmt(lua_State* L)
 			return 0;
 		}
 
-		switch (ctl)
+		switch(flag = string_fmt_valid_fmt[ctl])
 		{
-		case 's':
-		case 'S':
+		case 1: // 字符串
 			if (tp != LUA_TSTRING)
 			{
 				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
@@ -1426,19 +1444,93 @@ static int lua_string_fmt(lua_State* L)
 				if (cdataValueIsInt64((const uint8_t*)val, valLen, &valLen))
 					lua_string_addbuf(pBuf, val, valLen);
 			}
-			else
+			else if (len > 0)
 			{
-				lua_string_addbuf(pBuf, val, valLen);
+				lua_string_addbuf(pBuf, val, std::min(len, valLen));
+				while(len -- > valLen)
+					luaL_addchar(pBuf, ' ');
 			}
+			else
+				lua_string_addbuf(pBuf, val, valLen);
 
 			if (tp != LUA_TSTRING)
 				lua_pop(L, 1);
 			break;
+		
+		case 2: // 浮点数
+			val = 0;
+			if (tp == LUA_TNUMBER)
+			{				
+				dv = lua_tonumber(L, cc);
+			}
+			else if (tp == LUA_TSTRING)
+			{
+				val = lua_tolstring(L, cc, &valLen);
+				dv = strtod(val, &endpos);
+				if (isnan(dv) || endpos - val != valLen)
+					return luaL_error(L, "string.fmt #%d expet number but got not number", cc - 1);
+			}
+			else if (tp == LUA_TBOOLEAN)
+			{
+				tmpbuf[0] = lua_toboolean(L, cc);
+				valLen = 1;
+			}
+			else
+				return luaL_error(L, "string.fmt #%d expet number but got not number", cc - 1);
 
-		case 'u':
-		case 'U':
-		case 'd':
-		case 'D':
+			if (hasDigits)
+			{
+				// 处理小数位数，不够digits就填充0，多了就裁掉
+				valLen = opt_dtoa(dv, tmpbuf);
+				val = (const char*)memchr(tmpbuf, '.', valLen);
+				if (val)
+				{
+					len = valLen - (val - tmpbuf) - 1;
+					if (digits < len)
+						valLen -= len - digits;
+					if (digits == 0 && !(flag & 0x40))
+						valLen --;	// remove point
+				}
+				else
+				{
+					len = 0;
+					if (digits)
+						tmpbuf[valLen ++] = '.';
+				}
+
+				while (len ++ < digits)
+					tmpbuf[valLen ++] = '0';
+
+				val = tmpbuf;
+			}
+			else if (!val)
+			{
+				val = lua_tolstring(L, cc, &valLen);
+			}
+
+			lua_string_addbuf(pBuf, val, valLen);
+			break;
+
+		case 3:	// ansi码到字符
+			if (tp == LUA_TSTRING)
+			{
+				val = lua_tolstring(L, cc, &valLen);
+			}
+			else if (tp == LUA_TNUMBER)
+			{
+				tmpbuf[0] = lua_tointeger(L, cc);
+				val = tmpbuf;
+			}
+			else
+				return luaL_error(L, "string.fmt #%d expet ansi code but got ansi code", cc - 1);
+
+			luaL_addchar(pBuf, val[0]);
+			break;
+
+		case 0:	// 错误
+			return luaL_error(L, "the %u-ith char '%c' invalid", foundpos - src + 1, ctl);
+		
+		default: // 整数
 			if (tp == LUA_TNUMBER)
 			{
 				lli = lua_tointeger(L, cc);
@@ -1476,59 +1568,44 @@ static int lua_string_fmt(lua_State* L)
 			else
 				return luaL_error(L, "string.fmt #%d expet integer but got not integer", cc - 1);
 
-			if (ctl == 'u' || ctl == 'U')
+			lln = lli;
+			switch(flag)			
 			{
-				uint64_t lln = lli;
+			case 4:
 				if (lln > UINT_MAX)
 					valLen = opt_u64toa(lln, tmpbuf);
 				else
 					valLen = opt_u32toa(lln, tmpbuf);
-			}
-			else if (lli > INT_MAX || lli < INT_MIN)
-				valLen = opt_i64toa(lli, tmpbuf);
-			else
-				valLen = opt_i32toa(lli, tmpbuf);
+				break;
 
+			case 5:
+				if (lli >= INT_MIN || lli <= INT_MAX)
+					valLen = opt_i32toa(lli, tmpbuf);
+				else
+					valLen = opt_i64toa(lli, tmpbuf);
+				break;
+
+			case 6:
+				if (lln > UINT_MAX)
+					valLen = opt_u64toa_hex(lln, tmpbuf, false);
+				else
+					valLen = opt_u32toa_hex(lln, tmpbuf, false);
+				break;
+
+			case 7:
+				if (lln > UINT_MAX)
+					valLen = opt_u64toa_hex(lln, tmpbuf, true);
+				else
+					valLen = opt_u32toa_hex(lln, tmpbuf, true);
+				break;
+			}
+
+			// 位数不足先补0
 			while(len -- > valLen)
 				luaL_addchar(pBuf, '0');
 
 			lua_string_addbuf(pBuf, tmpbuf, valLen);
 			break;
-
-		case 'f':
-		case 'F':
-			if (tp == LUA_TNUMBER)
-			{
-				if (digits != UINT_MAX)
-				{
-					double dv = lua_tonumber(L, cc);
-
-					sprintf(tmpbuf, "%0.3f", dv);
-					valLen = sprintf(tmpbuf, "%%%u.%uf", len, digits);
-					tmpbuf[valLen] = 0;
-
-					len = (valLen + 3) >> 2 << 2;
-					valLen = sprintf(tmpbuf + len, tmpbuf, dv);
-					val = tmpbuf + len;
-				}
-				else
-					val = lua_tolstring(L, cc, &valLen);
-			}
-			else if (tp == LUA_TSTRING)
-			{
-				val = lua_tolstring(L, cc, &valLen);
-				double dv = strtod(val, &endpos);
-				if (isnan(dv) || endpos - val != valLen)
-					return luaL_error(L, "string.fmt #%d expet number but got not number", cc - 1);
-			}
-			else
-				return luaL_error(L, "string.fmt #%d expet number but got not number", cc - 1);
-
-			lua_string_addbuf(pBuf, val, valLen);
-			break;
-
-		default:
-			return luaL_error(L, "unknow pattern char '%%%c' for string.fmt #%d", ctl, cc - 1);
 		}
 
 		start = foundpos - src + 1;
@@ -2602,16 +2679,16 @@ static void luaext_string(lua_State *L)
 		// 字符串比较
 		{ "cmp", &lua_string_cmp },
 
-		// 单个字符正向查找（3~5倍性能于string.find(str, by, 1, true)）
+		// 单个字符/字符串正向查找，不需要用正则时的常规查找（3~5倍性能于string.find(str, by, 1, true)）
 		{ "plainfind", &lua_string_plainfind },
-		// 单个字符反向查找
+		// 单个字符反向查找（不支持字符串反向）
 		{ "rfindchar", &lua_string_rfindchar },
 		// 对字符串进行所有字符出现次数的总计数
 		{ "countchars", &lua_string_countchars },
 		// 对字符串进行每一个字符出现次数的分别计数
 		{ "counteachchars", &lua_string_counteachchars },
 
-		// 字符串快速替换
+		// 字符串多模式快速替换，支持单对单、数组对数组，bm字符串组对普通字符串数组等
 		{ "replace", &lua_string_replace },
 		// 字符串指定位置+结束位置替换
 		{ "subreplaceto", &lua_string_subreplaceto },
@@ -2625,17 +2702,17 @@ static void luaext_string(lua_State *L)
 
 		// 数值+浮点数字符串检测
 		{ "checknumeric", &lua_string_checknumeric },
-		// 整数字符串检测
+		// 整数字符串检测，支持boxed int64
 		{ "checkinteger", &lua_string_checkinteger },
 		{ "checkinteger32", &lua_string_checkinteger32 },
 		// 布尔型检测（允许数值、字符串和boolean类型）
 		{ "checkboolean", &lua_string_checkboolean },
-		// 字符串检测
+		// 字符串检测，可以检测最小最大长度、使用正则(google re2)匹配、使用函数检测等
 		{ "checkstring", &lua_string_checkstring },
 
-		// 字符串格式化的简单实现版本，但是支持boxed int64，常规使用下和string.format兼容
+		// 字符串格式化，大部分时候和string.format可以直接替换使用，执行性能上综合比string.format稍微慢了一点，但关键是支持boxed int64类型，格式化为字符串和数字均可(string.format不支持)
 		{ "fmt", &lua_string_fmt },
-		// 模板解析
+		// 模板解析，使用{% sentense } {= value } {: sub_template }三种语法，比简单的Lua版的template有更强的容错和适应能力，如忘了写then/do的时候可以自动补上（前提是别连写，如{% while true do if xxx }就会无法纠正）
 		{ "parseTemplate", &lua_string_parsetemplate },
 
 		// 编译Boyer-Moore子字符串用于查找

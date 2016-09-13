@@ -8,6 +8,7 @@
 #include "re2/re2.h"
 #include "re2/regexp.h"
 #include "zlib/zlib.h"
+#include "crtopt.h"
 
 #include "json.h"
 #include "lua_utf8str.h"
@@ -243,7 +244,7 @@ bool Service::listenAt(const char* ip, lua_Integer port)
 	}
 	catch (std::exception & ex)
 	{
-		LOGFMTE("Listen at %s:%u failed\n", ip, port);
+		LOGFMTE("Listen at %s:%u failed\n", ip, (unsigned short)port);
 		return false;
 	}
 

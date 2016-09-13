@@ -33,7 +33,7 @@ static inline size_t opt_i64toa(int64_t value, char* buffer)
 	return opt_u64toa(u, buffer);
 }
 
-static size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase = 1)
+static size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase = true)
 {	
 	const char upperChars[] = { "0123456789ABCDEF" };
 	const char lowerChars[] = { "0123456789abcdef" };
@@ -64,13 +64,13 @@ static size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase = 1)
 	return buffer - dst;
 }
 
-static size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase = 1)
+static size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase = true)
 {
 	const char upperChars[] = { "0123456789ABCDEF" };
 	const char lowerChars[] = { "0123456789abcdef" };
 
 	char* buffer = dst;
-	uint32_t endt = 32, i;
+	uint32_t endt = 64, i;
 	uint64_t mask = 0xF000000000000000;
 
 	do

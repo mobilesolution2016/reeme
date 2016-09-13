@@ -217,6 +217,28 @@ static void packetExecute(Service* service, lua_State* L, PckHeader* hd, bool bF
 }
 
 
+static void scheduleLogHttpReq(ScheduleData* sch, HTTPRequestTask* task, CURLcode code, FILE* fp, std::string* pstrResult)
+{	
+	if (pstrResult && task->strResultForce.length() && task->strResultForce != *pstrResult)
+	{
+		LOGFMTE("Schedule [id=%llu] task index [%u] responses not equal to result forced", sch->scheduleId, sch->runIndex, task->strResultForce.c_str(), pstrResult->c_str());
+		return ;
+	}
+
+	// 检测code值并输出相应的Log
+}
+
+static void scheduleLogScriptRun(ScheduleData* sch, lua_State* L, ScriptTask* task, int Lr)
+{	
+	if (Lr)
+	{
+		// 报错
+		LOGFMTE("Schedule [id=%llu] task index [%u] do script code failed: %s", sch->scheduleId, sch->runIndex, lua_tostring(L, -1));
+		return ;
+	}
+}
+
+
 static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 {
 	// 查询该任务在数据库中是否存在，以及其状态
@@ -226,29 +248,32 @@ static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 	DBSqlite::Result* schResult = service->db->query("SELECT status FROM schedules WHERE schid=?", bindValues, 1, DBSqlite::kIndexNum);
 	if (!schResult)
 	{
-		LOGFMTW("Schedule [id=%llu] need execute but cannot find its db record", sch->scheduleId);
+		LOGFMTW("Schedule [id=%u] need execute but cannot find its db record", sch->scheduleId);
 		return ;
 	}
 
 	int schStatus = schResult->getInt(0);
 	if (schStatus != kScheduleReady)
 	{
-		LOGFMTW("Schedule [id=%llu] need execute but the status [%d] is not ready", sch->scheduleId, schStatus);
+		LOGFMTW("Schedule [id=%u] need execute but the status [%d] is not ready", sch->scheduleId, schStatus);
 		return ;
 	}
 
-	LOGFMTI("Schedule [id=%llu] executin started", sch->scheduleId);
+	LOGFMTI("Schedule [id=%u] executin started", sch->scheduleId);
 
 	// 更改状态为执行
 	service->db->exec("UPDATE schedules SET status=1 WHERE schid=?", bindValues, 1);
 
 	// 执行所有的task	
 	TaskDataBase* next;
-	uint32_t tIndex = 1, taskOks = 0, taskTotal = sch->tasks.size();
+	uint32_t taskOks = 0, taskTotal = sch->tasks.size();
+
+	sch->runIndex = 1;
 	while ((next = sch->tasks.popFirst()) != NULL)
 	{
 		if (next->taskType == TaskDataBase::kTaskHttpReq)
 		{
+			// 发出HTTP请求的任务
 			HTTPRequestTask* task = (HTTPRequestTask*)next;
 
 			CURL* c;
@@ -266,21 +291,21 @@ static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 				FILE* fp = fopen(task->strDownloadTo.c_str(), "wb");
 				if (!fp)
 				{
-					LOGFMTE("Schedule [id=%llu] task index [%u] create download to file [%s] failed", sch->scheduleId, tIndex, task->strDownloadTo.c_str());
+					LOGFMTE("Schedule [id=%u] task index [%u] create download to file [%s] failed", sch->scheduleId, sch->runIndex, task->strDownloadTo.c_str());
 					goto _end_hr;
 				}
 
 				code = curlExecOne(c, fp);
+				fflush(fp);
+				rewind(fp);
+
+				scheduleLogHttpReq(sch, task, code, fp, NULL);
 				fclose(fp);
 			}
 			else
 			{
 				code = curlExecOne(c, strResult);
-				if (task->strResultForce.length() && task->strResultForce != strResult)
-				{
-					LOGFMTE("Schedule [id=%llu] task index [%u] responses not equal to result forced", sch->scheduleId, tIndex, task->strResultForce.c_str(), strResult.c_str());
-					goto _end_hr;
-				}
+				scheduleLogHttpReq(sch, task, code, NULL, &strResult);
 			}
 
 			taskOks ++;
@@ -296,6 +321,7 @@ static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 		}
 		else if (next->taskType == TaskDataBase::kTaskScript)
 		{
+			// 执行脚本的任务
 			ScriptTask* task = (ScriptTask*)next;
 			int top = lua_gettop(L);
 
@@ -304,7 +330,7 @@ static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 				FILE* fp = fopen(task->strData.c_str(), "rb");
 				if (!fp)
 				{
-					LOGFMTE("Schedule [id=%llu] task index [%u] open script file [%s] failed", sch->scheduleId, tIndex, task->strData.c_str());
+					LOGFMTE("Schedule [id=%u] task index [%u] open script file [%s] failed", sch->scheduleId, sch->runIndex, task->strData.c_str());
 					goto _end_st;
 				}
 
@@ -318,12 +344,7 @@ static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 			}
 
 			int Lr = luaL_dostring(L, task->strData.c_str());
-			if (Lr)
-			{
-				LOGFMTE("Schedule [id=%llu] task index [%u] do script code failed: %s", sch->scheduleId, tIndex, lua_tostring(L, -1));
-				goto _end_st;
-			}
-
+			scheduleLogScriptRun(sch, L, task, Lr);
 			taskOks ++;
 
 		_end_st:
@@ -338,7 +359,7 @@ static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 			task->~ScriptTask();
 		}
 
-		++ tIndex;
+		++ sch->runIndex;
 	}
 
 	// 删除记录
@@ -352,5 +373,5 @@ static void scheduleExecute(Service* service, lua_State* L, ScheduleData* sch)
 		service->db->exec("DELETE FROM scriptrun_tasks WHERE schid=?", bindValues, 1);
 	}
 
-	LOGFMTI("Schedule [id=%llu] executin completed, task ok=%u, total=%u", sch->scheduleId, taskOks, taskTotal);
+	LOGFMTI("Schedule [id=%u] executin completed, task ok=%u, total=%u", sch->scheduleId, taskOks, taskTotal);
 }

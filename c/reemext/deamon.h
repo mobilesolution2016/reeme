@@ -86,15 +86,17 @@ public:
 	HTTPRequestTasksPool	hpool;
 	ScriptTasksPool			spool;
 
-	ScheduleMode			mode;
+	ScheduleMode			mode;	
 	uint32_t				flags;
 	uint32_t				scheduleId;
 	uint32_t				repeatTimes, repeatInterval;	// 重复运行的次数以及每次重复间隔的时间
 	uint64_t				startTime;						// 在这个时间点后才开始运行，如果为0则表示立即运行
 
+	uint32_t				runIndex;						// 当前正在运行第几条任务
+
 public:
 	ScheduleData()
-		: repeatTimes(0), repeatInterval(0), flags(0), startTime(0)
+		: repeatTimes(0), repeatInterval(0), flags(0), startTime(0), runIndex(0)
 	{
 
 	}

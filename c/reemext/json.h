@@ -28,6 +28,8 @@ static uint8_t json_unescape_chars[256] = { 0 };
 
 static uint8_t integer64_valid_bits[256] = { 0 };
 
+static uint8_t string_fmt_valid_fmt[256] = { 0 };
+
 struct initJsonEscapeChars
 {
 	initJsonEscapeChars()
@@ -70,6 +72,21 @@ struct initJsonEscapeChars
 		integer64_valid_bits['l'] = 4;
 		for(i = 0; i < 10; ++ i)
 			integer64_valid_bits['0' + i] = 0;
+
+		string_fmt_valid_fmt['s'] = string_fmt_valid_fmt['S'] = 1;
+		string_fmt_valid_fmt['f'] = string_fmt_valid_fmt['F'] = 2;
+		string_fmt_valid_fmt['g'] = string_fmt_valid_fmt['G'] = 2;
+		string_fmt_valid_fmt['c'] = string_fmt_valid_fmt['C'] = 3;
+
+		string_fmt_valid_fmt['u'] = string_fmt_valid_fmt['U'] = 4;
+		string_fmt_valid_fmt['d'] = string_fmt_valid_fmt['D'] = string_fmt_valid_fmt['i'] = 5;
+		string_fmt_valid_fmt['x'] = 6;	string_fmt_valid_fmt['X'] = 7;
+
+		// 以下部分支持或未支持
+		string_fmt_valid_fmt['-'] = 0x10;		// 左对齐，右填空格（正常是右对齐，左填空格）
+		string_fmt_valid_fmt['+'] = 0x20;		// 数字时，输出正负号
+		string_fmt_valid_fmt['#'] = 0x40;		// x或X时，增加0x，小数时一定增加小数点，g或G时，保留尾部的0
+		string_fmt_valid_fmt[' '] = 0x80;		// 正数时留空，负数时用-填充
 	}
 } _g_initJsonEscapeChars;
 
