@@ -1323,134 +1323,220 @@ static int lua_string_checkstring(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-// 使用{N}或{name}做为语法来进行模板替换，连续两个{{表示转义输出一个{
-static int lua_string_template(lua_State* L)
+// 使用可大体兼容string.format相同的语法来格式化字符串，但是更追求速度，同时支持cdata类型。可用的模式有：
+// %s：字符串
+// %u：无符号数字
+// %d：有符号数字
+// %f：浮点数
+static int lua_string_fmt(lua_State* L)
 {	
 	luaL_Buffer buf;
-	luaL_Buffer* pBuf = &buf;
 	size_t srcLen = 0;
-	char ch, *endpos;
-	int idx, n = lua_gettop(L);
-	int hasTable = lua_istable(L, 2), tostringIdx = 0;
+	char *endpos = 0, tmpbuf[64];
 	const char* src = luaL_checklstring(L, 1, &srcLen), *val;
 
-	if (srcLen < 3)
+	if (srcLen < 2)
 	{
 		lua_pushvalue(L, 1);
 		return 1;
 	}
 
+	luaL_Buffer* pBuf = &buf;
 	luaL_buffinit(L, pBuf);
 
-	size_t i = 0, pos = 0, len, nums = 0, chars = 0, bracketOpened = -1;
-	for (i = 0, pos = 0; i < srcLen; ++ i)
+	int64_t lli;
+	size_t start = 0, valLen, len, digits, carry;
+	for (int cc = 2, tp; ; )
 	{
-		ch = src[i];
-		if (bracketOpened != -1)
+		const char* foundpos = std::strchr(src + start, '%');
+		if (!foundpos)
+			break;
+
+		size_t pos = foundpos - src;
+		if (start < pos)
+			lua_string_addbuf(&buf, src + start, pos - start);
+
+		start = pos + 1;
+		if (start >= srcLen)
+			break;
+
+		// 连续两个%为转义
+		foundpos ++;
+		char ctl = foundpos[0];
+		if (ctl == '%')
 		{
-			if (ch != '}')
-			{
-				chars ++;
-				if (ch >= '0' && ch <= '9')
-					nums ++;
-
-				continue;
-			}
-
-			bool getVal = false;
-
-			val = 0;
-			if (chars == 0)
-			{
-				// 空引用
-			}
-			else if (chars == nums)
-			{
-				// 纯数字，引用后面相应位置的变量
-				idx = strtol(src + bracketOpened, &endpos, 10);
-				assert(endpos == src + i);
-
-				if (hasTable)
-				{
-					lua_rawgeti(L, 2, idx);
-					idx = -2;
-				}
-
-				val = lua_tolstring(L, idx + 1, &chars);
-				getVal = true;
-			}
-			else if (hasTable)
-			{
-				// 按照变量名来引用
-				lua_pushlstring(L, src + bracketOpened, i - bracketOpened);
-				lua_rawget(L, 2);
-
-				val = lua_tolstring(L, -1, &chars);
-				getVal = true;
-				idx = -2;
-			}
-
-			if (getVal)
-			{
-				if (!val)
-				{
-					// 非字符串类型的值，使用tostring函数来做转换，然后再获取转换后的值。如果是函数，则直接调用一下
-					if (lua_isfunction(L, idx + 1))
-					{
-						lua_pushvalue(L, idx + 1);
-						lua_call(L, 0, 1);
-					}
-					else
-					{
-						if (!tostringIdx)
-						{
-							idx = lua_gettop(L);
-							lua_getglobal(L, "tostring");
-							tostringIdx = idx + 1;	
-						}
-
-						lua_pushvalue(L, tostringIdx);
-						lua_pushvalue(L, idx);
-						lua_call(L, 1, 1);
-					}
-
-					val = lua_tolstring(L, -1, &chars);
-				}
-
-				if (chars)
-					lua_string_addbuf(pBuf, val, chars);
-			}
-			
-			pos = i + 1;
-			chars = nums = 0;
-			bracketOpened = -1;
+			start ++; 
+			luaL_addchar(pBuf, '%');
 			continue;
 		}
 
-		if (ch == '{')
+		// 长度
+		len = 0;
+		carry = 1;
+		digits = UINT_MAX;		
+		while (ctl >= '0' && ctl <= '9')
 		{
-			_found:
-			len = i - pos;
-			if (len)
-				lua_string_addbuf(pBuf, src + pos, len);
+			len += (ctl - '0') * carry;
+			foundpos ++;
+			carry *= 10;
+			ctl = foundpos[0];
+		}
 
-			if (src[i + 1] == '{')
+		// 小数位数
+		if (ctl == '.')
+		{
+			carry = 1;
+			digits = 0;
+
+			foundpos ++;
+			ctl = foundpos[0];
+			while (ctl >= '0' && ctl <= '9')
 			{
-				// 转义，非变量或关键字	
-				luaL_addchar(pBuf, '{');
+				digits += (ctl - '0') * carry;
+				foundpos ++;
+				carry *= 10;
+				ctl = foundpos[0];
+			}
+		}
 
-				++ i;
-				pos = i + 1;
+		tp = lua_type(L, cc);
+		if (tp <= LUA_TNIL)
+		{
+			luaL_checkany(L, cc);
+			return 0;
+		}
 
-				continue;
+		switch (ctl)
+		{
+		case 's':
+		case 'S':
+			if (tp != LUA_TSTRING)
+			{
+				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
+				lua_pushvalue(L, cc);
+				lua_pcall(L, 1, 1, 0);
 			}
 
-			bracketOpened = i + 1;
+			val = lua_tolstring(L, -1, &valLen);
+			if (!val)
+				return luaL_error(L, "string.fmt #%d expet string but got not string", cc - 1);
+
+			if (tp == LUA_TCDATA)
+			{
+				if (cdataValueIsInt64((const uint8_t*)val, valLen, &valLen))
+					lua_string_addbuf(pBuf, val, valLen);
+			}
+			else
+			{
+				lua_string_addbuf(pBuf, val, valLen);
+			}
+
+			if (tp != LUA_TSTRING)
+				lua_pop(L, 1);
+			break;
+
+		case 'u':
+		case 'U':
+		case 'd':
+		case 'D':
+			if (tp == LUA_TNUMBER)
+			{
+				lli = lua_tointeger(L, cc);
+			}
+			else if (tp == LUA_TSTRING)
+			{
+				val = lua_tolstring(L, cc, &valLen);
+				if (valLen >= 3 && val[0] == '0' && val[1] == 'x')
+				{
+					val += 2;
+					valLen -= 2;
+				}
+
+				lli = strtoll(val, &endpos, 10);
+				if (endpos - val != valLen)
+					return luaL_error(L, "string.fmt #%d expet integer but got not integer", cc - 1);
+			}
+			else if (tp == LUA_TCDATA)
+			{
+				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
+				lua_pushvalue(L, cc);
+				lua_pcall(L, 1, 1, 0);
+
+				val = lua_tolstring(L, -1, &valLen);
+				if (!cdataValueIsInt64((const uint8_t*)val, valLen, &valLen))
+					return luaL_error(L, "string.fmt #%d expet integer but got not integer", cc - 1);
+
+				lli = strtoll(val, &endpos, 10);
+				lua_pop(L, 1);
+			}
+			else if (tp == LUA_TBOOLEAN)
+			{
+				lli = lua_toboolean(L, cc);
+			}
+			else
+				return luaL_error(L, "string.fmt #%d expet integer but got not integer", cc - 1);
+
+			if (ctl == 'u' || ctl == 'U')
+			{
+				uint64_t lln = lli;
+				if (lln > UINT_MAX)
+					valLen = opt_u64toa(lln, tmpbuf);
+				else
+					valLen = opt_u32toa(lln, tmpbuf);
+			}
+			else if (lli > INT_MAX || lli < INT_MIN)
+				valLen = opt_i64toa(lli, tmpbuf);
+			else
+				valLen = opt_i32toa(lli, tmpbuf);
+
+			while(len -- > valLen)
+				luaL_addchar(pBuf, '0');
+
+			lua_string_addbuf(pBuf, tmpbuf, valLen);
+			break;
+
+		case 'f':
+		case 'F':
+			if (tp == LUA_TNUMBER)
+			{
+				if (digits != UINT_MAX)
+				{
+					double dv = lua_tonumber(L, cc);
+
+					sprintf(tmpbuf, "%0.3f", dv);
+					valLen = sprintf(tmpbuf, "%%%u.%uf", len, digits);
+					tmpbuf[valLen] = 0;
+
+					len = (valLen + 3) >> 2 << 2;
+					valLen = sprintf(tmpbuf + len, tmpbuf, dv);
+					val = tmpbuf + len;
+				}
+				else
+					val = lua_tolstring(L, cc, &valLen);
+			}
+			else if (tp == LUA_TSTRING)
+			{
+				val = lua_tolstring(L, cc, &valLen);
+				double dv = strtod(val, &endpos);
+				if (isnan(dv) || endpos - val != valLen)
+					return luaL_error(L, "string.fmt #%d expet number but got not number", cc - 1);
+			}
+			else
+				return luaL_error(L, "string.fmt #%d expet number but got not number", cc - 1);
+
+			lua_string_addbuf(pBuf, val, valLen);
+			break;
+
+		default:
+			return luaL_error(L, "unknow pattern char '%%%c' for string.fmt #%d", ctl, cc - 1);
 		}
+
+		start = foundpos - src + 1;
+		++ cc;
 	}
 
-	if (pos < srcLen)
-		lua_string_addbuf(pBuf, src + pos, srcLen - pos);
+	if (start < srcLen)
+		lua_string_addbuf(pBuf, src + start, srcLen - start);
 
 	luaL_pushresult(pBuf);
 	return 1;
@@ -2547,8 +2633,8 @@ static void luaext_string(lua_State *L)
 		// 字符串检测
 		{ "checkstring", &lua_string_checkstring },
 
-		// 模板解析（不支持语法和关键字，能按照变量名来进行替换）（当字符串较长时，2~3倍性能于string.format）
-		{ "template", &lua_string_template },
+		// 字符串格式化的简单实现版本，但是支持boxed int64，常规使用下和string.format兼容
+		{ "fmt", &lua_string_fmt },
 		// 模板解析
 		{ "parseTemplate", &lua_string_parsetemplate },
 

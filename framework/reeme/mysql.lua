@@ -106,6 +106,41 @@ local mysql = {
 				return self:use(idxName, db)
 			end
 		end,
+		
+		--事务
+		begin = function(self, db)
+			if db then
+				db:query('BEGIN')
+			end
+			return self
+		end,
+		commit = function(self, db)
+			if db then
+				db:query('COMMIT')
+			end
+			return self
+		end,
+		rollback = function(self, db)
+			if db then
+				db:query('ROLLBACK')
+			end
+			return self
+		end,
+		
+		--使用回调的方式执行事务
+		autocommit = function(self, db, func)
+			if db and func then
+				db:query('BEGIN')
+				if func() == true then
+					db:query('COMMIT')
+					return true
+				else
+					db:query('ROLLBACK')
+				end
+			end
+
+			return false
+		end,
 	},
 	
 	__call = function(self, p1)

@@ -141,12 +141,13 @@ builder.processWhere = function(self, condType, k, v)
 	if tp ~= 'string' then
 		k = tostring(k)
 	end
-
-	local where = builder.parseWhere(self, condType, k, v)
-	if where then
-		self.condValues[#self.condValues + 1] = where
-	else
-		error(string.format("process where(%s) function with illegal value(s) call", name))
+	if #k > 0 then
+		local where = builder.parseWhere(self, condType, k, v)
+		if where then
+			self.condValues[#self.condValues + 1] = where
+		else
+			error(string.format("process where(%s) function with illegal value(s) call", name))
+		end
 	end
 	return self
 end
@@ -154,7 +155,7 @@ end
 --处理on函数带来的条件
 builder.processOn = function(self, condType, k, v)
 	local tp = type(k)
-	if tp == 'string' then
+	if tp == 'string' and #k > 0 then
 		local where = builder.parseWhere(self, condType, k, v)
 		if where then
 			if not self.onValues then
