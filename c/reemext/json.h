@@ -114,6 +114,10 @@ public:
 
 	char		*pString;
 	size_t		nLength;
+	union {
+		double		dbl;
+		uint64_t	u64;
+	} value;
 } ;
 
 enum JSONAttrType
@@ -126,6 +130,10 @@ enum JSONAttrType
 enum JSONValueType
 {
 	JVTNone,
+	JVTDecimal,
+	JVTHex,
+	JVTOctal,
+	JVTDouble,
 	JVTTrue,
 	JVTFalse,
 	JVTNull,
@@ -138,7 +146,6 @@ public:
 	JSONString		value;
 	size_t			nameHash;
 	JSONAttrType	kType;
-	JSONValueType	kValType;
 
 	inline void hash()
 	{
@@ -147,7 +154,8 @@ public:
 } ;
 
 //////////////////////////////////////////////////////////////////////////
-#define MAX_PARSE_LEVEL		200	// JSON的解析深度如果超过这个值，则会被报错
+#define MAX_PARSE_LEVEL		200					// JSON的解析深度如果超过这个值，则会被报错
+#define DOUBLE_UINT_MAX		9007199254740992	// double型正常情况下可以表示的整数的最大值
 #define SKIP_WHITES()\
 	while(pReadPos != m_pMemEnd)\
 	{\
@@ -198,7 +206,7 @@ public:
 	char				*m_pLastPos;
 	size_t				m_nMemSize;
 	int					m_iErr, m_iNeedSetMarker, m_iTableIndex;
-	bool				m_bFreeMem, m_bQuoteStart;
+	bool				m_bFreeMem, m_bQuoteStart, m_bNegativeVal;
 	JSONValueType		m_kValType;
 
 	uint32_t			m_nOpens;
@@ -223,21 +231,38 @@ protected:
 		else
 			lua_pushinteger(L, count + 1);
 
+		double dv;
+		uint64_t u64;
 		const JSONString& val = attr->value;
 		switch(attr->kType)
 		{
 		case JATValue:
-			switch (attr->kValType)
+			u64 = attr->value.value.u64;
+			switch (m_kValType)
 			{
-			case JVTNone:
-				if (strchr(val.pString, '.') == 0)
-#ifdef REEME_64
-					lua_pushinteger(L, strtoll(val.pString, 0, 10));
-#else
-					lua_pushinteger(L, strtol(val.pString, 0, 10));
-#endif
+			case JVTDecimal:
+			case JVTOctal:
+				if (m_bNegativeVal)
+				{
+					if (u64 < DOUBLE_UINT_MAX)
+						lua_pushnumber(L, -(double)u64);
+					else
+						jsonPushInt64(-(int64_t)u64);
+				}
+				else if (u64 < DOUBLE_UINT_MAX)
+					lua_pushnumber(L, u64);
 				else
-					lua_pushnumber(L, strtod(val.pString, 0));
+					jsonPushUInt64(u64);
+				break;
+			case JVTHex:
+				if (u64 < DOUBLE_UINT_MAX)
+					lua_pushnumber(L, u64);
+				else
+					jsonPushUInt64(u64);
+				break;
+			case JVTDouble:
+				dv = *(double*)&u64;
+				lua_pushnumber(L, m_bNegativeVal ? -dv : dv);
 				break;
 			case JVTTrue:
 				lua_pushboolean(L, 1);
@@ -265,6 +290,25 @@ protected:
 			lua_newtable(L);
 			break;
 		}
+	}
+
+	void jsonPushInt64(int64_t v)
+	{
+		lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFINew);
+		lua_pushliteral(L, "int64_t");
+		lua_pcall(L, 1, 1, 0);
+
+		int64_t* pt = (int64_t*)const_cast<void*>(lua_topointer(L, -1));
+		pt[0] = v;
+	}
+	void jsonPushUInt64(uint64_t v)
+	{
+		lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFINew);
+		lua_pushliteral(L, "uint64_t");
+		lua_pcall(L, 1, 1, 0);
+
+		uint64_t* pt = (uint64_t*)const_cast<void*>(lua_topointer(L, -1));
+		pt[0] = v;
 	}
 
 	JSONAttribute* getTmpAttr()
@@ -514,10 +558,7 @@ private:
 					if (!pReadPos)
 						return 0;
 
-					if (m_bQuoteStart)
-						attr->kType = JATString;
-					else
-						attr->kValType = m_kValType;
+					attr->kType = m_bQuoteStart ? JATString : JATValue;
 
 					endChar = pReadPos[0];
 					onAddAttr(attr, 0);
@@ -647,75 +688,104 @@ private:
 		}
 		else
 		{
-			// 数值或特殊值
+			// 数值或特殊值，先从第1个符号猜测一下可能是什么类型的值
 			m_kValType = JVTNone;
-			while(pReadPos != m_pMemEnd)
+			m_bNegativeVal = false;
+
+			uint8_t ch = pReadPos[0];
+			if (ch == '+')
 			{
-				uint8_t ch = *pReadPos;
-				if (ch <= 32)
+				pReadPos ++;
+				ch = pReadPos[0];
+			}
+			else if (ch == '-')
+			{				
+				pReadPos ++;
+				ch = pReadPos[0];
+				m_bNegativeVal = true;
+			}
+
+			uint8_t ctl = json_value_char_tbl[ch];
+			if (ch == '0')
+			{
+				// 8进制或16进制可能
+				pReadPos ++;
+				ch = pReadPos[0];
+				if (ch == 'x' || ch == 'X')
 				{
-					if (!json_invisibles_allowed[ch])
-					{
-						m_iErr = kErrorSymbol;
-						return 0;
-					}
-
-					if (!pEndPos)
-						pEndPos = pReadPos;
-
+					// 十六进制整数
 					pReadPos ++;
-					continue;
-				}
-				if (ch >= 127)
-				{
-					m_iErr = kErrorSymbol;
-					return 0;
-				}
-
-				uint8_t flag = json_value_char_tbl[ch];
-				if (flag == 3)
-					break;
-
-				if (pEndPos)
-				{
-					m_iErr = m_kValType != JVTNone ? kErrorValue : kErrorEnd;
-					return 0;
-				}
-
-				//数字表达式是可以的
-				if (flag <= 2 || ch == 'e')
-				{
-					pReadPos ++;
-					continue;
-				}
-
-				//或者一些固定单词表达式也是可以的，如true、false、null
-				if (flag >= 4)
-				{
-					if (strncmp(pReadPos, "true", 4) == 0)
-					{
-						m_kValType = JVTTrue;
-						pReadPos += 4;
-					}
-					else if (strncmp(pReadPos, "false", 5) == 0)
-					{
-						m_kValType = JVTFalse;
-						pReadPos += 5;
-					}
-					else if (strncmp(pReadPos, "null", 4) == 0)
-					{
-						m_kValType = JVTNull;
-						pReadPos += 4;
-					}
-					else
+					m_kValType = JVTHex;
+					if (m_bNegativeVal)
 					{
 						m_iErr = kErrorValue;
-						break;
+						return 0;
 					}
-
-					pEndPos = pReadPos;
+				}
+				else
+				{
+					// 八进制整数
+					m_kValType = JVTOctal;
 				}
 			}
+			else if (ctl == 1)
+			{
+				// 十进制整数或小数
+				m_kValType = memchr(pReadPos, '.', m_pMemEnd - pReadPos) ? JVTDouble : JVTDecimal;
+			}
+			else if (ctl >= 4 && ctl <= 7)
+			{
+				// 特殊值
+				if (strncmp(pReadPos, "true", 4) == 0)
+				{
+					m_kValType = JVTTrue;
+					pReadPos += 4;
+				}
+				else if (strncmp(pReadPos, "false", 5) == 0)
+				{
+					m_kValType = JVTFalse;
+					pReadPos += 5;
+				}
+				else if (strncmp(pReadPos, "null", 4) == 0)
+				{
+					m_kValType = JVTNull;
+					pReadPos += 4;
+				}
+				else
+				{
+					m_iErr = kErrorValue;
+					return 0;
+				}
+			}
+			else if (ch == '.')
+			{
+				// 浮点数
+				m_kValType = JVTDouble;
+			}
+
+			// 转换出数值
+			switch (m_kValType)
+			{
+			case JVTDecimal:
+				str.value.u64 = strtoull(pReadPos, &pEndPos, 10);
+				break;
+			case JVTHex:
+				str.value.u64 = strtoull(pReadPos, &pEndPos, 16);
+				break;
+			case JVTOctal:
+				str.value.u64 = strtoull(pReadPos, &pEndPos, 8);
+				break;
+			case JVTDouble:
+				str.value.dbl = strtod(pReadPos, &pEndPos);
+				break;
+			}
+
+			pReadPos = pEndPos;
+			if (pEndPos >= m_pMemEnd)
+			{
+				m_iErr = kErrorEnd;
+				return 0;
+			}			
 		}
 
 		if (pEndPos)
@@ -826,8 +896,7 @@ private:
 				if (!pReadPos)
 					break;
 
-				if (m_bQuoteStart)
-					attr->kType = JATString;
+				attr->kType = m_bQuoteStart ? JATString : JATValue;
 
 				onAddAttr(attr, cc);
 			}
