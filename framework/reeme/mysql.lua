@@ -62,9 +62,12 @@ local mysql = {
 			if db then
 				m.__db = type(db) == 'string' and reeme(db) or db
 			else
-				m.__db = self.__defdb
+				db = self.__defdb
+				if db then
+					m.__db = db
+				end
 			end
-			
+
 			return m
 		end,
 		

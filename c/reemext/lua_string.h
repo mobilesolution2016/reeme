@@ -1042,7 +1042,7 @@ static int lua_string_checkinteger(lua_State* L)
 			lua_pcall(L, 1, 1, 0);
 
 			s = lua_tolstring(L, -1, &len);
-			if (s && len >= 3 && cdataValueIsInt64((const uint8_t*)endp, len, &len))
+			if (len >= 3 && cdataValueIsInt64((const uint8_t*)s, len, &len))
 				r = 1;
 		}
 	}
