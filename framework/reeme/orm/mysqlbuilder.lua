@@ -546,6 +546,7 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 		if cfg then
 			local v = vals[name]
 			local tp = type(v)
+			local useRawValue = false
 
 			if cfg.ai then
 				--自增长值要么是fullCreate/fullSave要么被忽略
@@ -557,8 +558,12 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 				if not isUpdate then
 					if cfg.default then
 						v = cfg.default
+						if cfg.isDate and mysqlwords[v:upper()] then
+							useRawValue = true
+						end
 					elseif cfg.null then
 						v = 'NULL'
+						useRawValue = true
 					else
 						v = cfg.type == 1 and "''" or '0'
 					end
@@ -566,6 +571,7 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 			elseif v == ngx.null then
 				--NULL值直接设置
 				v = 'NULL'
+				useRawValue = true
 			elseif tp == 'table' then
 				--table类型则根据meta来进行判断是什么table
 				local mt = getmetatable(v)
@@ -588,7 +594,9 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 			if v ~= nil then
 				if cfg.type == 1 then
 					--字段要求为字符串，所以引用
-					v = ngx.quote_sql_str(v)
+					if not useRawValue then
+						v = ngx.quote_sql_str(v)
+					end
 				elseif cfg.type == 4 then
 					--布尔型使用1或0来处理
 					v = toboolean(v) and '1' or '0'
