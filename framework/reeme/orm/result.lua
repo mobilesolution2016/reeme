@@ -78,7 +78,10 @@ local callRowTable = function(self, tbl)
 			if f.type == 1 then
 				return f.isDate and require('reeme.orm.datetime')(v) or v
 
-			elseif f.type == 2 or f.type == 3 then
+			elseif f.type == 2 then
+				return (f.maxlen > 11 and type(v) == 'string') and string.int64(v) or tonumber(v)
+
+			elseif f.type == 3 then
 				return tonumber(v)
 				
 			elseif f.type == 4 then

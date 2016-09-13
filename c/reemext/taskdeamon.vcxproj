@@ -184,6 +184,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="crtopt.cpp" />
     <ClCompile Include="deamon.cpp" />
     <ClCompile Include="log4z.cpp" />
     <ClCompile Include="sqlite\sqlite3.c" />

@@ -78,6 +78,13 @@ builder.parseWhere = function(self, condType, name, value)
 
 		if tv == 'string' and value:byte(1) == 39 and value:byte(vlen) == 39 then
 			quoted = true
+		elseif tv == 'cdata' then
+			value, newv = string.checkinteger(value)
+			if newv then
+				value = newv
+			else
+				tv = 'string'
+			end
 		end
 
 		if f then
@@ -89,12 +96,6 @@ builder.parseWhere = function(self, condType, name, value)
 			end
 			if #newv > f.maxlen then
 				return nil
-			end
-			
-			--判断是否cdata
-			if tv == 'cdata' then
-				value, newv = string.checkinteger(newv)
-				value = newv
 			end
 			
 			--再根据字段的值类型做相应的转换
@@ -114,9 +115,9 @@ builder.parseWhere = function(self, condType, name, value)
 				return nil
 			end
 
-		elseif not quote then
+		elseif not quoted then
 			--未引用的字符串进行转义
-			value = ngx.quote_sql_str(value)
+			value = ngx.quote_sql_str(tostring(value))
 		end
 		
 		return { expr = puredkeyname and string.format('%s=%s', name, value) or (name .. value), c = condType }
@@ -132,7 +133,7 @@ builder.processWhere = function(self, condType, k, v)
 			if where then
 				self.condValues[#self.condValues + 1] = where
 			else
-				error(string.format("process where(%s) function with illegal value(s) call", name))
+				error(string.format("call where(%s) function with illegal value(s) call", name))
 			end
 		end
 		return self
@@ -146,7 +147,7 @@ builder.processWhere = function(self, condType, k, v)
 		if where then
 			self.condValues[#self.condValues + 1] = where
 		else
-			error(string.format("process where(%s) function with illegal value(s) call", name))
+			error(string.format("call where(%s) function with illegal value(s) call", k))
 		end
 	end
 	return self

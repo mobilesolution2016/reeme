@@ -181,6 +181,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="commonlib.h" />
+    <ClInclude Include="crtopt.h" />
     <ClInclude Include="json.h" />
     <ClInclude Include="lua_string.h" />
     <ClInclude Include="lua_table.h" />

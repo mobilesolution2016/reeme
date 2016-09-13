@@ -69,6 +69,9 @@
     <ClCompile Include="sqlite\sqlitewrap.cpp">
       <Filter>源文件\sqlite</Filter>
     </ClCompile>
+    <ClCompile Include="crtopt.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="deamon.h">
