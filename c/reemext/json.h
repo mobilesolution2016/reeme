@@ -154,8 +154,11 @@ public:
 } ;
 
 //////////////////////////////////////////////////////////////////////////
-#define MAX_PARSE_LEVEL		200					// JSON的解析深度如果超过这个值，则会被报错
-#define DOUBLE_UINT_MAX		9007199254740992	// double型正常情况下可以表示的整数的最大值
+// JSON的解析深度如果超过这个值，则会被报错
+#define MAX_PARSE_LEVEL		200
+// double型正常情况下可以hold住的整数部分的最大值
+#define DOUBLE_UINT_MAX		9007199254740992
+
 #define SKIP_WHITES()\
 	while(pReadPos != m_pMemEnd)\
 	{\

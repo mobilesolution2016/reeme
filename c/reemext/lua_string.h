@@ -992,7 +992,7 @@ static int lua_string_checkinteger(lua_State* L)
 	size_t len = 0;
 	long long v = 0;
 	const char* s = 0;
-	uint32_t i64type = 0;
+	bool negative = false;
 	int r = 0, t = lua_gettop(L), tp = 0;	
 
 	if (t >= 1)
@@ -1027,6 +1027,8 @@ static int lua_string_checkinteger(lua_State* L)
 						s ++;						
 					}
 				}
+				else if (s[0] == '-')
+					negative = true;
 
 				v = strtoll(s, &endp, digits);
 				if (endp && endp - s == len)
@@ -1040,13 +1042,8 @@ static int lua_string_checkinteger(lua_State* L)
 			lua_pcall(L, 1, 1, 0);
 
 			s = lua_tolstring(L, -1, &len);
-			if (s && len >= 3)
-			{
-				size_t endplen;
-				v = strtoll(s, &endp, 10);
-				if (endp && (i64type = cdataValueIsInt64((const uint8_t*)endp, len - (endp - s), &endplen, 0)) != 0)
-					r = 1;
-			}
+			if (s && len >= 3 && cdataValueIsInt64((const uint8_t*)endp, len, &len))
+				r = 1;
 		}
 	}
 
@@ -1055,19 +1052,37 @@ static int lua_string_checkinteger(lua_State* L)
 		if (tp != LUA_TCDATA)
 		{
 #ifdef REEME_64
-			lua_pushinteger(L, v);
-#else
-			if (v > 0x7FFFFFFF)
-				lua_pushnumber(L, (double)v);
+			if (v > DOUBLE_UINT_MAX)
+			{
+				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFINew);
+				if (negative)
+				{
+					lua_pushliteral(L, "int64_t");
+					lua_pcall(L, 1, 1, 0);
+
+					int64_t* p64t = (int64_t*)const_cast<void*>(lua_topointer(L, -1));
+					p64t[0] = (int64_t)v;
+				}
+				else
+				{
+					lua_pushliteral(L, "uint64_t");
+					lua_pcall(L, 1, 1, 0);
+
+					uint64_t* p64t = (uint64_t*)const_cast<void*>(lua_topointer(L, -1));
+					p64t[0] = (uint64_t)v;
+				}
+			}
 			else
-				lua_pushinteger(L, v);
+				lua_pushnumber(L, (double)v);
+#else
+			lua_pushnumber(L, (double)v);
 #endif
 			return 1;
 		}
 		else
 		{
 			lua_pushvalue(L, 1);
-			lua_pushlstring(L, s, len - i64type);
+			lua_pushlstring(L, s, len);
 			return 2;
 		}
 	}
