@@ -33,7 +33,7 @@ builder.parseWhere = function(self, condType, name, value)
 	while true do
 		--找到第一个不是mysql函数的名字时停止
 		keyname, findpos = name:findvarname(findpos)
-		ngx.say(keyname, ',', findpos, '<br/>')
+		--ngx.say(keyname, ',', findpos, '<br/>')
 		if not keyname then
 			keyname = nil
 			break
