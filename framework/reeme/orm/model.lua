@@ -176,7 +176,7 @@ queryMeta = {
 					if asc == nil then asc = 'asc' end
 				end
 				
-				if field and self.m.fields[field] and asc then
+				if field and self.m.__fields[field] and asc then
 					asc = asc:lower()
 					if asc == 'asc' or asc == 'desc' then
 						self.orderBy = { name = field, order = asc:upper() }

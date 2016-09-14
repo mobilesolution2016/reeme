@@ -1645,7 +1645,6 @@ static int lua_string_fmt(lua_State* L)
 static const char templInitCode[] = { "return function(self, __env__)\nlocal __ret__ = {}\n" };
 static const char templReturnCode[] = { "\nreturn table.concat(__ret__, '')\nend" };
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
-static const char tenplAddstrCode[] = { "__ret__[#__ret__+1]=[==[" };
 static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
 static const char templErrTipCode[] = { ", the full template parsed code: <br/><br/>\r\n\r\n" };
 
@@ -1653,10 +1652,11 @@ class TemplateParser
 {
 public:
 	std::string	buf, errorMsg;
-	size_t		offset, srcLen, wrote;
+	size_t		offset, srcLen, wrote, mlsLength;
 	const char	*src;
 	const char	*savedPos;
 	const char	*errorStart;
+	char		mlsBegin[32], mlsEnd[32];
 	bool		bracketOpened;
 
 	enum KeywordEndType {
@@ -1723,6 +1723,50 @@ public:
 
 		wrote = buf.size();
 		return s;
+	}
+
+	const char* findExpEnd(const char* expStart, const char* totalEnd, uint32_t *pLinesCC = 0, uint32_t *pQuoted = 0)
+	{
+		uint8_t quoted = 0, ln = 0;
+		const char* expEnd = expStart;
+
+		while (expEnd < totalEnd)
+		{
+			char ch = *expEnd ++;
+			if (quoted)
+			{
+				expEnd ++;
+				if (ch == '\\')
+					expEnd ++;
+				else if (ch == '\'' || ch == '"')
+					quoted = 0;
+				else if (ch == '\n')
+					ln = 1;
+			}
+			else if (ch == '\'' || ch == '"')
+			{
+				expEnd ++;
+				if (quoted)
+				{
+					errorStart = expStart;
+					errorMsg = "not closed string";
+					expEnd = 0;
+					break;
+				}
+				quoted = ch;
+			}
+			else if (ch == '\n')
+				ln = 1;
+			else if (ch == '}')
+				break;
+		}
+
+		if (pLinesCC)
+			*pLinesCC = ln;
+		if (pQuoted)
+			*pQuoted = quoted;
+
+		return expEnd;
 	}
 
 	bool more()
@@ -1800,7 +1844,7 @@ public:
 
 				close();
 
-				// 引用子模板				
+				// 引用子模板
 				if (ch == ':')
 				{
 					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
@@ -1837,43 +1881,16 @@ public:
 				close();
 
 				// 找到表达式的结束位置
-				uint8_t quoted = 0, ln = 0;
-				const char* expStart = foundPos + 1;
+				uint32_t ln = 0, quoted = 0;
+				const char* expStart = foundPos + 1, *expEnd;
 				const char* totalEnd = src + srcLen;
 
 				while(expStart[0] <= 32)
 					expStart ++;
 
-				const char* expEnd = expStart;
-				while (expEnd < totalEnd)
-				{
-					ch = *expEnd ++;
-					if (quoted)
-					{
-						expEnd ++;
-						if (ch == '\\')
-							expEnd ++;
-						else if (ch == '\'' || ch == '"')
-							quoted = 0;
-						else if (ch == '\n')
-							ln = 1;
-					}
-					else if (ch == '\'' || ch == '"')
-					{
-						expEnd ++;
-						if (quoted)
-						{
-							errorStart = expStart;
-							errorMsg = "not closed string";
-						}
-						quoted = ch;
-					}
-					else if (ch == '\n')
-						ln = 1;
-					else if (ch == '}')
-						break;
-				}
-
+				expEnd = findExpEnd(expStart, totalEnd, &ln, &quoted);
+				if (!expEnd)
+					return false;
 				if (expEnd <= totalEnd)
 				{					
 					add = expEnd - expStart - 1;
@@ -1933,11 +1950,58 @@ public:
 					offset = foundPos - src;
 					goto _lastcheck;
 				}
-				else if (quoted)
+			}
+			else if (ch == '?')
+			{
+				// 关闭之前的输出，模板部分缓存功能不可能与其它位于同一行
+				add = pos - offset;
+				if (pos >= offset && append(add) != add)
 				{
-					errorStart = expStart;
-					errorMsg = "not closed string";
+					savedPos = foundPos - 1;
+					return true;
 				}
+
+				close();
+
+				// 判断是开始还是结束
+				uint32_t quoted = 0;
+				const char* cmdStart = foundPos + 1;
+				const char* totalEnd = src + srcLen;
+
+				while(cmdStart[0] <= 32)
+					cmdStart ++;
+
+				const char* cmdEnd = findExpEnd(cmdStart, totalEnd, 0, &quoted);
+				if (!cmdEnd)
+					return false;
+				if (cmdEnd <= totalEnd)
+				{
+					size_t add = cmdEnd - cmdStart - 1;
+					if (add == 0)
+					{
+						// 结束
+						buf.append("end\ncachesection(false, __ret__, __cachesecs__)");
+					}
+					else
+					{
+						// 开始
+						buf.append("if cachesection(true, __ret__, __cachesecs__");
+						if (add)
+						{
+							buf += ',';
+							buf.append(cmdStart, add);
+						}
+
+						buf.append(") then", 6);
+					}
+				}
+
+				buf += '\n';
+				wrote = buf.size();
+
+				foundPos = cmdEnd;
+				offset = foundPos - src;
+				goto _lastcheck;
 			}
 
 			append(foundPos - src - offset);
@@ -1955,7 +2019,8 @@ _lastcheck:
 		if (!bracketOpened)
 		{
 			bracketOpened = true;
-			buf.append(tenplAddstrCode, sizeof(tenplAddstrCode) - 1);
+			buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+			buf.append(mlsBegin, mlsLength);
 			wrote = buf.size();
 		}
 	}
@@ -1964,7 +2029,8 @@ _lastcheck:
 		if (bracketOpened)
 		{
 			bracketOpened = false;
-			buf.append("]==]\n", 5);
+			buf.append(mlsEnd, mlsLength);
+			buf += '\n';
 			wrote = buf.size();
 		}
 	}
@@ -2038,6 +2104,31 @@ static int lua_string_parsetemplate(lua_State* L)
 
 	TemplateParser parser;	
 	_init_TemplateParser(parser, src, srcLen);
+
+	// 确认要用的多行字符串表示法没有在代码中被使用过，如果有用到了，则继续增加=号的数量
+	memset(parser.mlsBegin, 0, sizeof(parser.mlsBegin) * 2);
+
+	strcpy(parser.mlsBegin, "[===[");
+	strcpy(parser.mlsEnd, "]===]");
+	parser.mlsLength = 5;
+
+	for(int i = 0; ; ++ i)
+	{
+		if (!std::strstr(src, parser.mlsEnd))
+			break;
+		if (i == 27)
+		{
+			// it is possible?
+			lua_pushliteral(L, "multi-line string split find failed");
+			return 1;
+		}
+
+		size_t l = parser.mlsLength - 1;
+		parser.mlsBegin[l] = parser.mlsEnd[l] = '=';
+		parser.mlsBegin[l + 1] = '[';
+		parser.mlsEnd[l + 1] = ']';
+		parser.mlsLength ++;
+	}
 
 	if (hasEnv)
 	{
@@ -2294,8 +2385,9 @@ public:
 		return ptr;
 	}
 	void escapeJsonString(const char* src, size_t len)
-	{
-		uint8_t ch, v, unicode;
+	{		
+		uint8_t ch, v;
+		uint32_t unicode;
 		size_t i = 0, spos = 0;
 		while (i < len)
 		{

@@ -39,7 +39,7 @@ static size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase = true
 	const char lowerChars[] = { "0123456789abcdef" };
 		
 	char* buffer = dst;
-	uint32_t endt = 32, i;
+	int32_t endt = 32, i;
 	uint32_t mask = 0xF0000000;
 
 	do
@@ -52,12 +52,12 @@ static size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase = true
 
 	if (useUpperCase)
 	{
-		for (i = 0; i < endt; i += 4)
+		for (i = endt - 4; i >= 0; i -= 4)
 			*buffer ++ = upperChars[value >> i & 0xF];
 	}
 	else
 	{
-		for (i = 0; i < endt; i += 4)
+		for (i = endt - 4; i >= 0; i -= 4)
 			*buffer ++ = lowerChars[value >> i & 0xF];
 	}
 
@@ -70,7 +70,7 @@ static size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase = true
 	const char lowerChars[] = { "0123456789abcdef" };
 
 	char* buffer = dst;
-	uint32_t endt = 64, i;
+	int32_t endt = 64, i;
 	uint64_t mask = 0xF000000000000000;
 
 	do
@@ -83,12 +83,12 @@ static size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase = true
 
 	if (useUpperCase)
 	{
-		for (i = 0; i < endt; i += 4)
+		for (i = endt - 4; i >= 0; i -= 4)
 			*buffer ++ = upperChars[value >> i & 0xF];
 	}
 	else
 	{
-		for (i = 0; i < endt; i += 4)
+		for (i = endt - 4; i >= 0; i -= 4)
 			*buffer ++ = lowerChars[value >> i & 0xF];
 	}
 

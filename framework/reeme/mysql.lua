@@ -6,7 +6,11 @@ local parseFields = require('reeme.orm.common').parseFields
 local mysql = {
 	__index = {
 		defdb = function(self, db)
-			self.__defdb = db
+			local old = self.__defdb
+			if db then
+				self.__defdb = db
+			end
+			return old
 		end,
 		
 		--使用一个定义的模型
@@ -30,17 +34,7 @@ local mysql = {
 				if type(m) ~= 'table' or type(m.fields) ~= 'table' then
 					error(string.format("mysql:use('%s') get a invalid model declaration", name))
 					return nil
-				end
-				
-				local oldm = getmetatable(m)
-				if oldm and type(oldm.__index) ~= 'table' then
-					error(string.format("mysql:use('%s') get a model table, but the __index of its metatable not a table", name))
-					return nil
-				end
-
-				m.__oldm = oldm
-				m.__builder = builder
-				m.__dbtype = 'mysql'
+				end			
 
 				local err = parseFields(m)
 				if err ~= true then
@@ -48,7 +42,6 @@ local mysql = {
 					return nil
 				end
 
-				setmetatable(oldm and oldm.__index or m, modelmeta)
 				models[idxName] = m
 			end
 			
@@ -57,18 +50,22 @@ local mysql = {
 				name = name:sub(tbname + 1)
 			end
 
-			m.__reeme = reeme
-			m.__name = truename or name	
+			local r = setmetatable({
+				__reeme = reeme,
+				__dbtype = 'mysql',
+				__builder = builder,
+				__name = truename or name,
+				__fields = m.__fields,
+				__fieldsPlain = m.__fieldsPlain,
+				__fieldIndices = m.__fieldIndices,
+				__db = self.__defdb
+			}, modelmeta)
+
 			if db then
-				m.__db = type(db) == 'string' and reeme(db) or db
-			else
-				db = self.__defdb
-				if db then
-					m.__db = db
-				end
+				r.__db = type(db) == 'string' and reeme(db) or db
 			end
 
-			return m
+			return r
 		end,
 		
 		uses = function(self, names, db)
@@ -99,11 +96,7 @@ local mysql = {
 		--清理所有的model缓存
 		clear = function(self)
 			for k,m in pairs(models) do
-				if m.__oldm then
-					setmetatable(m, m.__oldm)
-				end
-				
-				m.__name, m.__fields, m.__fieldPlain, m.__oldm, m.__db = nil, nil, nil, nil, nil
+				m.__fields, m.__fieldPlain, m.__fieldIndices = nil, nil, nil
 			end
 			
 			models = {}
@@ -138,7 +131,7 @@ local mysql = {
 			return self
 		end,
 		
-		--使用回调的方式执行事务
+		--使用回调的方式执行事务，当事务函数返回true时就会提交，否则就会回滚
 		autocommit = function(self, db, func)
 			if db and func then
 				db:query('BEGIN')

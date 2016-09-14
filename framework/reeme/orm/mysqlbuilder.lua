@@ -542,7 +542,7 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 		vals = self
 	end
 
-	for name,v in pairs(self.colSelects == nil and model.fields or self.colSelects) do
+	for name,_ in pairs(self.colSelects == nil and model.__fields or self.colSelects) do
 		local cfg = fieldCfgs[name]
 		if cfg then
 			local v = vals[name]

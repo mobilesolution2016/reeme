@@ -1,11 +1,19 @@
 local viewDir = nil 
 local viewMeta = { }
 
+--tpl为文件名，如果以/开头则表示绝对路径（绝对路径将被直接使用不会做任何修改），否则将会被加上views路径以及默认的view文件扩展名后再做为路径被使用
 local function loadTemplateFile(reeme, tpl)
 	if type(tpl) == 'string' then 
-		local cfgs = reeme:getConfigs()
-		local dirs = cfgs.dirs
-		local f, err = io.open(string.format("%s/%s/%s/%s%s", dirs.appRootDir, dirs.appBaseDir, dirs.viewsDir, tpl:replace('.', '/'), cfgs.viewFileExt), "rb")
+		if tpl:byte(1) ~= 47 then
+			local cfgs = reeme:getConfigs()
+			local dirs = cfgs.dirs
+			
+			tpl = string.format("%s/%s/%s/%s%s", dirs.appRootDir, dirs.appBaseDir, dirs.viewsDir, tpl:replace('.', '/'), cfgs.viewFileExt)
+		else
+			tpl = tpl:sub(2)
+		end
+		
+		local f, err = io.open(tpl, "rb")
 		if f then
 			local t = f:read("*all")
 			f:close()
@@ -21,6 +29,46 @@ local function loadSubtemplate(self, env, name)
 		return string.parseTemplate(self, t, env)
 	end
 	return ''
+end
+
+local function setCachesection(isBegin, rets, caches, ...)	
+	local cc = #caches
+	if isBegin then
+		--创建
+		local conds = { ... }
+		if #conds == 0 then
+			error('template cache beginned with no condition(s)')
+		end
+		
+		conds = table.concat(conds, ',')
+		local cached = caches[conds]
+		if cached then
+			--条件相同的缓存数据存在，于是直接返回
+			rets[#rets + 1] = cached			
+			return false
+		end
+
+		caches[cc + 1] = { c = conds, s = #rets }
+
+	elseif cc > 0 then
+		--结束。将开始到结束之间的所有代码组合后缓存起来
+		local last = table.remove(caches, cc)
+
+		cc = #rets
+		local k = 1
+		local newtbl = table.new(cc - last.s, 0)
+		for i = last.s + 1, cc do
+			newtbl[k] = rets[i]
+			k = k + 1
+		end
+
+		caches[last.c] = table.concat(newtbl, '')
+		
+	else
+		error('error for closed template cache, not paired with begin')
+	end
+	
+	return true
 end
 
 local renderMethods = {
@@ -42,19 +90,34 @@ local renderMethods = {
 }
 
 viewMeta.__index = {
-	--设置source
-	setSource = function(self, souce)
-		local tp = type(source)
-		if tp == 'string' then
-			rawset(self, 'sourceCode', source)
-		elseif tp == 'table' then
-			rawset(self, 'sourceCode', table.concat(source, ''))
+	--设置/获取source
+	source = function(self, source)
+		if source then
+			local tp = type(source)
+			if tp == 'string' then
+				rawset(self, 'sourceCode', source)
+			elseif tp == 'table' then
+				rawset(self, 'sourceCode', table.concat(source, ''))
+			end
+			return self
 		end
+		return rawget(self, 'sourceCode')
+	end,
+	
+	--启用模板分段缓存
+	enableCache = function(self, cachesTable)
+		if type(cachesTable) ~= 'table' then
+			error('enable template cache must pass a table for cache working')
+		end
+		
+		rawset(self, 'caches', cachesTable)
 		return self
 	end,
-	--获取source
-	source = function(self)
-		return rawget(self, 'sourceCode')
+	--关闭模板分段缓存
+	disableCache = function(self)
+		rawset(self, 'caches', nil)
+		rawset(self, 'cacheiden', nil)
+		return self
 	end,
 	
 	--参数2为所有的模板参数，参数3为nil表示重新渲染并且清除掉上一次的结果，否则将会累加在上一次的结果之后（如果本参数不是true而是string，那么将会做为join字符串放在累加的字符串中间）
@@ -62,14 +125,16 @@ viewMeta.__index = {
 		--如果没有source那么就无法渲染
 		local src = rawget(self, 'sourceCode')
 		if not src then
-			return self
+			error('render view with no source code')
 		end
 		
 		--切换meta
 		local vals = {
 			self = self,
 			reeme = self.__reeme,
-			subtemplate = loadSubtemplate
+			subtemplate = loadSubtemplate,
+			cachesection = setCachesection,
+			__cachesecs__ = rawget(self, 'caches'),
 		}
 		local meta = { __index = vals, __newindex = vals }
 		setmetatable(vals, { __index = _G })
@@ -89,6 +154,10 @@ viewMeta.__index = {
 		end
 		
 		r = m(self, rawget(self, 'finalHTML'), src, env)
+		
+		if vals.__cachesecs__ and #vals.__cachesecs__ > 0 then
+			error('render template with cache(s) not closed')
+		end
 
 		--换回meta
 		if oldMeta then
