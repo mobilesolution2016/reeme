@@ -542,14 +542,11 @@ local modelMeta = {
 			end
 			
 			local l = #value
-			if l > f.maxl then
-				error(string.format("valid value length by field config failed, field name '%s', length is (%u) but max length allowed is (%u)", name, l, f.maxl))
-			end
-			if minlength and l < minlength then
-				error(string.format("valid value length by field config failed, field name '%s', length is (%u) but min length allowed is (%u)", name, l, minlength))
+			if l <= f.maxlen and (not minlength or l >= minlength) then
+				return true
 			end
 			
-			return true
+			return false
 		end,
 		
 		__queryMetaTable = queryMeta

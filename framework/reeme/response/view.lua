@@ -43,8 +43,8 @@ local function setCachesection(isBegin, rets, caches, ...)
 		conds = table.concat(conds, ',')
 		local cached = caches[conds]
 		if cached then
-			--条件相同的缓存数据存在，于是直接返回
-			rets[#rets + 1] = cached			
+			--条件相同的缓存数据存在，于是返回false表示不需要继续解析接下来到cache end之间的代码
+			rets[#rets + 1] = cached
 			return false
 		end
 

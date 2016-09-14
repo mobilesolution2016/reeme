@@ -1980,7 +1980,7 @@ public:
 					if (add == 0)
 					{
 						// ½áÊø
-						buf.append("end\ncachesection(false, __ret__, __cachesecs__)");
+						buf.append("cachesection(false, __ret__, __cachesecs__)\nend");
 					}
 					else
 					{

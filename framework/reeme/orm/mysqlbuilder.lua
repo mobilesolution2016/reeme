@@ -535,7 +535,6 @@ end
 builder.buildKeyValuesSet = function(self, model, sqls, alias)
 	local fieldCfgs = model.__fields
 	local vals, full = self.keyvals, self.fullop
-	local isUpdate = self.op == 'UPDATE' and true or false
 	local keyvals = {}
 
 	if not vals then
@@ -555,11 +554,9 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 					v = nil
 				end
 			elseif v == nil then
-				--值为nil，那么判断是否使用字段的默认值
-				if not isUpdate then
-					if cfg.default then
-						v = cfg.default
-					elseif cfg.null then
+				--值为nil，如果字段没有默认值，则根据字段类型给一个。而update下的话就完全忽略掉
+				if not isUpdate and cfg.default == nil then
+					if cfg.null then
 						v = 'NULL'
 					else
 						v = cfg.type == 1 and "''" or '0'

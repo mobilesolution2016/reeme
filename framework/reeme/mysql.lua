@@ -114,6 +114,7 @@ local mysql = {
 		--事务
 		begin = function(self, db)
 			if db then
+				db:query('SET AUTOCOMMIT=0')
 				db:query('BEGIN')
 			end
 			return self

@@ -214,7 +214,7 @@ const char initcodes[] = {
 	"	end\n"
 	"	return r\n"
 	"end\n"
-	""
+
 	"local ffi = require('ffi')\n"
 	"local reemext = ffi.load('reemext')\n"
 	"_G['ffi'] = ffi\n"
@@ -223,13 +223,34 @@ const char initcodes[] = {
 	"	uint64_t str2uint64(const char* str);\n"
 	"	uint32_t cdataisint64(const char* str, size_t len);\n"
 	"]]\n"
-	"string.int64, string.uint64, string.cdataIsInt64 = reemext.str2int64, reemext.str2uint64, function(str)\n"
-	"	if type(str) == 'cdata' then"
-	"		local s = tostring(str)\n"
-	"		return reemext.cdataisint64(s, #s), s\n"
-	"	end\n"
-	"	return 0\n"
-	"end\n"
+
+	"_G['int64'] = {\n"
+	"	fromstr = reemext.str2int64,\n"
+	"	is = function(str)\n"
+	"		if type(str) == 'cdata' then\n"
+	"			local s = tostring(str)\n"
+	"			return reemext.cdataisint64(s, #s) == 2, s\n"
+	"		end\n"
+	"		return 0\n"
+	"	end,\n"
+	"	make = function(hi, lo)\n"
+	"		return bit.lshift(reemext.str2int64(hi), 32) + lo\n"
+	"	end,\n"
+	"}\n"
+
+	"_G['uint64'] = {\n"
+	"	fromstr = reemext.str2uint64,\n"
+	"	is = function(str)\n"
+	"		if type(str) == 'cdata' then\n"
+	"			local s = tostring(str)\n"
+	"			return reemext.cdataisint64(s, #s) == 3, s\n"
+	"		end\n"
+	"		return 0\n"
+	"	end,\n"
+	"	make = function(hi, lo)\n"
+	"		return bit.lshift(reemext.str2uint64(hi), 32) + lo\n"
+	"	end,\n"
+	"}\n"
 };
 
 
@@ -255,6 +276,7 @@ static void initCommonLib(lua_State* L)
 
 	int r = luaL_dostring(L, initcodes);
 	assert(r == 0);
+	const char* err = lua_tostring(L, -1);
 	
 	lua_getglobal(L, "require");
 	lua_pushliteral(L, "ffi");
