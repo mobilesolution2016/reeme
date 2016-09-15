@@ -770,31 +770,27 @@ private:
 			switch (m_kValType)
 			{
 			case JVTDecimal:
-				str.value.u64 = strtoull(pReadPos, &pEndPos, 10);
+				str.value.u64 = strtoull(pReadPos, &pReadPos, 10);
 				break;
 			case JVTHex:
-				str.value.u64 = strtoull(pReadPos, &pEndPos, 16);
+				str.value.u64 = strtoull(pReadPos, &pReadPos, 16);
 				break;
 			case JVTOctal:
-				str.value.u64 = strtoull(pReadPos, &pEndPos, 8);
+				str.value.u64 = strtoull(pReadPos, &pReadPos, 8);
 				break;
 			case JVTDouble:
-				str.value.dbl = strtod(pReadPos, &pEndPos);
+				str.value.dbl = strtod(pReadPos, &pReadPos);
 				break;
 			}
 
-			pReadPos = pEndPos;
-			if (pEndPos >= m_pMemEnd)
+			if (pReadPos >= m_pMemEnd)
 			{
 				m_iErr = kErrorEnd;
 				return 0;
 			}			
 		}
 
-		if (pEndPos)
-			str.nLength = pEndPos - pStart;
-		else
-			str.nLength = pReadPos - pStart;
+		str.nLength = (pEndPos ? pEndPos : pReadPos) - pStart;
 		if (m_bQuoteStart)
 		{
 			str.nLength --;

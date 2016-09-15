@@ -179,23 +179,28 @@ static int lua_rawhasequal(lua_State* L)
 REEME_API int64_t str2int64(const char* str)
 {
 	char* endp;
-	long long r = strtoll(str, &endp, 10);
-	return r;
+	if (str)
+		return strtoll(str, &endp, 10);
+	return 0;
 }
 
 REEME_API uint64_t str2uint64(const char* str)
 {
 	char* endp;
-	long long r = strtoull(str, &endp, 10);
-	return r;
+	if (str)
+		return strtoull(str, &endp, 10);
+	return 0;
 }
 
 REEME_API uint32_t cdataisint64(const char* str, size_t len)
 {
 	size_t outl;
-	int postfix = cdataValueIsInt64((const uint8_t*)str, len, &outl);
-	if (outl + postfix == len)
-		return postfix;
+	if (str)
+	{
+		int postfix = cdataValueIsInt64((const uint8_t*)str, len, &outl);
+		if (outl + postfix == len)
+			return postfix;
+	}
 	return 0;
 }
 
