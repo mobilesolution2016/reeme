@@ -52,7 +52,6 @@ local mysql = {
 
 			local r = setmetatable({
 				__reeme = reeme,
-				__dbtype = 'mysql',
 				__builder = builder,
 				__name = truename or name,
 				__fields = m.__fields,
@@ -68,6 +67,7 @@ local mysql = {
 			return r
 		end,
 		
+		--使用多个，并以table返回所有被使用的
 		uses = function(self, names, db)
 			local tp = type(names)
 			
@@ -82,6 +82,7 @@ local mysql = {
 					r[n] = self:use(n, db)
 				end
 				return r
+				
 			elseif tp == 'string' then
 				local r = table.new(0, 10)
 				string.split(names, ',', string.SPLIT_ASKEY, r)
@@ -135,6 +136,7 @@ local mysql = {
 		--使用回调的方式执行事务，当事务函数返回true时就会提交，否则就会回滚
 		autocommit = function(self, db, func)
 			if db and func then
+				db:query('SET AUTOCOMMIT=0')
 				db:query('BEGIN')
 				if func() == true then
 					db:query('COMMIT')
@@ -148,8 +150,8 @@ local mysql = {
 		end,
 	},
 	
-	__call = function(self, p1)
-		return self:use(p1)
+	__call = function(self, p1, p2)
+		return self:use(p1, p2)
 	end
 }
 

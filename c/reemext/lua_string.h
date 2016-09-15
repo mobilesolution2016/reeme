@@ -1453,9 +1453,11 @@ static int lua_string_fmt(lua_State* L)
 				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
 				lua_pushvalue(L, cc);
 				lua_pcall(L, 1, 1, 0);
+				val = lua_tolstring(L, -1, &valLen);
 			}
-
-			val = lua_tolstring(L, -1, &valLen);
+			else
+				val = lua_tolstring(L, cc, &valLen);
+			
 			if (!val)
 				return luaL_error(L, "string.fmt #%d expet string but got not string", cc - 1);
 
@@ -2708,6 +2710,7 @@ static int lua_string_json(lua_State* L)
 		}
 
 		lua_newtable(L);
+		top = lua_gettop(L);
 
 		JSONFile f(L);
 		size_t readlen = f.parse(str, len, copy, needSetMarker);
@@ -2719,10 +2722,12 @@ static int lua_string_json(lua_State* L)
 			f.summary(summary, 63);
 			size_t errl = snprintf(err, 512, "JSON parse error: %s, position is approximately at: %s", f.getError(), summary);
 		
+			lua_settop(L, top - 1);
 			lua_pushlstring(L, err, errl);
 			return 1;
 		}
 
+		lua_settop(L, top);
 		lua_pushinteger(L, readlen);
 		return 2;
 	}

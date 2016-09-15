@@ -13,7 +13,7 @@ queryMeta = {
 				end
 			end
 			
-			self.limitStart, self.limitTotal = 0, 50
+			self.limitStart, self.limitTotal = 0, 1
 			return self
 		end,
 		
@@ -225,7 +225,7 @@ queryMeta = {
 				end
 			else
 				local m = self.m
-				db = m.__db or self.R(m.__dbtype .. 'db')
+				db = m.__db or self.R(m.__builder.dbTypeName .. 'db')
 			end
 			if not db then
 				return nil
@@ -247,7 +247,7 @@ queryMeta = {
 				--ngx.say(sqls)
 
 				result = resultPub.init(result, model)
-				res = resultPub.query(result, db, sqls, self.limitTotal or 10)
+				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 			end
 			
 			if setvnil then
@@ -414,11 +414,11 @@ local modelMeta = {
 		
 		--建立一个select查询器
 		query = function(self)
-			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 50 }, queryMeta)
+			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 1 }, queryMeta)
 		end,
 		--建立一个执行表达式的查询器而忽略其它行或列
 		expression = function(self, expr)
-			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 50 }, queryMeta):expr(expr):columns()
+			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 1 }, queryMeta):expr(expr):columns()
 		end,
 		
 		--和find一样，只不过返回的是结果行而非结果集实例，并且在没有任何结果的时候也不会返回Nil而是返回一个空table

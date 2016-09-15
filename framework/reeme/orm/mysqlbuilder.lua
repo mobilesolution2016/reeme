@@ -7,13 +7,14 @@ local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
 local mysqlwords = require('reeme.orm.mysqlwords')
 
 --合并器
-local builder = table.new(0, 24)
+local builder = table.new(0, 32)
 
+--数据库类型名字
+builder.dbTypeName = 'mysql'
 --允许的条件组合方式
 builder.conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }
 --允许的联表方式
 builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN' }
-
 
 --解析一个where条件，本函数被processWhere调用
 builder.parseWhere = function(self, condType, name, value)
