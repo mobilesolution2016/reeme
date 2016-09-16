@@ -29,8 +29,14 @@ local mysql = {
 
 			if not m then			
 				local cfgs = reeme:getConfigs()
+				local modelsDir = cfgs.dirs.modelsDir
+
+				if modelsDir:byte(1) == 47 then
+					m = require(string.format('%s.%s', modelsDir, name))
+				else
+					m = require(string.format('%s.%s.%s', cfgs.dirs.appBaseDir, modelsDir, name))
+				end
 				
-				m = require(string.format('%s.%s.%s', cfgs.dirs.appBaseDir, cfgs.dirs.modelsDir, name))
 				if type(m) ~= 'table' or type(m.fields) ~= 'table' then
 					error(string.format("mysql:use('%s') get a invalid model declaration", name))
 					return nil

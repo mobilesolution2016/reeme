@@ -8,7 +8,7 @@ local function loadTemplateFile(reeme, tpl)
 			local cfgs = reeme:getConfigs()
 			local dirs = cfgs.dirs
 			
-			tpl = string.format("%s/%s/%s/%s%s", dirs.appRootDir, dirs.appBaseDir, dirs.viewsDir, tpl:replace('.', '/'), cfgs.viewFileExt)
+			tpl = string.format("%s/%s/%s/%s%s", ngx.var.APP_ROOT, dirs.appBaseDir, dirs.viewsDir, tpl:replace('.', '/'), cfgs.viewFileExt)
 		else
 			tpl = tpl:sub(2)
 		end

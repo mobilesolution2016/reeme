@@ -556,12 +556,9 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 				end
 			elseif v == nil then
 				--值为nil，如果字段没有默认值，则根据字段类型给一个。而update下的话就完全忽略掉
-				if not isUpdate and cfg.default == nil then
-					if cfg.null then
-						v = 'NULL'
-					else
-						v = cfg.type == 1 and "''" or '0'
-					end
+				if not isUpdate and cfg.default == nil and not cfg.null then
+					v = cfg.type == 1 and "''" or '0'
+					tp = 'string'
 				end
 			elseif v == ngx.null then
 				--NULL值直接设置

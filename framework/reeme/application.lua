@@ -1,4 +1,14 @@
 local configs = nil
+local defConfigs = {
+	dirs = {
+		appBaseDir = 'app',
+		modelsDir = 'models',
+		viewsDir = 'views',
+		controllersDir = 'controllers'
+	},
+	devMode = true,
+	viewFileExt = '.html',
+}
 
 local error_old = error
 function error(e)
@@ -139,21 +149,9 @@ local appMeta = {
 	__index = {
 		init = function(self, cfgs)
 			if not configs then
-				--first in this LuaState
-				
-				if not cfgs then cfgs = { } end
-				if not cfgs.dirs then cfgs.dirs = { } end
-				cfgs.dirs.appRootDir = ngx.var.APP_ROOT
-				if cfgs.devMode == nil then cfgs.devMode = true end
-				if cfgs.viewFileExt == nil then cfgs.viewFileExt = '.html' end
-				if not cfgs.dirs.appBaseDir then cfgs.dirs.appBaseDir = 'app' end
-				if not cfgs.dirs.modelsDir then cfgs.dirs.modelsDir = 'models' end
-				if not cfgs.dirs.viewsDir then cfgs.dirs.viewsDir = "views" end
-				if not cfgs.dirs.controllersDir then cfgs.dirs.controllersDir = 'controllers' end
-				
-				configs = cfgs
+				configs = defConfigs
+				table.extend(configs, cfgs)
 			end
-			
 			return self
 		end,
 		

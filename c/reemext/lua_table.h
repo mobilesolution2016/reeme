@@ -24,7 +24,7 @@ static int lua_table_clone(lua_State* L)
 
 	if (lua_istable(L, 2))
 	{
-		doTableClone(L, 1, 2, lua_isboolean(L, 3) ? lua_toboolean(L, 3) : 0);
+		doTableClone(L, 2, 1, lua_isboolean(L, 3) ? lua_toboolean(L, 3) : 0);
 		lua_pushvalue(L, 2);		
 	}
 	else
@@ -35,23 +35,51 @@ static int lua_table_clone(lua_State* L)
 	return 1;
 }
 
+static void doTableExtend(lua_State* L, int src, int dst)
+{
+	lua_pushnil(L);
+	while (lua_next(L, src))
+	{
+		if (lua_istable(L, -1))
+		{
+			int newsrc = lua_gettop(L);
+
+			lua_pushvalue(L, -2);
+			lua_gettable(L, 1);
+			if (!lua_istable(L, -1))
+			{
+				lua_pushvalue(L, -3);
+				lua_createtable(L, lua_objlen(L, newsrc), 4);
+
+				doTableExtend(L, newsrc, newsrc + 3);
+				lua_settable(L, dst);				
+			}
+			else
+			{
+				doTableExtend(L, newsrc, newsrc + 1);
+			}
+			lua_pop(L, 2);
+		}
+		else
+		{
+			lua_pushvalue(L, -2);
+			lua_pushvalue(L, -2);
+			lua_settable(L, dst);
+			lua_pop(L, 1);
+		}		
+	}
+}
 static int lua_table_extend(lua_State* L)
 {
 	int n = lua_gettop(L);
+	luaL_checktype(L, 1, LUA_TTABLE);
 
-	for (int i = 2; i < n; ++ i)
+	for (int i = 2; i <= n; ++ i)
 	{
 		if (!lua_istable(L, i))
 			continue;
 
-		lua_pushnil(L);
-		while (lua_next(L, i))
-		{
-			lua_pushvalue(L, -2);
-			lua_pushvalue(L, -2);
-			lua_settable(L, 1);
-			lua_pop(L, 1);
-		}
+		doTableExtend(L, i, 1);
 	}
 
 	lua_pushvalue(L, 1);
