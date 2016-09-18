@@ -5,6 +5,7 @@ local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
 local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
 local mysqlwords = require('reeme.orm.mysqlwords')
+local reemext = ffi.load('reemext')
 
 --合并器
 local builder = table.new(0, 32)
@@ -579,7 +580,8 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 				end
 			elseif tp == 'cdata' then
 				--cdata类型，检测是否是boxed int64
-				local i64type, newv = string.cdataIsInt64(v)
+				local s = tostring(v)
+				local i64type, newv = reemext.cdataisint64(s, #s), s
 				if i64type > 0 then
 					v = newv:sub(1, #newv - i64type)
 				else
