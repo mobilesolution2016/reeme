@@ -35,7 +35,6 @@ builder.parseWhere = function(self, condType, name, value)
 	while true do
 		--找到第一个不是mysql函数的名字时停止
 		keyname, findpos = name:findvarname(findpos)
-		--ngx.say(keyname, ',', findpos, '<br/>')
 		if not keyname then
 			keyname = nil
 			break
@@ -190,7 +189,7 @@ end
 
 --解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
 builder.processTokenedString = function(self, alias, expr, joinFrom)
-	if #alias == 0 then
+	if #alias == 0 or expr == '(' or expr == ')' then
 		return expr
 	end
 
@@ -541,6 +540,9 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 
 	if not vals then
 		vals = self
+	elseif type(vals) == 'string' then
+		sqls[#sqls + 1] = vals
+		return 1
 	end
 
 	for name,_ in pairs(self.colSelects == nil and model.__fields or self.colSelects) do

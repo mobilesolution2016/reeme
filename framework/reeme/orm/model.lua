@@ -149,6 +149,9 @@ queryMeta = {
 			
 			return self
 		end,
+		inner = join,
+		left = function(self, query) return self:join(query, 'left') end,
+		right = function(self, query) return self:join(query, 'right') end,
 		
 		--设置表的表名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
 		alias = function(self, name)
@@ -241,13 +244,11 @@ queryMeta = {
 			local sqls = self.builder[self.op](self, model, db)
 			
 			if sqls then			
-				--if self.debugMode then
-					self.lastSql = sqls
-				--end
-				--ngx.say(sqls)
-
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
+				
+				self.lastSql = sqls
+				--print(sqls, '(', res and res.insert_id or res.affected_rows, tostring(db), ')')
 			end
 			
 			if setvnil then
@@ -485,9 +486,8 @@ local modelMeta = {
 		end,
 		--建立一个update查询器，必须给出要更新的值的集合
 		update = function(self, vals, where)
-			if type(vals) == 'table' then
-				return setmetatable({ m = self, R = self.__reeme, op = 'UPDATE', builder = self.__builder, keyvals = vals, __where = where }, queryMeta)
-			end
+			assert(type(vals) == 'table' or type(vals) == 'string')
+			return setmetatable({ m = self, R = self.__reeme, op = 'UPDATE', builder = self.__builder, keyvals = vals, __where = where }, queryMeta)
 		end,
 		
 		--按名称字段配置

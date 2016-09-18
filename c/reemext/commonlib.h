@@ -182,16 +182,24 @@ static int lua_rawhasequal(lua_State* L)
 REEME_API int64_t str2int64(const char* str)
 {
 	char* endp;
-	if (str)
-		return strtoll(str, &endp, 10);
+	if (str && str[0])
+	{
+		int64_t v = strtoll(str, &endp, 10);
+		if (!endp[0])
+			return v;
+	}
 	return 0;
 }
 
 REEME_API uint64_t str2uint64(const char* str)
 {
 	char* endp;
-	if (str)
-		return strtoull(str, &endp, 10);
+	if (str && str[0])
+	{
+		uint64_t v = strtoull(str, &endp, 10);
+		if (!endp[0])
+			return v;
+	}
 	return 0;
 }
 
@@ -309,8 +317,8 @@ const char initcodes[] = {
 	"		local len = reemext.opt_u64toa(v, int64Buf)\n"
 	"		return ffi.string(int64Buf, len)\n"
 	"	end,\n"
-	"	tohexstr = function(v)\n"
-	"		local len = reemext.opt_u64toa_hex(v, int64Buf)\n"
+	"	tohex = function(v, upcase)\n"
+	"		local len = reemext.opt_u64toa_hex(v, int64Buf, upcase or true)\n"
 	"		return ffi.string(int64Buf, len, true)\n"
 	"	end,\n"
 	"	value = reemext.ltud2uint64\n"

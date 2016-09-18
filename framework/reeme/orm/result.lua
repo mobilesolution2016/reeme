@@ -205,7 +205,15 @@ resultMeta.__index = {
 	
 	clone = function(self, fieldnames, newvals)
 		local m = rawget(self, -10000)
-		return m and m:new(self, fieldnames, newvals) or nil
+		if m then
+			local r, vt = nil, type(newvals)
+			if vt == 'table' then
+				r = m:new(self, fieldnames, newvals)
+			elseif vt == 'function' then
+				r = newvals(m:new(self, fieldnames))
+			end
+			return r
+		end
 	end
 }
 

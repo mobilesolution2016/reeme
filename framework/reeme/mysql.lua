@@ -51,24 +51,34 @@ local mysql = {
 				models[idxName] = m
 			end
 			
-			local tbname = string.plainfind(name, '.')
-			if tbname then
-				name = name:sub(tbname + 1)
+			--库名和表名
+			local dbname, tbname = string.plainfind(name, '.'), name
+			if dbname then
+				tbname = name:sub(dbname + 1)
 			end
 
 			local r = setmetatable({
 				__reeme = reeme,
 				__builder = builder,
-				__name = truename or name,
+				__name = truename or tbname,
 				__fields = m.__fields,
 				__fieldsPlain = m.__fieldsPlain,
 				__fieldIndices = m.__fieldIndices,
-				__db = self.__defdb
 			}, modelmeta)
-
+			
+			--优先使用参数给定的库/库名，如果不存在就判断是否模型名称指定了库名，如果未指定或库不存在，那么就使用默认的db
 			if db then
-				r.__db = type(db) == 'string' and reeme(db) or db
+				if type(db) == 'string' then
+					db = reeme(db)
+				end
+				if not db and dbname then
+					db = reeme(name:sub(1, dbname - 1))
+				end
+			elseif dbname then
+				db = reeme(name:sub(1, dbname - 1))
 			end
+			
+			r.__db = db or self.__defdb
 
 			return r
 		end,
@@ -120,22 +130,48 @@ local mysql = {
 		
 		--事务
 		begin = function(self, db)
-			if db then
+			if type(db) == 'string' then
+				db = self.R(db)
+				if not db then
+					return self
+				end
+			elseif not db then
+				db = self.__defdb
+			end
+			
+			if db and not self.transaction[db] then
+				self.transaction[db] = 1
+				
 				db:query('SET AUTOCOMMIT=0')
 				db:query('BEGIN')
 			end
+			
 			return self
 		end,
 		commit = function(self, db)
 			if db then
 				db:query('COMMIT')
+				self.transaction[db] = nil
+			else
+				for v,_ in pairs(self.transaction) do
+					v:query('COMMIT')
+				end
+				self.transaction = {}
 			end
+			
 			return self
 		end,
 		rollback = function(self, db)
 			if db then
 				db:query('ROLLBACK')
+				self.transaction[db] = nil
+			else
+				for v,_ in pairs(self.transaction) do
+					v:query('ROLLBACK')
+				end
+				self.transaction = {}
 			end
+			
 			return self
 		end,
 		
@@ -162,5 +198,5 @@ local mysql = {
 }
 
 return function(reeme)
-	return setmetatable({ R = reeme }, mysql)
+	return setmetatable({ R = reeme, transaction = {} }, mysql)
 end
