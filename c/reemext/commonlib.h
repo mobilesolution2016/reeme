@@ -112,9 +112,12 @@ static int lua_toboolean(lua_State* L)
 		cc = 1;
 		break;
 
+	case LUA_TNONE:
+		break;
+
 	default:
 		if (!strict)
-			cc = 1;
+			r = cc = 1;
 		break;
 	}
 
@@ -192,6 +195,26 @@ REEME_API uint64_t str2uint64(const char* str)
 	return 0;
 }
 
+REEME_API int64_t double2int64(double dbl)
+{
+	return dbl;
+}
+
+REEME_API uint64_t double2uint64(double dbl)
+{
+	return dbl;
+}
+
+REEME_API int64_t ltud2int64(void* p)
+{
+	return (int64_t)p;
+}
+
+REEME_API uint64_t ltud2uint64(void* p)
+{
+	return (uint64_t)p;
+}
+
 REEME_API uint32_t cdataisint64(const char* str, size_t len)
 {
 	size_t outl;
@@ -222,42 +245,94 @@ const char initcodes[] = {
 
 	"local ffi = require('ffi')\n"
 	"local reemext = ffi.load('reemext')\n"
-	"_G['ffi'] = ffi\n"
+	"local int64Buf = ffi.new('char[?]', 32)"
+	
 	"ffi.cdef[[\n"
 	"	int64_t str2int64(const char* str);\n"
 	"	uint64_t str2uint64(const char* str);\n"
 	"	uint32_t cdataisint64(const char* str, size_t len);\n"
-	"]]\n"
+	"	int64_t double2int64(double dbl);\n"
+	"	uint64_t double2uint64(double dbl);\n"
+	"	int64_t ltud2int64(void* p);\n"
+	"	uint64_t ltud2uint64(void* p);\n"
+	"	size_t opt_i64toa(int64_t value, char* buffer);\n"
+	"	size_t opt_u64toa(uint64_t value, char* buffer);\n"
+	"	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);\n"
+	"]]\n"	
 
-	"_G['int64'] = {\n"
+	"local int64construct = function(a, b)\n"
+	"	local t = type(a)\n"
+	"	if t == 'string' then a = reemext.str2int64(a)\n"
+	"	elseif t == 'number' then a = reemext.double2int64(a)\n"
+	"	elseif t == 'lightuserdata' then a = reemext.ltud2int64(a)\n"
+	"	elseif t ~= 'cdata' then return error('error construct value by int64') end\n"
+	"	if b then\n"
+	"		t = type(b)\n"
+	"		if t == 'string' then b = reemext.str2int64(b)\n"
+	"		elseif t == 'number' then a = reemext.double2int64(b)\n"
+	"		elseif t == 'lightuserdata' then b = reemext.ltud2int64(b)\n"
+	"		elseif t ~= 'cdata' then return error('error construct value by int64') end\n"
+	"		return bit.lshift(a, 32) + b\n"
+	"	end\n"
+	"	return a\n"
+	"end\n"
+
+	"local int64 = {\n"
 	"	fromstr = reemext.str2int64,\n"
 	"	is = function(str)\n"
 	"		if type(str) == 'cdata' then\n"
 	"			local s = tostring(str)\n"
-	"			return reemext.cdataisint64(s, #s) == 2, s\n"
+	"			return reemext.cdataisint64(s, #s) >= 2, s\n"
 	"		end\n"
-	"		return 0\n"
+	"		return false\n"
 	"	end,\n"
-	"	make = function(hi, lo)\n"
-	"		return bit.lshift(reemext.str2int64(hi), 32) + lo\n"
+	"	tostr = function(v)\n"
+	"		local len = reemext.opt_i64toa(v, int64Buf)\n"
+	"		return ffi.string(int64Buf, len)\n"
 	"	end,\n"
+	"	value = reemext.ltud2int64\n"
 	"}\n"
 
-	"_G['uint64'] = {\n"
+	"local uint64 = {\n"
 	"	fromstr = reemext.str2uint64,\n"
 	"	is = function(str)\n"
 	"		if type(str) == 'cdata' then\n"
 	"			local s = tostring(str)\n"
 	"			return reemext.cdataisint64(s, #s) == 3, s\n"
 	"		end\n"
-	"		return 0\n"
+	"		return false\n"
 	"	end,\n"
 	"	make = function(hi, lo)\n"
-	"		return bit.lshift(reemext.str2uint64(hi), 32) + lo\n"
+	"		return bit.lshift(hi, 32) + lo\n"
 	"	end,\n"
+	"	tostr = function(v)\n"
+	"		local len = reemext.opt_u64toa(v, int64Buf)\n"
+	"		return ffi.string(int64Buf, len)\n"
+	"	end,\n"
+	"	tohexstr = function(v)\n"
+	"		local len = reemext.opt_u64toa_hex(v, int64Buf)\n"
+	"		return ffi.string(int64Buf, len, true)\n"
+	"	end,\n"
+	"	value = reemext.ltud2uint64\n"
 	"}\n"
+
+	"_G['int64'], _G['uint64'], _G['ffi'] = setmetatable(int64, { __call = function(self, a, b) return int64construct(a, b) end }),"
+	"										setmetatable(uint64, { __call = function(self, a, b) return int64construct(a, b) end }),"
+	"										ffi\n"
 };
 
+static int lua_uint64_tolightuserdata(lua_State* L)
+{
+	const uint64_t* p = (const uint64_t*)lua_topointer(L, 1);
+	if (p)
+	{
+		lua_pushlightuserdata(L, (void*)p[0]);
+		return 1;
+	}
+
+	luaL_checktype(L, 1, LUA_TCDATA);
+	return 0;
+}
 
 static void initCommonLib(lua_State* L)
 {
@@ -267,6 +342,7 @@ static void initCommonLib(lua_State* L)
 	luaext_table(L);
 	luaext_utf8str(L);
 
+	// 新增几个全局函数
 	lua_pushcfunction(L, &lua_toboolean);
 	lua_setglobal(L, "toboolean");
 
@@ -279,10 +355,23 @@ static void initCommonLib(lua_State* L)
 	lua_pushcfunction(L, &lua_rawhasequal);
 	lua_setglobal(L, "rawhasequal");
 
+	// 使用Lua代码新增几个库
 	int r = luaL_dostring(L, initcodes);
 	assert(r == 0);
-	const char* err = lua_tostring(L, -1);
+	//const char* err = lua_tostring(L, -1);
+
+	// 为int64/uint64增加一个key函数，用于转换不固定的cdata值为void*值，以便为索引使用
+	lua_getglobal(L, "int64");
+	lua_pushcfunction(L, &lua_uint64_tolightuserdata);
+	lua_setfield(L, -2, "key");
+
+	lua_getglobal(L, "uint64");
+	lua_pushcfunction(L, &lua_uint64_tolightuserdata);
+	lua_setfield(L, -2, "key");
+
+	lua_pop(L, 2);
 	
+	// 引用一部分ffi函数
 	lua_getglobal(L, "require");
 	lua_pushliteral(L, "ffi");
 	lua_pcall(L, 1, 1, 0);

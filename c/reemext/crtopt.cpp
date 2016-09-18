@@ -6,6 +6,8 @@
 #include <memory.h>
 #include <cassert>
 #include <math.h>
+#include "preheader.h"
+#include "crtopt.h"
 
 #if defined(i386) || defined(__amd64) || defined(_M_IX86) || defined(_M_X64)
 #	define ITOA_SSE_OPT
@@ -107,7 +109,7 @@ inline __m128i ShiftDigits_SSE2(__m128i a, unsigned digit) {
     return a; // should not execute here.
 }
 
-size_t opt_u32toa(uint32_t value, char* dst) {
+extern "C" size_t opt_u32toa(uint32_t value, char* dst) {
 	char* buffer = dst;
     if (value < 10000) {
         const uint32_t d1 = (value / 100) << 1;
@@ -170,7 +172,7 @@ size_t opt_u32toa(uint32_t value, char* dst) {
 	return buffer - dst;
 }
 
-size_t opt_u64toa(uint64_t value, char* dst) {
+extern "C" size_t opt_u64toa(uint64_t value, char* dst) {
 	char* buffer = dst;
     if (value < 100000000) {
         uint32_t v = static_cast<uint32_t>(value);
@@ -280,7 +282,7 @@ size_t opt_u64toa(uint64_t value, char* dst) {
 
 #else	// ITOA_SSE_OPT
 
-size_t opt_u32toa(uint32_t value, char* dst) {
+extern "C" size_t opt_u32toa(uint32_t value, char* dst) {
 	char* buffer = dst;
     if (value < 10000) {
         const uint32_t d1 = (value / 100) << 1;
@@ -353,7 +355,7 @@ size_t opt_u32toa(uint32_t value, char* dst) {
     return buffer - dst;
 }
 
-size_t opt_u64toa(uint64_t value, char* dst) {
+extern "C" size_t opt_u64toa(uint64_t value, char* dst) {
 	char* buffer = dst;
     if (value < 100000000) {
         uint32_t v = static_cast<uint32_t>(value);
@@ -879,7 +881,7 @@ inline int Prettify(char* buffer, int length, int k) {
 	return length + WriteExponent(kk - 1, &buffer[length]);
 }
 
-size_t opt_dtoa(double value, char* dst) 
+extern "C" size_t opt_dtoa(double value, char* dst)
 {
 	// Not handling NaN and inf
 	assert(!isnan(value));
@@ -904,4 +906,95 @@ size_t opt_dtoa(double value, char* dst)
 	length = Prettify(buffer, length, K);
 
 	return buffer - dst + length;
+}
+
+//////////////////////////////////////////////////////////////////////////
+extern "C" size_t opt_i32toa(int32_t value, char* buffer)
+{
+	uint32_t u = static_cast<uint32_t>(value);
+	if (value < 0)
+	{
+		*buffer ++ = '-';
+		u = ~u + 1;
+
+		return opt_u32toa(u, buffer) + 1;
+	}
+
+	return opt_u32toa(u, buffer);
+}
+
+extern "C" size_t opt_i64toa(int64_t value, char* buffer)
+{
+	uint64_t u = static_cast<uint64_t>(value);
+	if (value < 0)
+	{
+		*buffer ++ = '-';
+		u = ~u + 1;
+
+		return opt_u64toa(u, buffer) + 1;
+	}
+
+	return opt_u64toa(u, buffer);
+}
+
+extern "C" size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase)
+{
+	const char upperChars[] = { "0123456789ABCDEF" };
+	const char lowerChars[] = { "0123456789abcdef" };
+
+	char* buffer = dst;
+	int32_t endt = 32, i;
+	uint32_t mask = 0xF0000000;
+
+	do
+	{
+		if (value & mask)
+			break;
+		mask >>= 4;
+		endt -= 4;
+	} while (mask != 0);
+
+	if (useUpperCase)
+	{
+		for (i = endt - 4; i >= 0; i -= 4)
+			*buffer ++ = upperChars[value >> i & 0xF];
+	}
+	else
+	{
+		for (i = endt - 4; i >= 0; i -= 4)
+			*buffer ++ = lowerChars[value >> i & 0xF];
+	}
+
+	return buffer - dst;
+}
+
+extern "C" size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase)
+{
+	const char upperChars[] = { "0123456789ABCDEF" };
+	const char lowerChars[] = { "0123456789abcdef" };
+
+	char* buffer = dst;
+	int32_t endt = 64, i;
+	uint64_t mask = 0xF000000000000000;
+
+	do
+	{
+		if (value & mask)
+			break;
+		mask >>= 4;
+		endt -= 4;
+	} while (mask != 0);
+
+	if (useUpperCase)
+	{
+		for (i = endt - 4; i >= 0; i -= 4)
+			*buffer ++ = upperChars[value >> i & 0xF];
+	}
+	else
+	{
+		for (i = endt - 4; i >= 0; i -= 4)
+			*buffer ++ = lowerChars[value >> i & 0xF];
+	}
+
+	return buffer - dst;
 }

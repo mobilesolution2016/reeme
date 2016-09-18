@@ -510,6 +510,7 @@ static void luaValueFromBuf(lua_State* L, LuaValueMemoryBlock& block, bool bIsTa
 
 static int lua_table_serialize(lua_State* L)
 {
+	// not completed yet ...
 	luaL_checktype(L, 1, LUA_TTABLE);
 
 	size_t count = 0;
@@ -598,6 +599,7 @@ static int lua_table_serialize(lua_State* L)
 
 static int lua_table_unserialize(lua_State* L)
 {
+	// not completed yet ...
 	return 0;
 }
 

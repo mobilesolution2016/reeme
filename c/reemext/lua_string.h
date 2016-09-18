@@ -1463,8 +1463,8 @@ static int lua_string_fmt(lua_State* L)
 
 			if (tp == LUA_TCDATA)
 			{
-				if (cdataValueIsInt64((const uint8_t*)val, valLen, &valLen))
-					lua_string_addbuf(pBuf, val, valLen);
+				cdataValueIsInt64((const uint8_t*)val, valLen, &valLen);
+				lua_string_addbuf(pBuf, val, valLen);
 			}
 			else if (len > 0)
 			{
