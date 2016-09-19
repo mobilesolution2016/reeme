@@ -183,11 +183,7 @@ REEME_API int64_t str2int64(const char* str)
 {
 	char* endp;
 	if (str && str[0])
-	{
-		int64_t v = strtoll(str, &endp, 10);
-		if (!endp[0])
-			return v;
-	}
+		return strtoll(str, &endp, 10);
 	return 0;
 }
 
@@ -196,9 +192,9 @@ REEME_API uint64_t str2uint64(const char* str)
 	char* endp;
 	if (str && str[0])
 	{
-		uint64_t v = strtoull(str, &endp, 10);
-		if (!endp[0])
-			return v;
+		if (str[0] == '0' && str[1] == 'x')
+			return strtoull(str + 2, &endp, 16);
+		return strtoull(str, &endp, 10);
 	}
 	return 0;
 }

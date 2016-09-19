@@ -2,7 +2,7 @@ local validTypes = { s = 1, i = 2, n = 3, b = 4, d = 5, t = 6, e = 7 }
 local validIndex = { primary = 1, unique = 2, index = 3 }
 
 return {
-	parseFields = function(m)
+	parseFields = function(m, modelName)
 		local aiExists = false
 		local fields, plains, indices = {}, {}, {}
 		
@@ -17,7 +17,7 @@ return {
 				elseif first == 42 then --*
 					v = v:sub(2)
 					if aiExists then
-						error('find the second auto-increasement field')
+						error(string.format('use(%s) find the second auto-increasement field', modelName))
 					end
 					
 					aiExists = true
@@ -26,25 +26,25 @@ return {
 				
 				first = v:byte(2)
 				if first ~= 40 then
-					error(string.format('syntax error, expet a ( after type when parse field "%s"', k))
+					error(string.format('use(%s) syntax error, expet a ( after type when parse field "%s"', modelName, k))
 				end
 
 				--类型值
 				local t = validTypes[v:sub(1, 1)]
 				if not t then
-					return string.format('the data type [%s] of field(%s) is invalid', v:sub(1, 1), k) 
+					return string.format('use(%s) the data type [%s] of field(%s) is invalid', modelName, v:sub(1, 1), k) 
 				end
 				
 				--默认值开始位置
 				local defv = string.plainfind(v, ')', 3)
 				if not defv then
-					error(string.format('syntax error, expet a ) before default value when parse field "%s"', k))
+					error(string.format('use(%s) syntax error, expet a ) before default value when parse field "%s"', modelName, k))
 				end
 				
 				--括号里面的定义
 				local decl = v:sub(3, defv - 1)
 				if not decl or #decl < 1 then
-					error(string.format('syntax error, expet declaration in t(...) when parse field "%s"', k))
+					error(string.format('use(%s) syntax error, expet declaration in t(...) when parse field "%s"', modelName, k))
 				end
 
 				--取出默认值
@@ -78,7 +78,7 @@ return {
 
 					--检测默认值是否合法
 					if defv and not newf.enums[defv] then
-						error(string.format('error default enum value when parse field "%s", value "%s" not in declarations', k, defv))
+						error(string.format('use(%s) error default enum value when parse field "%s", value "%s" not in declarations', modelName, k, defv))
 					end
 				end
 				
@@ -101,14 +101,14 @@ return {
 			for k,v in pairs(m.indices) do
 				local tp = validIndex[v]
 				if tp ~= nil then
-					local cfg = fields[k]				
-					local idx = { type = tp }
-					
-					if cfg and cfg.ai then
-						idx.autoInc = true
+					local cfg = fields[k]
+					if not cfg then
+						error(string.format('use(%s) error index configuration because field name "%s" not exists', modelName, k))
 					end
 					
-					indices[k] = idx
+					indices[k] = { type = tp, autoInc = cfg.ai }
+				else
+					error(string.format('use(%s) error index type "%s"', modelName, v))
 				end
 			end
 		end

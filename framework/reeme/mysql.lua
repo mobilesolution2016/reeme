@@ -42,7 +42,7 @@ local mysql = {
 					return nil
 				end			
 
-				local err = parseFields(m)
+				local err = parseFields(m, name)
 				if err ~= true then
 					error(string.format("mysql:use('%s') parse failed: %s", name, err))
 					return nil
@@ -172,6 +172,10 @@ local mysql = {
 				self.transaction = {}
 			end
 			
+			return self
+		end,
+		cancel = function(self)
+			self.transaction = {}
 			return self
 		end,
 		

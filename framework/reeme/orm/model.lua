@@ -513,9 +513,9 @@ local modelMeta = {
 		end,
 		--寻找自增字段如果找到返回其配置否则返回nil
 		findAutoIncreasementField = function(self)
-			for n,f in pairs(self.__fields) do
-				if f.ai then
-					return f
+			for n,f in pairs(self.__fieldIndices) do
+				if f.autoInc then
+					return self.__fields[n]
 				end
 			end
 		end,
