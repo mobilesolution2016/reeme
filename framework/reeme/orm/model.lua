@@ -62,10 +62,10 @@ queryMeta = {
 		end,
 		
 		--设置调试
-		--[[debug = function(self, dbg)
+		debug = function(self, dbg)
 			self.debugMode = dbg
 			return self
-		end,]]
+		end,
 		
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列
 		columns = function(self, names)
@@ -250,7 +250,13 @@ queryMeta = {
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 				
 				self.lastSql = sqls
-				--print(sqls, '(', res and res.insert_id or res.affected_rows, tostring(db), ')')
+				if self.debugMode then
+					if res then
+						print(sqls, ':insertid=', tostring(res.insert_id), 'affected=', res.affected_rows)
+					else
+						print(sqls)
+					end
+				end
 			end
 			
 			if setvnil then

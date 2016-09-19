@@ -22,14 +22,18 @@ builder.parseWhere = function(self, condType, name, value)
 	self.condString = nil	--condString和condValues同一时间只会存在一个，只有一个是可以有效的
 	if not self.condValues then
 		self.condValues = {}
-	end
-
-	name = name:trim()
+	end	
 	
 	if value == nil then
 		--name就是整个表达式
 		return { expr = name, c = condType }
 	end
+	if name == nil and value then
+		--value就是整个表达式
+		return { expr = value, c = condType }
+	end
+	
+	name = name:trim()
 	
 	local keyname, puredkeyname, findpos = nil, false, 1
 	while true do
@@ -129,14 +133,26 @@ end
 builder.processWhere = function(self, condType, k, v)
 	local tp = type(k)
 	if tp == 'table' then
-		for name,val in pairs(k) do
-			local where = builder.parseWhere(self, condType, name, val)
-			if where then
-				self.condValues[#self.condValues + 1] = where
-			else
-				error(string.format("call where(%s) function with illegal value(s) call", name))
+		if #k > 0 then
+			for i = 1, #k do
+				local where = builder.parseWhere(self, condType, nil, k[i])
+				if where then
+					self.condValues[#self.condValues + 1] = where
+				else
+					error(string.format("call where(%s) function with illegal value(s) call", k[i]))
+				end
+			end
+		else
+			for name,val in pairs(k) do
+				local where = builder.parseWhere(self, condType, name, val)
+				if where then
+					self.condValues[#self.condValues + 1] = where
+				else
+					error(string.format("call where(%s) function with illegal value(s) call", name))
+				end
 			end
 		end
+		
 		return self
 	end
 	
@@ -170,16 +186,31 @@ builder.processOn = function(self, condType, k, v)
 		end
 
 	elseif tp == 'table' then
-		for name,val in pairs(k) do
-			local where = builder.parseWhere(self, condType, name, val)
-			if where then
-				if not self.onValues then
-					self.onValues = { where }
+		if #k > 0 then
+			for i = 1, #k do
+				local where = builder.parseWhere(self, condType, nil, k[i])
+				if where then
+					if not self.onValues then
+						self.onValues = { where }
+					else
+						self.onValues[#self.onValues + 1] = where
+					end
 				else
-					self.onValues[#self.onValues + 1] = where
+					error(string.format("process on(%s) function call failed: illegal value or confilict with declaration of model fields", k[i]))
 				end
-			else
-				error(string.format("process on(%s) function call failed: illegal value or confilict with declaration of model fields", name))
+			end
+		else
+			for name,val in pairs(k) do
+				local where = builder.parseWhere(self, condType, name, val)
+				if where then
+					if not self.onValues then
+						self.onValues = { where }
+					else
+						self.onValues[#self.onValues + 1] = where
+					end
+				else
+					error(string.format("process on(%s) function call failed: illegal value or confilict with declaration of model fields", name))
+				end
 			end
 		end
 	end
