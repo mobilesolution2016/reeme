@@ -284,6 +284,9 @@ local appMeta = {
 				--执行动作
 				if c and mth then
 					r = mth(c)
+					if r == nil then
+						r = c.actionReturned
+					end
 				elseif self.missmatchProc then
 					self.missmatchProc(self, path, act)
 					r = nil

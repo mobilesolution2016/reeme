@@ -470,12 +470,15 @@ static int lua_string_plainfind(lua_State* L)
 	{
 		long t = luaL_optinteger(L, 3, 0);
 		if (t > 0 && t <= len)
-			s += t - 1;
+		{
+			t --;
+			s += t;
+		}
 
 		f = len2 > 1 ? std::strstr(s, f) : std::strchr(s, f[0]);
 		if (f)
 		{
-			lua_pushinteger(L, f - s + 1);
+			lua_pushinteger(L, f - s + t + 1);
 			return 1;
 		}
 	}
@@ -494,12 +497,15 @@ static int lua_string_rfindchar(lua_State* L)
 	{
 		long t = luaL_optinteger(L, 3, 0);
 		if (t > 0 && t <= len)
-			s += t - 1;
+		{
+			t --;
+			s += t;
+		}
 
 		f = std::strrchr(s, f[0]);
 		if (f)
 		{
-			lua_pushinteger(L, f - s + 1);
+			lua_pushinteger(L, f - s + t + 1);
 			return 1;
 		}
 	}

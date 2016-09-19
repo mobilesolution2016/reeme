@@ -548,6 +548,31 @@ local modelMeta = {
 			
 			return false
 		end,
+
+		--验证给定的值是否是enum字段配置的许可值
+		validenum = function(self, name, value)
+			local f = self.__fields[name]
+			if not f or not f.enums then
+				error(string.format("valid enum value by field config failed, field name '%s' not exists or not a enum field", name))
+			end
+			if type(value) ~= 'string' then
+				if value == nil then
+					error(string.format("valid enum value by field config failed, field name '%s', value is nil", name))
+				end
+				value = tostring(value)
+			end
+
+			if f.enums[value] then
+				return true
+			end
+			
+			if value:byte(1) ~= 39 or value:byte(#value - 1) ~= 39 then
+				value = string.format("'%s'", value)
+				return f.enums[value] and true or false
+			end
+			
+			return false
+		end,
 		
 		__queryMetaTable = queryMeta
 	}
