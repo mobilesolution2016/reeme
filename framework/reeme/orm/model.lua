@@ -19,6 +19,7 @@ queryMeta = {
 		
 		--设置条件
 		where = function(self, name, val)
+			self.condValues = nil
 			return self.builder.processWhere(self, 1, name, val)
 		end,
 		andWhere = function(self, name, val)
@@ -40,6 +41,7 @@ queryMeta = {
 		
 		--设置join on条件
 		on = function(self, name, val)
+			self.onValues = nil
 			return self.builder.processOn(self, 1, name, val)
 		end,
 		andOn = function(self, name, val)
@@ -455,10 +457,9 @@ local modelMeta = {
 		end,
 		--和findFirst一样，但是仅查找第1行的指定的某1列，返回的将是一个所有行的这一列组成的一个新table(注意不是结果集实例)，并在没有结果集的时候并不会返回nil
 		findAllFirst = function(self, colname, name, val)
-			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
-			
+			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)			
 			if name then q:where(name, val) end
-			return q:fetchAllFirst(colname, name, val)
+			return q:fetchAllFirst(colname)
 		end,
 		
 		--和find一样但是仅查找第1行，其实就是find加上limit(1)
