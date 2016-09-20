@@ -314,10 +314,97 @@ protected:
 		pt[0] = v;
 	}
 
-	JSONAttribute* getTmpAttr()
+	inline JSONAttribute* getTmpAttr()
 	{
 		memset(&m_commonAttr, 0, sizeof(m_commonAttr));
 		return &m_commonAttr;
+	}
+
+	static inline uint32_t readUnicode(const char* p)
+	{
+		uint32_t code = 0;
+		for (uint32_t i = 0, shift = 12; i < 4; ++ i, shift -= 4)
+		{
+			uint8_t ch = p[i];
+			switch (json_value_char_tbl[ch])
+			{
+			case 1: code |= (ch - '0') << shift; break;
+			case 4: code |= (ch - 'a' + 10) << shift; break;
+			case 6: code |= (ch - 'A' + 10) << shift; break;
+			}
+		}
+
+		return code;
+	}
+
+	static inline uint32_t unicode2utf8(uint32_t wchar)
+	{
+		if (wchar < 0xC0)
+			return 1;
+		if (wchar < 0x800)
+			return 2;
+		if (wchar < 0x10000)
+			return 3;
+		if (wchar < 0x200000)
+			return 4;
+		//if (wchar < 0x4000000)
+		//	return 5;
+		//if (wchar < 0x80000000)
+		//	return 6;
+
+		return 1;
+	}
+
+	static char* unicode2utf8(uint32_t _wchar, char *_utf8)
+	{
+		char *utf8 = _utf8;
+		uint32_t wchar = _wchar, len = 0;
+
+		if (wchar < 0xC0)
+		{
+			utf8[0] = (char)wchar;
+			len = 1;
+		}
+		else if (wchar < 0x800)
+		{
+			utf8[0] = 0xc0 | (wchar >> 6);
+			utf8[1] = 0x80 | (wchar & 0x3f);
+			len = 2;
+		}
+		else if (wchar < 0x10000)
+		{
+			utf8[0] = 0xe0 | (wchar >> 12);
+			utf8[1] = 0x80 | ((wchar >> 6) & 0x3f);
+			utf8[2] = 0x80 | (wchar & 0x3f);
+			len = 3;
+		}
+		else if (wchar < 0x200000)
+		{
+			utf8[0] = 0xf0 | ((int)wchar >> 18);
+			utf8[1] = 0x80 | ((wchar >> 12) & 0x3f);
+			utf8[2] = 0x80 | ((wchar >> 6) & 0x3f);
+			utf8[3] = 0x80 | (wchar & 0x3f);
+			len = 4;
+		}
+		//else if (wchar < 0x4000000)
+		//{
+		//	utf8[len ++] = 0xf8 | ((int)wchar >> 24);
+		//	utf8[len ++] = 0x80 | ((wchar >> 18) & 0x3f);
+		//	utf8[len ++] = 0x80 | ((wchar >> 12) & 0x3f);
+		//	utf8[len ++] = 0x80 | ((wchar >> 6) & 0x3f);
+		//	utf8[len ++] = 0x80 | (wchar & 0x3f);
+		//}
+		//else if (wchar < 0x80000000)
+		//{
+		//	utf8[len ++] = 0xfc | ((int)wchar >> 30);
+		//	utf8[len ++] = 0x80 | ((wchar >> 24) & 0x3f);
+		//	utf8[len ++] = 0x80 | ((wchar >> 18) & 0x3f);
+		//	utf8[len ++] = 0x80 | ((wchar >> 12) & 0x3f);
+		//	utf8[len ++] = 0x80 | ((wchar >> 6) & 0x3f);
+		//	utf8[len ++] = 0x80 | (wchar & 0x3f);
+		//}
+
+		return utf8 + len;
 	}
 
 public:
@@ -912,94 +999,6 @@ private:
 		}
 
 		return pReadPos;
-	}
-
-	inline uint32_t readUnicode(const char* p)
-	{
-		uint32_t code = 0;
-		for(uint32_t i = 0, shift = 12; i < 4; ++ i, shift -= 4)
-		{
-			uint8_t ch = p[i];
-			uint8_t flag = json_value_char_tbl[ch];
-
-			switch(flag)
-			{
-			case 1: code |= (ch - '0') << shift; break;
-			case 4: code |= (ch - 'a' + 10) << shift; break;
-			case 6: code |= (ch - 'A' + 10) << shift; break;
-			}
-		}
-
-		return code;
-	}
-
-	inline uint32_t unicode2utf8(uint32_t wchar)
-	{
-		if (wchar < 0xC0)
-			return 1;
-		if (wchar < 0x800)
-			return 2;
-		if (wchar < 0x10000)
-			return 3;
-		if (wchar < 0x200000)
-			return 4;
-		//if (wchar < 0x4000000)
-		//	return 5;
-		//if (wchar < 0x80000000)
-		//	return 6;
-
-		return 1;
-	}
-	char* unicode2utf8(uint32_t _wchar, char *_utf8)
-	{	
-		char *utf8 = _utf8;
-		uint32_t wchar = _wchar, len = 0;
-
-		if (wchar < 0xC0)
-		{ 
-			utf8[0] = (char)wchar;
-			len = 1;
-		}
-		else if (wchar < 0x800)
-		{
-			utf8[0] = 0xc0 | (wchar >> 6);
-			utf8[1] = 0x80 | (wchar & 0x3f);
-			len = 2;
-		}
-		else if (wchar < 0x10000)
-		{
-			utf8[0] = 0xe0 | (wchar >> 12);
-			utf8[1] = 0x80 | ((wchar >> 6) & 0x3f);
-			utf8[2] = 0x80 | (wchar & 0x3f);
-			len = 3;
-		}
-		else if (wchar < 0x200000) 
-		{
-			utf8[0] = 0xf0 | ((int)wchar >> 18);
-			utf8[1] = 0x80 | ((wchar >> 12) & 0x3f);
-			utf8[2] = 0x80 | ((wchar >> 6) & 0x3f);
-			utf8[3] = 0x80 | (wchar & 0x3f);
-			len = 4;
-		}
-		//else if (wchar < 0x4000000)
-		//{
-		//	utf8[len ++] = 0xf8 | ((int)wchar >> 24);
-		//	utf8[len ++] = 0x80 | ((wchar >> 18) & 0x3f);
-		//	utf8[len ++] = 0x80 | ((wchar >> 12) & 0x3f);
-		//	utf8[len ++] = 0x80 | ((wchar >> 6) & 0x3f);
-		//	utf8[len ++] = 0x80 | (wchar & 0x3f);
-		//}
-		//else if (wchar < 0x80000000)
-		//{
-		//	utf8[len ++] = 0xfc | ((int)wchar >> 30);
-		//	utf8[len ++] = 0x80 | ((wchar >> 24) & 0x3f);
-		//	utf8[len ++] = 0x80 | ((wchar >> 18) & 0x3f);
-		//	utf8[len ++] = 0x80 | ((wchar >> 12) & 0x3f);
-		//	utf8[len ++] = 0x80 | ((wchar >> 6) & 0x3f);
-		//	utf8[len ++] = 0x80 | (wchar & 0x3f);
-		//}
-
-		return utf8 + len;
 	}
 } ;
 

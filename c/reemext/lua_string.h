@@ -2442,7 +2442,7 @@ public:
 		n->used += len;
 		return ptr;
 	}
-	void escapeJsonString(const char* src, size_t len)
+	void escapeJsonString(const char* src, size_t len, uint32_t flags)
 	{		
 		uint8_t ch, v;
 		uint32_t unicode;
@@ -2459,17 +2459,26 @@ public:
 				continue;
 			}
 
-			if (i > spos)
-				addString(src + spos, i - spos);
-
 			if (v == 1)
 			{
 				// escape some chars
+				if (i > spos)
+					addString(src + spos, i - spos);
 				addChar2('\\', ch);
 				spos = ++ i;
 			}
 			else if (v == 2)
 			{
+				if (flags & kJsonUnicodes)
+				{
+					// defered
+					++ i;
+					continue;
+				}
+
+				if (i > spos)
+					addString(src + spos, i - spos);
+
 				// check utf8
 				uint8_t* utf8src = (uint8_t*)src + i;
 				if ((ch & 0xE0) == 0xC0)
@@ -2511,6 +2520,8 @@ public:
 			else
 			{
 				// invisible(s) to visibled
+				if (i > spos)
+					addString(src + spos, i - spos);
 				addChar2('\\', v);
 				spos = ++ i;
 			}
@@ -2574,7 +2585,7 @@ public:
 			mem->copyLuaString(ptr, len, flags & 0xFFFFFF);\
 		} else {\
 			mem->addChar('"');\
-			mem->escapeJsonString(ptr, len);\
+			mem->escapeJsonString(ptr, len, flags);\
 			mem->addChar('"');\
 		}\
 		break;\
@@ -2886,7 +2897,7 @@ static void luaext_string(lua_State *L)
 
 		// 编译Boyer-Moore子字符串用于查找
 		{ "bmcompile", &lua_string_bmcompile },
-		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串越长性能越优）
+		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串和源字符串越长性能越优）
 		{ "bmfind", &lua_string_bmfind },
 
 		// Json解码（dec时2~4倍性能于ngx所采用的cjson，enc时随table的复杂度1.5~4.5倍性能于cjson，不过这不是关键，关键是本json encode支持boxed 64bit integer以及cdata自动编码为base64等本库才有的扩展能力）
@@ -2907,6 +2918,7 @@ static void luaext_string(lua_State *L)
 	lua_pushinteger(L, kSplitTrim);
 	lua_rawset(L, -3);
 
+	// JSON编码时可用的标志位
 	lua_pushliteral(L, "JSON_NOCOPY");		// 解码时直接在原字符串上操作（原字符串内存将遭到破坏，但如果之后将不可能再使用的话，破坏也没关系了，又可以少一次copy）
 	lua_pushinteger(L, kJsonNoCopy);
 	lua_rawset(L, -3);
