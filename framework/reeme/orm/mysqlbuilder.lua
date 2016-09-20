@@ -215,18 +215,23 @@ builder.processTokenedString = function(self, alias, expr, joinFrom)
 	if #alias == 0 or expr == '(' or expr == ')' then
 		return expr
 	end
-
-	local fields = self.m.__fields
+		
 	local sql, adjust = expr, 0
-	local n1, n2 = self.m.__name, joinFrom and joinFrom.m.__name or nil
-	local names = self.joinNames
 
 	local tokens, poses = _parseExpression(sql)
 	if not tokens or not poses then
 		return sql
+	end	
+	
+	--两个alias的表名
+	local n1, n2 = self.userAlias or self.m.__name, nil
+	if joinFrom then
+		n2 = joinFrom.userAlias or joinFrom.m.__name
 	end
 
-	local drops = 0
+	local fields = self.m.__fields
+	local names, drops = self.joinNames, 0
+	
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
 		if one then
@@ -736,7 +741,11 @@ builder.buildWhereJoins = function(self, sqls, haveWheres)
 	for i = 1, cc do
 		local q = self.joins[i].q
 		q.joinFrom = self
-		builder.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.')
+		if builder.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.') then
+			haveWheres = true
+		end
+		
+		builder.buildWhereJoins(q, sqls, haveWheres)
 		q.joinFrom = nil
 	end
 end
@@ -789,15 +798,26 @@ builder.buildJoinsConds = function(self, sqls, haveOns)
 		sqls[#sqls + 1] = q.m.__name
 		sqls[#sqls + 1] = q.alias
 		sqls[#sqls + 1] = 'ON('
-		if not builder.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues) then		
-			sqls[#sqls + 1] = '1'
+		
+		local pos = #sqls
+		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues) then
+			if join.type == 'inner' then
+				sqls[#sqls + 1] = '1)'
+			else
+				table.remove(sqls, pos)
+			end
+		else
+			sqls[#sqls + 1] = ')'
 		end
-		sqls[#sqls + 1] = ')'
+		
+		if builder.buildJoinsConds(q, sqls, haveOns) then
+			haveOns = true
+		end
 		
 		q.joinFrom = nil
-		
-		builder.buildJoinsConds(q, sqls, haveOns)
 	end
+	
+	return haveOns
 end
 
 builder.buildOrder = function(self, sqls, alias)

@@ -368,6 +368,43 @@ _lastseg:
 	return retAs == LUA_TTABLE ? 1 : cc;
 }
 
+static int lua_string_cut(lua_State* L)
+{
+	size_t srcLen = 0;
+	const char* src = luaL_optlstring(L, 1, 0, &srcLen);
+	if (srcLen < 1)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+
+	size_t byLen = 0;
+	const char* by = luaL_checklstring(L, 2, &byLen);
+	if (byLen < 1)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+
+	const char* pos;
+	if (byLen == 1)
+		pos = std::strchr(src, by[0]);
+	else
+		pos = std::strstr(src, by);
+
+	if (!pos || pos + byLen == src + srcLen)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+
+	size_t off = pos - src;
+	lua_pushlstring(L, src, off);
+	lua_pushlstring(L, pos + byLen, srcLen - off - byLen);
+
+	return 2;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // 对字符串进行左右非可见符号去除，参数2和3如果存在且为true|false分别表示是否要处理左边|右边。如果没有参数2或3则默认左右都处理
 static int lua_string_trim(lua_State* L)
@@ -2804,6 +2841,8 @@ static void luaext_string(lua_State *L)
 	const luaL_Reg procs[] = {
 		// 字符串切分
 		{ "split", &lua_string_split },
+		// 快速的字符串左右分
+		{ "cut", &lua_string_cut },
 		// trim函数
 		{ "trim", &lua_string_trim },
 		// 字符串比较

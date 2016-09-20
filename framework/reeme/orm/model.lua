@@ -155,11 +155,19 @@ queryMeta = {
 		left = function(self, query) return self:join(query, 'left') end,
 		right = function(self, query) return self:join(query, 'right') end,
 		
-		--设置表的表名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
-		alias = function(self, name)
-			if type(name) == 'string' then
-				name = name:trim()
-				if #name > 0 then
+		--设置别名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
+		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消表的别名
+		alias = function(self, name, alias)
+			if name then
+				if alias then
+					--字段别名
+					if not self.colAlias then
+						self.colAlias = table.new(0, 4)
+					end
+					self.colAlias[name] = alias
+					
+				elseif #name > 0 then
+					--表的别名
 					local chk = name:match('_[A-Z]')
 					if not chk or #chk ~= #name then
 						self.userAlias = name
@@ -168,6 +176,7 @@ queryMeta = {
 			else
 				self.userAlias = nil
 			end
+			
 			return self
 		end,
 		
@@ -250,6 +259,8 @@ queryMeta = {
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 				
 				self.lastSql = sqls
+				ngx.say(sqls)
+				do return nil end
 				if self.debugMode then
 					if res then
 						print(sqls, ':insertid=', tostring(res.insert_id), 'affected=', res.affected_rows)

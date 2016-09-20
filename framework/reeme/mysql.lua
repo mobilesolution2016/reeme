@@ -18,15 +18,13 @@ local mysql = {
 		--可以使用.号表示多级目录，名称的最后使用@符号可以表示真实的表名，这样可以同模型多表，比如: msgs@msgs_1
 		use = function(self, srcname, db)
 			--将真实表名和模型名分离
-			local truename, name = string.plainfind(srcname, '@'), srcname
-			if truename then
-				truename, name = srcname:sub(truename + 1), srcname:sub(1, truename - 1)
-			end
-
+			local name, truename = string.cut(srcname, '@')
 			--库名和表名分离
-			local dbname, tbname = string.plainfind(name, '.'), name
-			if dbname then
-				tbname = name:sub(dbname + 1)
+			local dbname, tbname = string.cut(name, '.')
+			
+			if not tbname then
+				--表名不存在说明没有.号在里面，那么交换两个名字
+				dbname, tbname = nil, dbname
 			end
 
 			--优先使用参数给定的库/库名，如果不存在就判断是否模型名称指定了库名，如果未指定或库不存在，那么就使用默认的db
@@ -38,14 +36,14 @@ local mysql = {
 				
 				if not db then
 					if dbname then
-						db = reeme(name:sub(1, dbname - 1)) or self._defdb
+						db = reeme(dbname) or self._defdb
 					else
 						db = self._defdb
 					end
 				end
 				
 			elseif dbname then
-				db = reeme(name:sub(1, dbname - 1)) or self._defdb
+				db = reeme(dbname) or self._defdb
 			else
 				db = self._defdb
 			end
@@ -121,29 +119,11 @@ local mysql = {
 			elseif tp == 'string' then
 				local r = table.new(0, 10)
 				string.split(names, ',', string.SPLIT_ASKEY, r)
-				
+
 				for k,v in pairs(r) do
 					r[k] = self:use(k, db)
 				end
 				return r
-			end
-		end,
-		
-		--清理所有的model缓存
-		clear = function(self)
-			for k,m in pairs(models) do
-				m.__fields, m.__fieldPlain, m.__fieldIndices = nil, nil, nil
-			end
-			
-			models = {}
-		end,
-		
-		--重新加载指定的Model
-		reload = function(self, name, db)
-			local idxName = string.format('%s-%s', ngx.var.APP_NAME or ngx.var.APP_ROOT, name)
-			if models[idxName] then
-				models[idxName] = nil
-				return self:use(idxName, db)
 			end
 		end,
 		
