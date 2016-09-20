@@ -19,6 +19,7 @@ queryMeta = {
 		
 		--设置条件
 		where = function(self, name, val)
+			self.condValues = nil
 			return self.builder.processWhere(self, 1, name, val)
 		end,
 		andWhere = function(self, name, val)
@@ -40,6 +41,7 @@ queryMeta = {
 		
 		--设置join on条件
 		on = function(self, name, val)
+			self.onValues = nil
 			return self.builder.processOn(self, 1, name, val)
 		end,
 		andOn = function(self, name, val)
@@ -60,10 +62,10 @@ queryMeta = {
 		end,
 		
 		--设置调试
-		--[[debug = function(self, dbg)
+		debug = function(self, dbg)
 			self.debugMode = dbg
 			return self
-		end,]]
+		end,
 		
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列
 		columns = function(self, names)
@@ -248,7 +250,13 @@ queryMeta = {
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 				
 				self.lastSql = sqls
-				--print(sqls, '(', res and res.insert_id or res.affected_rows, tostring(db), ')')
+				if self.debugMode then
+					if res then
+						print(sqls, ':insertid=', tostring(res.insert_id), 'affected=', res.affected_rows)
+					else
+						print(sqls)
+					end
+				end
 			end
 			
 			if setvnil then
@@ -455,8 +463,7 @@ local modelMeta = {
 		end,
 		--和findFirst一样，但是仅查找第1行的指定的某1列，返回的将是一个所有行的这一列组成的一个新table(注意不是结果集实例)，并在没有结果集的时候并不会返回nil
 		findAllFirst = function(self, colname, name, val)
-			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
-			
+			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)			
 			if name then q:where(name, val) end
 			return q:fetchAllFirst(colname)
 		end,
