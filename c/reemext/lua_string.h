@@ -1484,7 +1484,7 @@ static int lua_string_fmt(lua_State* L)
 		tp = lua_type(L, cc);
 		if (tp <= LUA_TNIL)
 		{
-			luaL_checkany(L, cc);
+			luaL_error(L, "string.fmt #%d have no parameter", cc - 1);
 			return 0;
 		}
 

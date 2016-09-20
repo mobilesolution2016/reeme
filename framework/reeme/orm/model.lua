@@ -20,44 +20,80 @@ queryMeta = {
 		--设置条件
 		where = function(self, name, val)
 			self.condValues = nil
+			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 1, name, val)
 		end,
 		andWhere = function(self, name, val)
+			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 2, name, val)
 		end,
 		orWhere = function(self, name, val)
+			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 3, name, val)
 		end,
 		xorWhere = function(self, name, val)
+			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 4, name, val)
 		end,
 		notWhere = function(self, name, val)
+			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 5, name, val)
 		end,
 		clearWheres = function(self)
 			self.condValues, self.condString = nil, nil
+			self.setWheres = false
 			return self
 		end,
 		
 		--设置join on条件
 		on = function(self, name, val)
 			self.onValues = nil
+			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 1, name, val)
 		end,
 		andOn = function(self, name, val)
+			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 2, name, val)
 		end,
 		orOn = function(self, name, val)
+			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 3, name, val)
 		end,
 		xorOn = function(self, name, val)
+			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 4, name, val)
 		end,
 		notOn = function(self, name, val)
+			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 5, name, val)
 		end,
 		clearOns = function(self)
 			self.onValues = nil
+			self.setOns = false
+			return self
+		end,
+		
+		--where/on中增加一个左括号
+		lb = function(self)
+			self.brackets = self.brackets and (self.brackets + 1) or 1
+
+			if self.setWheres then return self.builder.processWhere(self, 2, '(') end
+			if self.setOns then return self.builder.processOn(self, 2, '(') end 
+			
+			error('error for use lb function on query')
+			return self
+		end,
+		--where/on中增加一个右括号
+		rb = function(self)
+			if not self.brackets or self.brackets < 1 then
+				error("error for add ')' without paired '('")
+			end
+			self.brackets = self.brackets - 1
+			
+			if self.setWheres then return self.builder.processWhere(self, 2, ')') end
+			if self.setOns then return self.builder.processOn(self, 2, ')') end 
+			
+			error('error for use lb function on query')
 			return self
 		end,
 		
@@ -75,9 +111,11 @@ queryMeta = {
 			
 			local tp = type(names)
 			if tp == 'string' then
-				for str in names:gmatch("([^,]+)") do
+				--[[for str in names:gmatch("([^,]+)") do
 					self.colSelects[str] = true
-				end
+				end]]
+				string.split(names, ',', string.SPLIT_ASKEY, self.colSelects)
+				
 			elseif tp == 'table' then
 				for i = 1, #names do
 					self.colSelects[names[i]] = true
@@ -151,9 +189,8 @@ queryMeta = {
 			
 			return self
 		end,
-		inner = join,
-		left = function(self, query) return self:join(query, 'left') end,
-		right = function(self, query) return self:join(query, 'right') end,
+		leftjoin = function(self, query) return self:join(query, 'left') end,
+		rightjoin = function(self, query) return self:join(query, 'right') end,
 		
 		--设置别名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
 		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消表的别名
@@ -245,6 +282,10 @@ queryMeta = {
 				return nil
 			end
 			
+			if self.brackets and self.brackets ~= 0 then
+				error('bracket(s) not paired for query')
+			end
+			
 			local setvnil = false
 			if not self.keyvals and result then
 				self.keyvals = result()
@@ -254,11 +295,11 @@ queryMeta = {
 			local model = self.m
 			local sqls = self.builder[self.op](self, model, db)
 			
-			if sqls then			
+			if sqls then
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 				
-				self.lastSql = sqls
+				self.lastSql = sqls				
 				if self.debugMode then
 					if res then
 						print(sqls, ':insertid=', tostring(res.insert_id), 'affected=', res.affected_rows)
@@ -496,11 +537,11 @@ local modelMeta = {
 			return q and q[colnames] or nil
 		end,
 		
-		--建立一个delete查询器
+		--建立一个delete查询器。条件可以直接给出一个语句或不给，也可以用where/xxxWhere来给出
 		delete = function(self, where)
 			return setmetatable({ m = self, R = self.__reeme, op = 'DELETE', builder = self.__builder, __where = where }, queryMeta)
 		end,
-		--建立一个update查询器，必须给出要更新的值的集合
+		--建立一个update查询器，必须给出要更新的值的集合。条件可以直接给出一个语句或不给，也可以用where/xxxWhere来给出
 		update = function(self, vals, where)
 			assert(type(vals) == 'table' or type(vals) == 'string')
 			return setmetatable({ m = self, R = self.__reeme, op = 'UPDATE', builder = self.__builder, keyvals = vals, __where = where }, queryMeta)
