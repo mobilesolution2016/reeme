@@ -309,6 +309,11 @@ local appMeta = {
 						end
 					end
 				end
+				
+				--结束
+				if self.endProc then
+					self.endProc(self, c, path, act)
+				end
 				--require('mobdebug').done()
 			end)
 

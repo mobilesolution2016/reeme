@@ -79,39 +79,31 @@ builder.parseWhere = function(self, condType, name, value)
 	if type(name) == 'string' then
 		--key=value
 		local f = keyname and self.m.__fields[keyname] or nil
-		local newv, quoted = nil, false		
+		local quoted = nil
 
 		if tv == 'string' and value:byte(1) == 39 and value:byte(vlen) == 39 then
 			quoted = true
 		elseif tv == 'cdata' then
+			local newv
 			value, newv = string.checkinteger(value)
 			if newv then
 				value = newv
-			else
 				tv = 'string'
 			end
 		end
 
 		if f then
-			--有明确的字段就可以按照字段的配置进行检测和转换			
-			if quoted then
-				newv = value:sub(2, #newv - 1)
-			else
-				newv = tostring(value)
-			end
-			if #newv > f.maxlen then
-				return nil
-			end
-			
-			--再根据字段的值类型做相应的转换
+			--有明确的字段就可以按照字段的配置进行检测和转换
 			if f.type == 1 then
 				if not quoted then
-					value = ngx.quote_sql_str(newv)
+					value = ngx.quote_sql_str(tostring(value))
 				end
 			elseif f.type == 2 or f.type == 3 then
-				value = tonumber(newv)
+				if tv ~= 'string' then
+					value = tostring(value)
+				end
 			elseif f.type == 4 then
-				value = toboolean(newv)
+				value = toboolean(value) and '1' or '0'
 			else
 				value = nil
 			end
@@ -699,7 +691,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 			if i > 1 and one.c == 1 then
 				--如果没有指定条件连接方式，那么当不是第1个条件的时候，就会自动修改为and
 				one.c = 2
-			end			
+			end
 			
 			if one.sub then
 				--子查询

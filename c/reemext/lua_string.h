@@ -1702,13 +1702,16 @@ public:
 					revFind --;
 				else
 					break;
-			}			
+			}
 
-			revFind -= revLeng[r];
-			if (r == KEND_THEN && strncmp(revFind, " then", 5))
-				return KEND_THEN;
-			if (r == KEND_DO && strncmp(revFind, " do", 3))
-				return KEND_DO;
+			if (strncmp(revFind - 3, " end", 3))
+			{
+				revFind -= revLeng[r];
+				if (r == KEND_THEN && strncmp(revFind, " then", 5))
+					return KEND_THEN;
+				if (r == KEND_DO && strncmp(revFind, " do", 3))
+					return KEND_DO;
+			}
 		}
 
 		return KEND_NONE;
@@ -1743,7 +1746,6 @@ public:
 			char ch = *expEnd ++;
 			if (quoted)
 			{
-				expEnd ++;
 				if (ch == '\\')
 					expEnd ++;
 				else if (ch == '\'' || ch == '"')
@@ -1753,7 +1755,6 @@ public:
 			}
 			else if (ch == '\'' || ch == '"')
 			{
-				expEnd ++;
 				if (quoted)
 				{
 					errorStart = expStart;
@@ -1880,6 +1881,18 @@ public:
 			{
 				// 先关闭之前的输出，因为表达式不可能与字符串也不可能与其它的表达式位于同一行
 				add = pos - offset;
+				while (pos > offset)
+				{
+					// 向前去掉空字符和空行
+					if ((uint8_t)src[pos - 1] <= 32)
+					{
+						pos --;
+						add --;
+					}
+					else
+						break;
+				}
+
 				if (pos >= offset && append(add) != add)
 				{
 					savedPos = foundPos - 1;
