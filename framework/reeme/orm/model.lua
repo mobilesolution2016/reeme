@@ -395,7 +395,7 @@ queryMeta = {
 		--执行select查询并获取所有的行，然后将这些行的指定的一个字段形成为一个新的table返回，如果没有结果集或不是查询指令时返回一个空的table而非nil
 		fetchAllFirst = function(self, colname, db, result)
 			if self.op == 'SELECT' then
-				local res, r = self:column(colname):execute(db, result)	
+				local res, r = self:columns(colname):execute(db, result)	
 				if res and r + 1 then
 					r = r(true)
 
