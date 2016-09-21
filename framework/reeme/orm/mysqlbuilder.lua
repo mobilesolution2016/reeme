@@ -38,19 +38,19 @@ builder.parseWhere = function(self, condType, name, value)
 	local keyname, puredkeyname, findpos = nil, false, 1
 	while true do
 		--找到第一个不是mysql函数的名字时停止
-		keyname, findpos = name:findvarname(findpos)
+		keyname, findpos = name:findtoken(findpos)
 		if not keyname then
 			keyname = nil
 			break
 		end
-		if not mysqlwords[keyname:upper()] then
+		if not mysqlwords[keyname] then
 			break
 		end
 	end
 
 	if keyname and #keyname == #name then
 		--key没有多余的符号，只是一个纯粹的列名
-		puredkeyname = true
+		puredkeyname = true		
 	end
 	
 	local tv = type(value)
@@ -69,7 +69,7 @@ builder.parseWhere = function(self, condType, name, value)
 		
 		--{value}这种表达式
 		value = value[1]
-		tv = type(value)
+		return { expr = puredkeyname and string.format('%s=%s', name, value) or name .. value, c = condType }
 
 	elseif value == ngx.null then
 		--设置为null值
@@ -96,7 +96,7 @@ builder.parseWhere = function(self, condType, name, value)
 			--有明确的字段就可以按照字段的配置进行检测和转换
 			if f.type == 1 then
 				value = tostring(value)
-				if not quoted and (#value > 35 or not mysqlwords[value]) then
+				if not quoted then
 					value = ngx.quote_sql_str(value)
 				end
 			elseif f.type == 2 or f.type == 3 then
@@ -221,42 +221,56 @@ builder.processTokenedString = function(self, alias, expr, joinFrom)
 		return expr
 	end	
 	
-	--两个alias的表名
-	local n1, n2 = self.userAlias or self.m.__name, nil
+	--自己的表名以及联了自己的表的表名还有上上级联表的表名，最多支持到3级，不再往前支持更多级联表
+	local upJoin
+	local n1, n2, n3 = self.userAlias or self.m.__name, nil, nil
+	
 	if joinFrom then
-		n2 = joinFrom.userAlias or joinFrom.m.__name
+		n2 = joinFrom.m.__name
+		if joinFrom.joinFrom then
+			upJoin = joinFrom.joinFrom
+			n3 = upJoin.m.__name
+		end
 	end
 
+	--逐个token的循环进行处理
 	local sql, adjust = expr, 0
-	local fields = self.m.__fields
-	local names, drops = self.joinNames, 0
-	
+	local fields, names = self.m.__fields, self.joinNames
+
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
 		if one then
-			if fields[one] then
-				--这是一个字段的名称
-				newone = drops > 0 and one or alias .. one
-			elseif one == n1 then
-				--出现自己的表名，那么后面是一个字段名，由于字段名称会被自动的加上alias，因此在这里只需要将表名移除即可
-				newone = ''
-				one = one .. '.'
-			elseif one == n2 then
-				newone = joinFrom.alias
-				drops = 2
-			elseif names then
-				local q = names[one]
-				newone = q and self.joinNames[one].alias or nil
+			local a, b = string.cut(one, '.')
+
+			if b then
+				--可能是表名.字段名
+				if a == n1 then
+					--出现自己的表名
+					newone = alias .. b
+				elseif a == n2 then
+					--出现被联表的表名
+					newone = (joinFrom.userAlias or joinFrom.alias) .. '.' .. b
+				elseif a == n3 then
+					--出现上上级联表的表名
+					newone = (upJoin.userAlias or upJoin.alias) .. '.' .. b
+				elseif names then
+					--联到自己身的其它表的表名
+					local q = names[a]
+					if q then
+						newone = q.useAlias or q.alias .. '.' .. b
+					end
+				end
+			elseif fields[a] then
+				--字段名
+				newone = alias .. a
+			end
+
+			if newone then
+				--替换掉最终的表达式
+				sql = sql:subreplace(newone, poses[i] + adjust, #one)
+				adjust = adjust + #newone - #one
 			end
 		end
-		
-		if newone then
-			--替换掉最终的表达式
-			sql = sql:subreplace(newone, poses[i] + adjust, #one)
-			adjust = adjust + #newone - #one
-		end
-		
-		drops = drops - 1
 	end
 	
 	return sql
@@ -516,14 +530,14 @@ builder.buildColumns = function(self, model, sqls, alias, returnCols)
 	if self.colSelects then
 		--只获取某几列
 		local plains = {}
-		if excepts then			
-			for k,v in pairs(self.colSelects) do
+		if excepts then
+			for k,_ in pairs(self.colSelects) do
 				if not excepts[k] then
 					plains[#plains + 1] = k
 				end
 			end
 		else
-			for k,v in pairs(self.colSelects) do
+			for k,_ in pairs(self.colSelects) do
 				plains[#plains + 1] = k
 			end
 		end
@@ -572,10 +586,11 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 		return 1
 	end
 
-	for name,_ in pairs(self.colSelects == nil and model.__fields or self.colSelects) do
+	local fieldCfgs = self.colSelects == nil and model.__fields or self.colSelects
+
+	for name,v in pairs(vals) do
 		local cfg = fieldCfgs[name]
 		if cfg then
-			local v = vals[name]
 			local tp = type(v)
 			local quoteIt = false
 
@@ -603,9 +618,10 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 				elseif mt == queryMeta then	
 					--子查询
 				else
-					--原值
+					--表达式
 					v = v[1]
 					tp = type(v)
+					quoteIt = false
 				end
 			elseif tp == 'cdata' then
 				--cdata类型，检测是否是boxed int64
@@ -626,9 +642,7 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 					--字段要求为字符串，所以引用
 					v = tostring(v)
 					if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
-						if #v > 35 or not mysqlwords[v] then
-							v = ngx.quote_sql_str(v)
-						end
+						v = ngx.quote_sql_str(v)
 					end
 				elseif cfg.type == 4 then
 					--布尔型使用1或0来处理

@@ -110,15 +110,27 @@ queryMeta = {
 			end
 			
 			local tp = type(names)
+			local fields = self.m__fields
+			
 			if tp == 'string' then
-				--[[for str in names:gmatch("([^,]+)") do
-					self.colSelects[str] = true
-				end]]
-				string.split(names, ',', string.SPLIT_ASKEY, self.colSelects)
+				for str in names:gmatch("([^,]+)") do
+					local f = fields[str]
+					if f then
+						self.colSelects[str] = f
+					else
+						error('model columns function set a not exists field:', str)
+					end
+				end
 				
 			elseif tp == 'table' then
 				for i = 1, #names do
-					self.colSelects[names[i]] = true
+					local n = names[i]
+					local f = fields[n]
+					if f then
+						self.colSelects[n] = f
+					else
+						error('model columns function set a not exists field:', n)
+					end
 				end
 			end
 			
@@ -131,13 +143,25 @@ queryMeta = {
 			end
 			
 			local tp = type(names)
+			local fields = self.m__fields
+			
 			if tp == 'string' then
 				for str in names:gmatch("([^,]+)") do
-					self.colExcepts[str:trim()] = true
+					if not fields[str] then
+						error('model excepts function set a not exists field:', str)
+					end
+					
+					self.colExcepts[str] = true
 				end
+				
 			elseif tp == 'table' then
 				for i = 1, #names do
-					self.colExcepts[names[i]] = true
+					local n = names[i]
+					if not fields[n] then
+						error('model excepts function set a not exists field:', n)
+					end
+					
+					self.colExcepts[n] = true
 				end
 			end
 			
@@ -288,13 +312,14 @@ queryMeta = {
 			
 			local setvnil = false
 			if not self.keyvals and result then
-				self.keyvals = result()
+				self.keyvals = result(false)
 				setvnil = true
 			end
 			
 			local model = self.m
 			local sqls = self.builder[self.op](self, model, db)
-			
+			ngx.say(sqls)
+			do return end
 			if sqls then
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
