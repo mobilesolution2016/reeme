@@ -361,6 +361,10 @@ REEME_API int luaopen_reemext(lua_State* L)
 		{ "start_deamon", &lua_start_deamon },
 		{ "connect_deamon", &lua_connect_deamon },
 		{ "request_deamon", &lua_request_deamon },
+		
+		// 从指定的位置开始取一个词
+		{ "find_token", lua_sql_findtoken },
+
 		{ NULL, NULL }
 	};
 

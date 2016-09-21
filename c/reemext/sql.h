@@ -38,6 +38,16 @@ static int lua_sql_expression_parse(lua_State* L)
 				prevpos = i;
 				kToken = TString;
 			}
+			else if (ch == '*')
+			{
+				prevpos = i;
+
+				lua_pushlstring(L, "*", 1);
+				lua_rawseti(L, r1, ++ cc);
+
+				lua_pushinteger(L, i + 1);
+				lua_rawseti(L, r2, cc);
+			}
 			break;
 
 		case TName:
@@ -90,4 +100,78 @@ static int lua_sql_expression_parse(lua_State* L)
 	}
 
 	return 2;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// 寻找一个token（忽略字符串和除了.-_之外的所有符号）
+static int lua_sql_findtoken(lua_State* L)
+{
+	size_t i, len = 0, addonLen = 0;
+	const char* s = luaL_checklstring(L, 1, &len);
+	ptrdiff_t off = luaL_optinteger(L, 2, 1) - 1;
+
+	if (len < 1 || off < 0 || off >= len)
+		return 0;
+
+	uint8_t addons[128] = { 0 };
+	const char* addon = luaL_optlstring(L, 3, "", &addonLen);
+	for(i = 0; i < addonLen; ++ i)
+		addons[(uint8_t)addon[i]] = 1;
+
+	char inString = 0;
+	for(i = off; i < len; ++ i)
+	{
+		uint8_t ch = s[i];
+		if (inString)
+		{
+			if (ch == '\\')
+				++ i;
+			else if (ch == inString)
+				off = i + 1;
+			continue;
+		}
+
+		if (ch <= 32 || ch >= 128)
+		{
+			// 跳过不可见字符和非ANSI字符
+			if (i > off)
+				goto _return;
+			off = i + 1;
+			continue;
+		}
+
+		if (ch == '*')
+		{
+			// *号单独处理
+			lua_pushlstring(L, "*", 1);
+			lua_pushinteger(L, i + 1);
+			return 2;
+		}
+
+		if (ch == '\'' || ch == '"')
+		{
+			// 标记字符串
+			inString = ch;
+			continue;
+		}
+
+		if (sql_where_splits[ch] == 1)
+		{
+			// 不算在token范围内的符号
+			if (i <= off)
+				off = i + 1;	// token的有效长度为0
+			else if (!addons[ch])
+				goto _return;	// 同时也不是附加有效范围的符号，这个时候又拥有有效长度，那么就可以停止了
+			continue;
+		}
+	}
+
+	if (i > off && !inString)
+	{
+	_return:
+		lua_pushlstring(L, s + off, i - off);
+		lua_pushinteger(L, i + 1);
+		return 2;
+	}
+	return 0;
 }
