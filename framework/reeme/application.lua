@@ -309,14 +309,16 @@ local appMeta = {
 						end
 					end
 				end
-				
-				--结束
-				if self.endProc then
-					self.endProc(self, c, path, act)
-				end
+
 				--require('mobdebug').done()
 			end)
 
+			--结束动作
+			if self.endProc then
+				self.endProc(self, c, path, act)
+			end
+			
+			--清理
 			if c then
 				local lazyLoaders = rawget(c, "_lazyLoaders")
 				for ffree, loader in pairs(lazyLoaders) do
