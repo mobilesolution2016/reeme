@@ -213,7 +213,7 @@ local mysql = {
 		end,
 		
 		--设置Debug模式
-		debug = function(is)
+		debug = function(self, is)
 			self.debugMode = is and true or nil
 			for _,m in pairs(self.caches) do
 				m.__debug = is and true or nil

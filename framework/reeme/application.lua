@@ -146,7 +146,7 @@ local outputRedirect = function(app, v)
 end
 
 local defTblfmt = function(app, tbl)
-	return string.json(tbl)
+	return string.json(tbl, string.JSON_UNICODES)
 end
 
 local appMeta = {
