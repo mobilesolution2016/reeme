@@ -90,11 +90,11 @@ static int lua_toboolean(lua_State* L)
 
 		if (len == 4 && stricmp(s, "true") == 0)
 			r = cc = 1;
-		else if (len = 5 && stricmp(s, "false") == 0)
+		else if (len == 5 && stricmp(s, "false") == 0)
 			cc = 1;
-		else
+		else if (len)
 		{
-			long v = strtol(s, &endp, 10);
+			long v = strtoul(s, &endp, 10);
 			if (endp - s == len)
 			{
 				cc = 1;

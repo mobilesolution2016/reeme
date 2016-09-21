@@ -368,6 +368,43 @@ _lastseg:
 	return retAs == LUA_TTABLE ? 1 : cc;
 }
 
+static int lua_string_cut(lua_State* L)
+{
+	size_t srcLen = 0;
+	const char* src = luaL_optlstring(L, 1, 0, &srcLen);
+	if (srcLen < 1)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+
+	size_t byLen = 0;
+	const char* by = luaL_checklstring(L, 2, &byLen);
+	if (byLen < 1)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+
+	const char* pos;
+	if (byLen == 1)
+		pos = std::strchr(src, by[0]);
+	else
+		pos = std::strstr(src, by);
+
+	if (!pos || pos + byLen == src + srcLen)
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+
+	size_t off = pos - src;
+	lua_pushlstring(L, src, off);
+	lua_pushlstring(L, pos + byLen, srcLen - off - byLen);
+
+	return 2;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // 对字符串进行左右非可见符号去除，参数2和3如果存在且为true|false分别表示是否要处理左边|右边。如果没有参数2或3则默认左右都处理
 static int lua_string_trim(lua_State* L)
@@ -1447,7 +1484,7 @@ static int lua_string_fmt(lua_State* L)
 		tp = lua_type(L, cc);
 		if (tp <= LUA_TNIL)
 		{
-			luaL_checkany(L, cc);
+			luaL_error(L, "string.fmt #%d have no parameter", cc - 1);
 			return 0;
 		}
 
@@ -1702,13 +1739,16 @@ public:
 					revFind --;
 				else
 					break;
-			}			
+			}
 
-			revFind -= revLeng[r];
-			if (r == KEND_THEN && strncmp(revFind, " then", 5))
-				return KEND_THEN;
-			if (r == KEND_DO && strncmp(revFind, " do", 3))
-				return KEND_DO;
+			if (strncmp(revFind - 3, " end", 3))
+			{
+				revFind -= revLeng[r];
+				if (r == KEND_THEN && strncmp(revFind, " then", 5))
+					return KEND_THEN;
+				if (r == KEND_DO && strncmp(revFind, " do", 3))
+					return KEND_DO;
+			}
 		}
 
 		return KEND_NONE;
@@ -1743,7 +1783,6 @@ public:
 			char ch = *expEnd ++;
 			if (quoted)
 			{
-				expEnd ++;
 				if (ch == '\\')
 					expEnd ++;
 				else if (ch == '\'' || ch == '"')
@@ -1753,7 +1792,6 @@ public:
 			}
 			else if (ch == '\'' || ch == '"')
 			{
-				expEnd ++;
 				if (quoted)
 				{
 					errorStart = expStart;
@@ -1880,6 +1918,18 @@ public:
 			{
 				// 先关闭之前的输出，因为表达式不可能与字符串也不可能与其它的表达式位于同一行
 				add = pos - offset;
+				while (pos > offset)
+				{
+					// 向前去掉空字符和空行
+					if ((uint8_t)src[pos - 1] <= 32)
+					{
+						pos --;
+						add --;
+					}
+					else
+						break;
+				}
+
 				if (pos >= offset && append(add) != add)
 				{
 					savedPos = foundPos - 1;
@@ -2392,7 +2442,7 @@ public:
 		n->used += len;
 		return ptr;
 	}
-	void escapeJsonString(const char* src, size_t len)
+	void escapeJsonString(const char* src, size_t len, uint32_t flags)
 	{		
 		uint8_t ch, v;
 		uint32_t unicode;
@@ -2409,17 +2459,26 @@ public:
 				continue;
 			}
 
-			if (i > spos)
-				addString(src + spos, i - spos);
-
 			if (v == 1)
 			{
 				// escape some chars
+				if (i > spos)
+					addString(src + spos, i - spos);
 				addChar2('\\', ch);
 				spos = ++ i;
 			}
 			else if (v == 2)
 			{
+				if (flags & kJsonUnicodes)
+				{
+					// defered
+					++ i;
+					continue;
+				}
+
+				if (i > spos)
+					addString(src + spos, i - spos);
+
 				// check utf8
 				uint8_t* utf8src = (uint8_t*)src + i;
 				if ((ch & 0xE0) == 0xC0)
@@ -2461,6 +2520,8 @@ public:
 			else
 			{
 				// invisible(s) to visibled
+				if (i > spos)
+					addString(src + spos, i - spos);
 				addChar2('\\', v);
 				spos = ++ i;
 			}
@@ -2524,7 +2585,7 @@ public:
 			mem->copyLuaString(ptr, len, flags & 0xFFFFFF);\
 		} else {\
 			mem->addChar('"');\
-			mem->escapeJsonString(ptr, len);\
+			mem->escapeJsonString(ptr, len, flags);\
 			mem->addChar('"');\
 		}\
 		break;\
@@ -2791,6 +2852,8 @@ static void luaext_string(lua_State *L)
 	const luaL_Reg procs[] = {
 		// 字符串切分
 		{ "split", &lua_string_split },
+		// 快速的字符串左右分
+		{ "cut", &lua_string_cut },
 		// trim函数
 		{ "trim", &lua_string_trim },
 		// 字符串比较
@@ -2834,7 +2897,7 @@ static void luaext_string(lua_State *L)
 
 		// 编译Boyer-Moore子字符串用于查找
 		{ "bmcompile", &lua_string_bmcompile },
-		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串越长性能越优）
+		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串和源字符串越长性能越优）
 		{ "bmfind", &lua_string_bmfind },
 
 		// Json解码（dec时2~4倍性能于ngx所采用的cjson，enc时随table的复杂度1.5~4.5倍性能于cjson，不过这不是关键，关键是本json encode支持boxed 64bit integer以及cdata自动编码为base64等本库才有的扩展能力）
@@ -2855,6 +2918,7 @@ static void luaext_string(lua_State *L)
 	lua_pushinteger(L, kSplitTrim);
 	lua_rawset(L, -3);
 
+	// JSON编码时可用的标志位
 	lua_pushliteral(L, "JSON_NOCOPY");		// 解码时直接在原字符串上操作（原字符串内存将遭到破坏，但如果之后将不可能再使用的话，破坏也没关系了，又可以少一次copy）
 	lua_pushinteger(L, kJsonNoCopy);
 	lua_rawset(L, -3);

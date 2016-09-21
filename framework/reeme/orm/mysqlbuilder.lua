@@ -79,39 +79,32 @@ builder.parseWhere = function(self, condType, name, value)
 	if type(name) == 'string' then
 		--key=value
 		local f = keyname and self.m.__fields[keyname] or nil
-		local newv, quoted = nil, false		
+		local quoted = nil
 
 		if tv == 'string' and value:byte(1) == 39 and value:byte(vlen) == 39 then
 			quoted = true
 		elseif tv == 'cdata' then
+			local newv
 			value, newv = string.checkinteger(value)
 			if newv then
 				value = newv
-			else
 				tv = 'string'
 			end
 		end
 
 		if f then
-			--有明确的字段就可以按照字段的配置进行检测和转换			
-			if quoted then
-				newv = value:sub(2, #newv - 1)
-			else
-				newv = tostring(value)
-			end
-			if #newv > f.maxlen then
-				return nil
-			end
-			
-			--再根据字段的值类型做相应的转换
+			--有明确的字段就可以按照字段的配置进行检测和转换
 			if f.type == 1 then
-				if not quoted then
-					value = ngx.quote_sql_str(newv)
+				value = tostring(value)
+				if not quoted and (#value > 35 or not mysqlwords[value]) then
+					value = ngx.quote_sql_str(value)
 				end
 			elseif f.type == 2 or f.type == 3 then
-				value = tonumber(newv)
+				if tv ~= 'string' then
+					value = tostring(value)
+				end
 			elseif f.type == 4 then
-				value = toboolean(newv)
+				value = toboolean(value) and '1' or '0'
 			else
 				value = nil
 			end
@@ -167,6 +160,7 @@ builder.processWhere = function(self, condType, k, v)
 			error(string.format("call where(%s) function with illegal value(s) call", k))
 		end
 	end
+	
 	return self
 end
 
@@ -220,21 +214,23 @@ end
 
 --解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
 builder.processTokenedString = function(self, alias, expr, joinFrom)
-	if #alias == 0 or expr == '(' or expr == ')' then
-		return expr
-	end
+	if #alias == 0 then return expr end	
 
-	local fields = self.m.__fields
-	local sql, adjust = expr, 0
-	local n1, n2 = self.m.__name, joinFrom and joinFrom.m.__name or nil
-	local names = self.joinNames
-
-	local tokens, poses = _parseExpression(sql)
+	local tokens, poses = _parseExpression(expr)
 	if not tokens or not poses then
-		return sql
+		return expr
+	end	
+	
+	--两个alias的表名
+	local n1, n2 = self.userAlias or self.m.__name, nil
+	if joinFrom then
+		n2 = joinFrom.userAlias or joinFrom.m.__name
 	end
 
-	local drops = 0
+	local sql, adjust = expr, 0
+	local fields = self.m.__fields
+	local names, drops = self.joinNames, 0
+	
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
 		if one then
@@ -360,7 +356,7 @@ builder.UPDATE = function(self, model, db)
 			end
 
 			if not haveWheres then
-				error("Cannot do model update without any conditions")
+				error("Cannot do model update without condition(s)")
 				return false
 			end
 		end
@@ -419,7 +415,7 @@ builder.DELETE = function(self, model)
 			end
 
 			if not haveWheres then
-				error("Cannot do model delete without any conditions")
+				error("Cannot do model delete without condition(s)")
 				return false
 			end
 		end
@@ -628,11 +624,11 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 			if v ~= nil then
 				if cfg.type == 1 then
 					--字段要求为字符串，所以引用
-					if tp ~= 'string' then
-						v = tostring(v)
-					end
+					v = tostring(v)
 					if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
-						v = ngx.quote_sql_str(v)
+						if #v > 35 or not mysqlwords[v] then
+							v = ngx.quote_sql_str(v)
+						end
 					end
 				elseif cfg.type == 4 then
 					--布尔型使用1或0来处理
@@ -690,17 +686,22 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 	end
 
 	if condValues and #condValues > 0 then
+		local ignoreNextCond = (condPre == 'WHERE' or condPre == nil) and true or false
 		local wheres, conds = {}, builder.conds
 		local joinFrom = self.joinFrom
 		
 		for i = 1, #condValues do
 			local one, rsql = condValues[i], nil
+			local onecond = one.c
 			
-			if i > 1 and one.c == 1 then
+			if ignoreNextCond then
+				onecond = 1
+				ignoreNextCond = false
+			elseif i > 1 and onecond == 1 then
 				--如果没有指定条件连接方式，那么当不是第1个条件的时候，就会自动修改为and
-				one.c = 2
-			end			
-			
+				onecond = 2
+			end
+
 			if one.sub then
 				--子查询
 				local subq = one.sub
@@ -708,17 +709,24 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 				
 				local expr = builder.processTokenedString(self, alias, one.n, joinFrom)
 				local subsql = builder.SELECT(subq, subq.m, self.db)
-				
+
 				if subsql then
 					if one.puredkeyname then
-						rsql = string.format('%s IN(%s)', expr, subsql)
+						rsql = string.format('%s%s IN(%s)', conds[onecond], expr, subsql)
 					else
-						rsql = string.format('%s(%s)', expr, subsql)
+						rsql = string.format('%s%s(%s)', conds[onecond], expr, subsql)
 					end
 				end
 				
+			elseif one.expr == '(' then
+				--左括号左边的条件保留，后面的条件扔掉
+				rsql = conds[onecond] .. one.expr
+				ignoreNextCond = true
+			elseif one.expr == ')' then
+				--右括号左边的条件扔掉
+				rsql = one.expr
 			else
-				rsql = conds[one.c] .. builder.processTokenedString(self, alias, one.expr, joinFrom)
+				rsql = conds[onecond] .. builder.processTokenedString(self, alias, one.expr, joinFrom)
 			end
 
 			wheres[#wheres + 1] = rsql
@@ -744,7 +752,11 @@ builder.buildWhereJoins = function(self, sqls, haveWheres)
 	for i = 1, cc do
 		local q = self.joins[i].q
 		q.joinFrom = self
-		builder.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.')
+		if builder.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.') then
+			haveWheres = true
+		end
+		
+		builder.buildWhereJoins(q, sqls, haveWheres)
 		q.joinFrom = nil
 	end
 end
@@ -797,15 +809,26 @@ builder.buildJoinsConds = function(self, sqls, haveOns)
 		sqls[#sqls + 1] = q.m.__name
 		sqls[#sqls + 1] = q.alias
 		sqls[#sqls + 1] = 'ON('
-		if not builder.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues) then		
-			sqls[#sqls + 1] = '1'
+		
+		local pos = #sqls
+		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues) then
+			if join.type == 'inner' then
+				sqls[#sqls + 1] = '1)'
+			else
+				table.remove(sqls, pos)
+			end
+		else
+			sqls[#sqls + 1] = ')'
 		end
-		sqls[#sqls + 1] = ')'
+		
+		if builder.buildJoinsConds(q, sqls, haveOns) then
+			haveOns = true
+		end
 		
 		q.joinFrom = nil
-		
-		builder.buildJoinsConds(q, sqls, haveOns)
 	end
+	
+	return haveOns
 end
 
 builder.buildOrder = function(self, sqls, alias)
@@ -821,7 +844,7 @@ end
 
 builder.buildLimits = function(self, sqls, ignoreStart)
 	if self.limitTotal and self.limitTotal > 0 then
-		if ignoreStart then
+		if ignoreStart or self.limitStart == 0 then
 			sqls[#sqls + 1] = string.format('LIMIT %u', self.limitTotal)
 		else
 			sqls[#sqls + 1] = string.format('LIMIT %u,%u', self.limitStart, self.limitTotal)
