@@ -145,6 +145,10 @@ local outputRedirect = function(app, v)
 	ngx.say(v)
 end
 
+local defTblfmt = function(app, tbl)
+	return string.json(tbl)
+end
+
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
@@ -156,7 +160,7 @@ local appMeta = {
 		end,
 		
 		on = function(self, name, func)
-			local valids = { pre = 1, err = 1, denied = 1, missmatch = 1, output = 1 }
+			local valids = { pre = 1, err = 1, denied = 1, missmatch = 1, tblfmt = 1, output = 1, ['end'] = 1 }
 			if type(func) == 'function' and valids[name] then
 				self[name .. 'Proc'] = func
 			end
@@ -297,7 +301,14 @@ local appMeta = {
 					local out = self.outputProc or outputRedirect
 
 					if tp == 'table' then
-						out(self, getmetatable(r) and r:content() or string.json(r))
+						local o
+						if not getmetatable(r) then
+							local tblfmt = self.tblfmtProc or defTblfmt
+							o = tblfmt(self, r)
+						else
+							o = r:content()
+						end
+						out(self, o)
 					elseif tp == 'string' then
 						out(self, r)
 					elseif r == false then
@@ -323,24 +334,24 @@ local appMeta = {
 					ffree(c, loader.r, loader.params)
 				end
 			end
+			c = nil
 
 			if not ok then
 				local msg = err.msg
 				local msgtp = type(msg)
 				local out = self.outputProc or outputRedirect
 				
-				if type(msg) == "string" then
+				if msgtp == "string" then
 					out(self, msg)
-				elseif type(msg) == "table" then
-					out(self, c.utils.jsonEncode(msg))
+				elseif msgtp == "table" then
+					local tblfmt = self.tblfmtProc or defTblfmt
+					out(self, tblfmt(self, msg))
 				elseif type(err) == "string" then
 					out(self, err)
 				end
 
 				ngx.eof()
 			end
-			
-			c = nil
 		end,
 	}
 }
