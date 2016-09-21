@@ -10,7 +10,7 @@ static int lua_sql_expression_parse(lua_State* L)
 	TokenChecker kToken = TNone;
 	size_t i, len = 0, prevpos = 0;
 	const char* sql = luaL_checklstring(L, 1, &len);
-	int cc = 0, slashes = 0, top = lua_gettop(L), r1 = 2, r2 = 3;
+	int cc = 0, top = lua_gettop(L), r1 = 2, r2 = 3;
 	
 	if (top == 1)
 	{
@@ -42,7 +42,7 @@ static int lua_sql_expression_parse(lua_State* L)
 
 		case TName:
 			m = sql_where_splits[ch];
-			if (m != 2 && m != 3)
+			if (m == 1)
 			{
 				lua_pushlstring(L, sql + prevpos, i - prevpos);
 				lua_rawseti(L, r1, ++ cc);
@@ -55,10 +55,8 @@ static int lua_sql_expression_parse(lua_State* L)
 			break;
 
 		case TString:
-			if (slashes)
-				slashes = 0;
-			else if (ch == '\\')
-				slashes = 1;
+			if (ch == '\\')
+				++ i;
 			else if (ch == '\'')
 			{
 				lua_pushlstring(L, sql + prevpos, i - prevpos + 1);

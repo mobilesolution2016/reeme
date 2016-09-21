@@ -2,7 +2,7 @@
 static uint8_t sql_where_splits[128] = 
 {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	1,		// 0~32
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 4, 1,	// 33~47
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1,	// 33~47
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,	// 48~57
 	1, 1, 1, 1, 1, 1, 1,	// 58~64
 	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,	// 65~92
@@ -875,7 +875,8 @@ static int lua_string_subto(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-static int lua_string_findvarname(lua_State* L)
+// 寻找一个token（忽略字符串和除了.-_之外的所有符号）
+static int lua_string_findtoken(lua_State* L)
 {
 	size_t i, len = 0, addonLen = 0;
 	const char* s = luaL_checklstring(L, 1, &len);
@@ -889,33 +890,47 @@ static int lua_string_findvarname(lua_State* L)
 	for(i = 0; i < addonLen; ++ i)
 		addons[(uint8_t)addon[i]] = 1;
 
+	char inString = 0;
 	for(i = off; i < len; ++ i)
 	{
 		uint8_t ch = s[i];
-		if (ch <= 32)
+		if (inString)
 		{
+			if (ch == '\\')
+				++ i;
+			else if (ch == inString)
+				off = i + 1;
+			continue;
+		}
+
+		if (ch <= 32 || ch >= 128)
+		{
+			// 跳过不可见字符和非ANSI字符
 			if (i > off)
 				goto _return;
 			off = i + 1;
 			continue;
 		}
-		if (ch >= 128)
+
+		if (ch == '\'' || ch == '"')
 		{
-			if (i > off)
-				goto _return;
-			return 0;
+			// 标记字符串
+			inString = ch;
+			continue;
 		}
 
-		uint8_t flag = sql_where_splits[ch];
-		if (flag != 2 && flag != 3 && addons[ch] == 0)
+		if (sql_where_splits[ch] == 1)
 		{
-			if (i > off)
-				goto _return;
-			off = i + 1;
+			// 不算在token范围内的符号
+			if (i <= off)
+				off = i + 1;	// token的有效长度为0
+			else if (!addons[ch])
+				goto _return;	// 同时也不是附加有效范围的符号，这个时候又拥有有效长度，那么就可以停止了
+			continue;
 		}
 	}
 
-	if (i > off)
+	if (i > off && !inString)
 	{
 _return:
 		lua_pushlstring(L, s + off, i - off);
@@ -2877,8 +2892,8 @@ static void luaext_string(lua_State *L)
 		// 字符串查找带截取
 		{ "subto", &lua_string_subto },
 
-		// 从指定的位置开始取一个标准变量名长度的字符串
-		{ "findvarname", lua_string_findvarname },
+		// 从指定的位置开始取一个词
+		{ "findtoken", lua_string_findtoken },
 
 		// 数值+浮点数字符串检测
 		{ "checknumeric", &lua_string_checknumeric },
