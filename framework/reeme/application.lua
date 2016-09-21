@@ -248,7 +248,6 @@ local appMeta = {
 		end,
 		
 		run = function(self)
-			--require('mobdebug').start('192.168.3.13')
 			local router = configs.router or require("reeme.router")
 			local path, act = router(ngx.var.uri)
 			local c, mth, r
@@ -325,9 +324,8 @@ local appMeta = {
 				if self.endProc then
 					self.endProc(self, c, path, act)
 				end
-				--require('mobdebug').done()
 			end)
-
+			
 			if c then
 				local lazyLoaders = rawget(c, "_lazyLoaders")
 				for ffree, loader in pairs(lazyLoaders) do

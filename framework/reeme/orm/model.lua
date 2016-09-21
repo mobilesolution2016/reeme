@@ -110,7 +110,7 @@ queryMeta = {
 			end
 			
 			local tp = type(names)
-			local fields = self.m__fields
+			local fields = self.m.__fields
 			
 			if tp == 'string' then
 				for str in names:gmatch("([^,]+)") do
@@ -318,8 +318,7 @@ queryMeta = {
 			
 			local model = self.m
 			local sqls = self.builder[self.op](self, model, db)
-			ngx.say(sqls)
-			do return end
+
 			if sqls then
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
