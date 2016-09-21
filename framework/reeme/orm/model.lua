@@ -97,28 +97,27 @@ queryMeta = {
 			return self
 		end,
 		
-		--设置调试
-		debug = function(self, dbg)
-			self.debugMode = dbg
-			return self
-		end,
-		
-		--设置只操作哪些列，如果不设置，则会操作model里的所有列
+		--设置只操作哪些列，如果不设置，则会操作model里的所有列。同时会将只排除的列清空掉
 		columns = function(self, names)
 			if not self.colSelects then
 				self.colSelects = {}
 			end
+			self.colExcepts = nil
 			
 			local tp = type(names)
-			local fields = self.m__fields
+			local fields = self.m.__fields
 			
 			if tp == 'string' then
-				for str in names:gmatch("([^,]+)") do
-					local f = fields[str]
-					if f then
-						self.colSelects[str] = f
-					else
-						error('model columns function set a not exists field:', str)
+				if names == '*' then
+					self.colSelects = nil
+				else
+					for str in names:step(',') do
+						local f = fields[str]
+						if f then
+							self.colSelects[str] = f
+						else
+							error('model columns function set a not exists field:', str)
+						end
 					end
 				end
 				
@@ -136,11 +135,12 @@ queryMeta = {
 			
 			return self
 		end,
-		--设置只排除哪些列
+		--设置只排除哪些列，同时会将只选择哪些列清空掉
 		excepts = function(self, names)
 			if not self.colExcepts then
 				self.colExcepts = {}
 			end
+			self.colSelects = nil
 			
 			local tp = type(names)
 			local fields = self.m__fields
@@ -217,15 +217,23 @@ queryMeta = {
 		rightjoin = function(self, query) return self:join(query, 'right') end,
 		
 		--设置别名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
-		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消表的别名
+		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消所有的别名
 		alias = function(self, name, alias)
 			if name then
 				if alias then
 					--字段别名
 					if not self.colAlias then
-						self.colAlias = table.new(0, 4)
+						self.aliasAB = table.new(0, 4)
+						self.aliasBA = table.new(0, 4)
 					end
-					self.colAlias[name] = alias
+
+					local old = self.aliasAB[name]
+					if old then
+						self.aliasBA[old] = nil
+					end
+					
+					self.aliasAB[name] = alias
+					self.aliasBA[alias] = name
 					
 				elseif #name > 0 then
 					--表的别名
@@ -235,7 +243,8 @@ queryMeta = {
 					end
 				end
 			else
-				self.userAlias = nil
+				--全部取消
+				self.aliasAB, self.aliasBA = nil, nil
 			end
 			
 			return self
@@ -318,18 +327,17 @@ queryMeta = {
 			
 			local model = self.m
 			local sqls = self.builder[self.op](self, model, db)
-			ngx.say(sqls)
-			do return end
+
 			if sqls then
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
-				
+
 				self.lastSql = sqls				
-				if self.debugMode then
+				if self.m.__debug then
 					if res then
 						print(sqls, ':insertid=', tostring(res.insert_id), 'affected=', res.affected_rows)
 					else
-						print(sqls)
+						print(sqls, ':error')
 					end
 				end
 			end

@@ -93,6 +93,7 @@ local mysql = {
 				__fields = m.__fields,
 				__fieldsPlain = m.__fieldsPlain,
 				__fieldIndices = m.__fieldIndices,
+				__debug = self.debugMode,
 				__db = db
 			}, modelmeta)
 
@@ -209,7 +210,15 @@ local mysql = {
 
 			self.caches = nil
 			self.transaction = nil
-		end
+		end,
+		
+		--设置Debug模式
+		debug = function(is)
+			self.debugMode = is and true or nil
+			for _,m in pairs(self.caches) do
+				m.__debug = is and true or nil
+			end
+		end,
 	},
 	
 	__call = function(self, p1, p2)

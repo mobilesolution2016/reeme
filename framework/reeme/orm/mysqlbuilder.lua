@@ -1,5 +1,7 @@
 --表达式分解为token函数
-local _parseExpression = findmetatable('REEME_C_EXTLIB').sql_expression_parse
+local cExtLib = findmetatable('REEME_C_EXTLIB')
+local _parseExpression, _findToken = cExtLib.sql_expression_parse, cExtLib.find_token
+
 --date/datetime类型的原型
 local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
 local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
@@ -38,7 +40,7 @@ builder.parseWhere = function(self, condType, name, value)
 	local keyname, puredkeyname, findpos = nil, false, 1
 	while true do
 		--找到第一个不是mysql函数的名字时停止
-		keyname, findpos = name:findtoken(findpos)
+		keyname, findpos = _findToken(name, findpos)
 		if not keyname then
 			keyname = nil
 			break
@@ -239,37 +241,37 @@ builder.processTokenedString = function(self, alias, expr, joinFrom)
 
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
-		if one then
-			local a, b = string.cut(one, '.')
+		local a, b = string.cut(one, '.')
 
-			if b then
-				--可能是表名.字段名
-				if a == n1 then
-					--出现自己的表名
-					newone = alias .. b
-				elseif a == n2 then
-					--出现被联表的表名
-					newone = (joinFrom.userAlias or joinFrom.alias) .. '.' .. b
-				elseif a == n3 then
-					--出现上上级联表的表名
-					newone = (upJoin.userAlias or upJoin.alias) .. '.' .. b
-				elseif names then
-					--联到自己身的其它表的表名
-					local q = names[a]
-					if q then
-						newone = q.useAlias or q.alias .. '.' .. b
-					end
+		if b then
+			--可能是表名.字段名
+			if a == n1 then
+				--出现自己的表名
+				newone = alias .. b
+			elseif a == n2 then
+				--出现被联表的表名
+				newone = (joinFrom.userAlias or joinFrom.alias) .. '.' .. b
+			elseif a == n3 then
+				--出现上上级联表的表名
+				newone = (upJoin.userAlias or upJoin.alias) .. '.' .. b
+			elseif names then
+				--联到自己身的其它表的表名
+				local q = names[a]
+				if q then
+					newone = q.useAlias or q.alias .. '.' .. b
 				end
-			elseif fields[a] then
-				--字段名
-				newone = alias .. a
 			end
+		elseif fields[a] then
+			--字段名
+			newone = alias .. a
+		elseif a == '*' then
+			newone = alias .. '*'
+		end
 
-			if newone then
-				--替换掉最终的表达式
-				sql = sql:subreplace(newone, poses[i] + adjust, #one)
-				adjust = adjust + #newone - #one
-			end
+		if newone then
+			--替换掉最终的表达式
+			sql = sql:subreplace(newone, poses[i] + adjust, #one)
+			adjust = adjust + #newone - #one
 		end
 	end
 	

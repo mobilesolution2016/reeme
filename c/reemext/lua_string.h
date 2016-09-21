@@ -368,6 +368,75 @@ _lastseg:
 	return retAs == LUA_TTABLE ? 1 : cc;
 }
 
+static int lua_string_step_r(lua_State* L)
+{
+	int t = lua_upvalueindex(1);
+	if (lua_isstring(L, t))
+	{
+		lua_pushvalue(L, t);
+		lua_pushnil(L);
+		lua_replace(L, t);
+		return 1;
+	}
+	return 0;
+}
+static int lua_string_step_aux(lua_State* L)
+{	
+	lua_Integer offset = luaL_optinteger(L, lua_upvalueindex(3), -1);
+	if (offset == -1)
+		return 0;
+
+	size_t len, byLen;
+	const char* s = lua_tolstring(L, lua_upvalueindex(1), &len);
+	const char* by = lua_tolstring(L, lua_upvalueindex(2), &byLen);
+	const char* found;
+
+	s += offset;
+	if (byLen == 1)
+		found = std::strchr(s, by[0]);
+	else
+		found = std::strstr(s, by);
+
+	if (found)
+	{		
+		size_t size = found - s;
+		lua_pushlstring(L, s, size);
+
+		offset += size + byLen;
+		if (offset < len)
+			lua_pushinteger(L, offset);
+		else
+			lua_pushnil(L);
+	}
+	else
+	{
+		lua_pushlstring(L, s, len - offset);
+		lua_pushnil(L);
+	}
+
+	lua_replace(L, lua_upvalueindex(3));
+	return 1;
+}
+// 单步按照字符串切分
+static int lua_string_step(lua_State* L)
+{
+	size_t len = 0, bylen = 0;
+	const char* s = luaL_checklstring(L, 1, &len);
+	const char* by =  luaL_checklstring(L, 2, &bylen);
+
+	lua_pushvalue(L, 1);
+	if (len < 1 || bylen > len)
+	{ 
+		lua_pushcclosure(L, &lua_string_step_r, 1);
+		return 1;
+	}
+	
+	lua_pushvalue(L, 2);
+	lua_pushinteger(L, 0);
+	lua_pushcclosure(L, &lua_string_step_aux, 3);
+	return 1;
+}
+
 static int lua_string_cut(lua_State* L)
 {
 	size_t srcLen = 0;
@@ -872,72 +941,6 @@ static int lua_string_subto(lua_State* L)
 
 	lua_pushlstring(L, src + start, endp - start + 1);
 	return 1;
-}
-
-//////////////////////////////////////////////////////////////////////////
-// 寻找一个token（忽略字符串和除了.-_之外的所有符号）
-static int lua_string_findtoken(lua_State* L)
-{
-	size_t i, len = 0, addonLen = 0;
-	const char* s = luaL_checklstring(L, 1, &len);
-	ptrdiff_t off = luaL_optinteger(L, 2, 1) - 1;
-
-	if (len < 1 || off < 0 || off >= len)
-		return 0;
-
-	uint8_t addons[128] = { 0 };
-	const char* addon = luaL_optlstring(L, 3, "", &addonLen);
-	for(i = 0; i < addonLen; ++ i)
-		addons[(uint8_t)addon[i]] = 1;
-
-	char inString = 0;
-	for(i = off; i < len; ++ i)
-	{
-		uint8_t ch = s[i];
-		if (inString)
-		{
-			if (ch == '\\')
-				++ i;
-			else if (ch == inString)
-				off = i + 1;
-			continue;
-		}
-
-		if (ch <= 32 || ch >= 128)
-		{
-			// 跳过不可见字符和非ANSI字符
-			if (i > off)
-				goto _return;
-			off = i + 1;
-			continue;
-		}
-
-		if (ch == '\'' || ch == '"')
-		{
-			// 标记字符串
-			inString = ch;
-			continue;
-		}
-
-		if (sql_where_splits[ch] == 1)
-		{
-			// 不算在token范围内的符号
-			if (i <= off)
-				off = i + 1;	// token的有效长度为0
-			else if (!addons[ch])
-				goto _return;	// 同时也不是附加有效范围的符号，这个时候又拥有有效长度，那么就可以停止了
-			continue;
-		}
-	}
-
-	if (i > off && !inString)
-	{
-_return:
-		lua_pushlstring(L, s + off, i - off);
-		lua_pushinteger(L, i + 1);
-		return 2;
-	}
-	return 0;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -2867,6 +2870,8 @@ static void luaext_string(lua_State *L)
 	const luaL_Reg procs[] = {
 		// 字符串切分
 		{ "split", &lua_string_split },
+		// 字符串单步切分
+		{ "step", &lua_string_step },
 		// 快速的字符串左右分
 		{ "cut", &lua_string_cut },
 		// trim函数
@@ -2891,9 +2896,6 @@ static void luaext_string(lua_State *L)
 		{ "subreplace", &lua_string_subreplace },
 		// 字符串查找带截取
 		{ "subto", &lua_string_subto },
-
-		// 从指定的位置开始取一个词
-		{ "findtoken", lua_string_findtoken },
 
 		// 数值+浮点数字符串检测
 		{ "checknumeric", &lua_string_checknumeric },
