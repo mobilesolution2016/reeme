@@ -393,9 +393,9 @@ static int lua_string_step_aux(lua_State* L)
 
 	s += offset;
 	if (byLen == 1)
-		found = std::strchr(s, by[0]);
+		found = strchr(s, by[0]);
 	else
-		found = std::strstr(s, by);
+		found = strstr(s, by);
 
 	if (found)
 	{		
@@ -457,9 +457,9 @@ static int lua_string_cut(lua_State* L)
 
 	const char* pos;
 	if (byLen == 1)
-		pos = std::strchr(src, by[0]);
+		pos = strchr(src, by[0]);
 	else
-		pos = std::strstr(src, by);
+		pos = strstr(src, by);
 
 	if (!pos || pos + byLen == src + srcLen)
 	{
@@ -575,17 +575,29 @@ static int lua_string_plainfind(lua_State* L)
 	if (len2 && len2 <= len)
 	{
 		long t = luaL_optinteger(L, 3, 0);
-		if (t > 0 && t <= len)
+		if (t > 1 && t <= len)
 		{
 			t --;
 			s += t;
 		}
 
-		f = len2 > 1 ? std::strstr(s, f) : std::strchr(s, f[0]);
-		if (f)
+		if (lua_toboolean(L, 4))
 		{
-			lua_pushinteger(L, f - s + t + 1);
-			return 1;
+			size_t pos = opt_stristr(s, len - t, f, len2);
+			if (pos != -1)
+			{
+				lua_pushinteger(L, pos + 1);
+				return 1;
+			}
+		}
+		else
+		{
+			f = len2 > 1 ? strstr(s, f) : strchr(s, f[0]);
+			if (f)
+			{
+				lua_pushinteger(L, f - s + t + 1);
+				return 1;
+			}
 		}
 	}
 
@@ -602,13 +614,13 @@ static int lua_string_rfindchar(lua_State* L)
 	if (len && len2 == 1)
 	{
 		long t = luaL_optinteger(L, 3, 0);
-		if (t > 0 && t <= len)
+		if (t > 1 && t <= len)
 		{
 			t --;
 			s += t;
 		}
 
-		f = std::strrchr(s, f[0]);
+		f = strrchr(s, f[0]);
 		if (f)
 		{
 			lua_pushinteger(L, f - s + t + 1);
@@ -672,7 +684,7 @@ static int lua_string_replace(lua_State* L)
 				to = lua_tolstring(L, -1, &toLen);
 
 				srcptr = src;
-				while((foundPos = fromLen == 1 ? std::strchr(srcptr, from[0]) : std::strstr(srcptr, from)) != 0)
+				while((foundPos = fromLen == 1 ? strchr(srcptr, from[0]) : strstr(srcptr, from)) != 0)
 				{			
 					newrep.offset = foundPos - src;
 					newrep.fromLen = fromLen;
@@ -767,7 +779,7 @@ static int lua_string_replace(lua_State* L)
 				srcptr = src;
 				for(;;)
 				{
-					foundPos = fromLen == 1 ? std::strchr(srcptr, from[0]) : std::strstr(srcptr, from);
+					foundPos = fromLen == 1 ? strchr(srcptr, from[0]) : strstr(srcptr, from);
 					if (!foundPos)
 						break;
 
@@ -917,7 +929,7 @@ static int lua_string_subto(lua_State* L)
 			return 0;
 
 		const char* findStart = src + start;
-		const char* pos = toLen == 1 ? std::strchr(findStart, to[0]) : std::strstr(findStart, to);
+		const char* pos = toLen == 1 ? strchr(findStart, to[0]) : strstr(findStart, to);
 		if (!pos)
 			return 0;
 		
@@ -1436,7 +1448,7 @@ static int lua_string_fmt(lua_State* L)
 	size_t start = 0, valLen, len, digits, carry;
 	for (int cc = 2, tp; ; )
 	{
-		const char* foundpos = std::strchr(src + start, '%');
+		const char* foundpos = strchr(src + start, '%');
 		if (!foundpos)
 			break;
 
@@ -1936,17 +1948,17 @@ public:
 			{
 				// 先关闭之前的输出，因为表达式不可能与字符串也不可能与其它的表达式位于同一行
 				add = pos - offset;
-				while (pos > offset)
-				{
-					// 向前去掉空字符和空行
-					if ((uint8_t)src[pos - 1] <= 32)
-					{
-						pos --;
-						add --;
-					}
-					else
-						break;
-				}
+				//while (pos > offset)
+				//{
+				//	// 向前去掉空字符和空行
+				//	if ((uint8_t)src[pos - 1] <= 32)
+				//	{
+				//		pos --;
+				//		add --;
+				//	}
+				//	else
+				//		break;
+				//}
 
 				if (pos >= offset && append(add) != add)
 				{
@@ -2190,7 +2202,7 @@ static int lua_string_parsetemplate(lua_State* L)
 
 	for(int i = 0; ; ++ i)
 	{
-		if (!std::strstr(src, parser.mlsEnd))
+		if (!strstr(src, parser.mlsEnd))
 			break;
 		if (i == 27)
 		{
@@ -2567,10 +2579,6 @@ public:
 			dst[i] = '=';
 		dst[i] = ']';
 	}
-	void base64EncodeCData(const char* ptr, size_t len)
-	{
-
-	}
 };
 
 #define jsonConvValue()\
@@ -2608,17 +2616,9 @@ public:
 		}\
 		break;\
 	case LUA_TCDATA:\
-		len = lua_objlen(L, -1);\
-		lua_pushvalue(L, funcsIdx[1]);\
-		lua_pushvalue(L, -2);\
-		lua_pcall(L, 1, 1, 0);\
-		ptr = lua_tolstring(L, -1, &len);\
-		if (cdataValueIsInt64((const uint8_t*)ptr, len, &len)) {\
-			mem->addString(ptr, len);\
-		} else {\
-			ptr = (const char*)lua_topointer(L, -1);\
-			mem->base64EncodeCData(ptr, len);\
-		}\
+		ival = *(const int64_t*)lua_topointer(L, -1);\
+		len = opt_i64toa(ival, buf);\
+		mem->addString(buf, len);\
 		break;\
 	case LUA_TBOOLEAN:\
 		if (lua_toboolean(L, -1))\
@@ -2639,7 +2639,7 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 	size_t len;	
 	char buf[64];
 	int64_t ival;
-	const char* ptr;	
+	const char* ptr;
 
 	size_t arr = lua_objlen(L, tblIdx), cc = 0;
 	if (arr == 0)

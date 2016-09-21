@@ -200,7 +200,7 @@ local mysql = {
 		end,
 		
 		--退出的时候清理所有，未提交的事务将被rollback
-		clearAll = function()
+		clearAll = function(self)
 			if self.transcount > 0 then
 				for v,_ in pairs(self.transaction) do
 					v:query('ROLLBACK')

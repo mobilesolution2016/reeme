@@ -998,3 +998,53 @@ extern "C" size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase)
 
 	return buffer - dst;
 }
+
+//////////////////////////////////////////////////////////////////////////
+#define STRISTR_BUF			1024
+#define STRISTR_FIND_BUF	256
+static char string_letter_uptolow[256] = { 0 };
+
+size_t opt_stristr(const char* str, size_t strLeng, const char* find, size_t findLeng)
+{
+	if (string_letter_uptolow['A'] == 0)
+	{
+		for(uint32_t i = 1; i < 256; ++ i)
+			string_letter_uptolow[i] = i;
+		for(uint32_t i = 'A'; i <= 'Z'; ++ i)
+			string_letter_uptolow[i] = 'a' + i - 'A';
+	}
+	
+	const char* strSource = str;
+	size_t i, strStart = 0, tmpstrSize;
+	char tmpstr[STRISTR_BUF], tmpfind[STRISTR_FIND_BUF], *pTmpFind = tmpfind;
+
+	if (findLeng >= STRISTR_FIND_BUF)
+		pTmpFind = (char*)malloc(findLeng + 1);
+
+	for (i = 0; i < findLeng; ++ i)
+		pTmpFind[i] = string_letter_uptolow[find[i]];
+	pTmpFind[i] = 0;
+
+	while (strStart < strLeng)
+	{
+		// 将str复制一段到临时Buffer中，将所有的大写转为小写
+		tmpstrSize = std::min(strLeng - strStart, (size_t)STRISTR_BUF - 1);
+		for (i = 0; i < tmpstrSize; ++ i)
+			tmpstr[i] = string_letter_uptolow[strSource[i]];
+		tmpstr[tmpstrSize] = 0;
+
+		// 在tmpBuf中寻找
+		const char* foundPos = findLeng == 1 ? strchr(tmpstr, pTmpFind[0]) : strstr(tmpstr, pTmpFind);
+		if (foundPos)
+			return strStart + (foundPos - tmpstr);
+
+		// 准备下一段
+		strStart += tmpstrSize;
+		strSource += tmpstrSize;
+	}
+
+	if (pTmpFind != tmpfind)
+		free(pTmpFind);
+
+	return -1;
+}

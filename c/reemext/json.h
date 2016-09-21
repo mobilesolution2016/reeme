@@ -25,9 +25,7 @@ static uint8_t json_invisibles_allowed[33] =
 
 static uint8_t json_escape_chars[256] = { 0 };
 static uint8_t json_unescape_chars[256] = { 0 };
-
 static uint8_t integer64_valid_bits[256] = { 0 };
-
 static uint8_t string_fmt_valid_fmt[256] = { 0 };
 
 struct initJsonEscapeChars
@@ -64,7 +62,7 @@ struct initJsonEscapeChars
 		json_unescape_chars['\''] = '\'';
 		json_unescape_chars['"'] = '"';
 
-		for(i = 0; i < 255; ++ i)
+		for(i = 0; i < 256; ++ i)
 			integer64_valid_bits[i] = 0xFF;
 		integer64_valid_bits['U'] = 1;
 		integer64_valid_bits['L'] = 2;

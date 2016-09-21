@@ -103,6 +103,7 @@ queryMeta = {
 				self.colSelects = {}
 			end
 			self.colExcepts = nil
+			self.colCache = nil
 			
 			local tp = type(names)
 			local fields = self.m.__fields
@@ -112,23 +113,45 @@ queryMeta = {
 					self.colSelects = nil
 				else
 					for str in names:step(',') do
+						--取出as重命名
+						local as, alias = string.plainfind(str, ' AS ', 1, true), nil
+						if as then
+							alias = str:sub(as + 4)
+							str = str:sub(1, as - 1)
+						end
+
 						local f = fields[str]
 						if f then
 							self.colSelects[str] = f
+							if alias then
+								--添加重命名
+								self:alias(str, alias)
+							end
 						else
-							error('model columns function set a not exists field:', str)
+							error('model columns function set a not exists field:' .. str)
 						end
 					end
 				end
 				
 			elseif tp == 'table' then
-				for i = 1, #names do
+				for i = 1, #names do					
+					--取出as重命名
 					local n = names[i]
+					local as, alias = string.plainfind(n, ' AS ', 1, true), nil
+					if as then
+						alias = n:sub(as + 4)
+						n = n:sub(1, as - 1)
+					end
+					
 					local f = fields[n]
 					if f then
 						self.colSelects[n] = f
+						if alias then
+							--添加重命名
+							self:alias(str, alias)
+						end
 					else
-						error('model columns function set a not exists field:', n)
+						error('model columns function set a not exists field:' .. n)
 					end
 				end
 			end
@@ -141,14 +164,15 @@ queryMeta = {
 				self.colExcepts = {}
 			end
 			self.colSelects = nil
+			self.colCache = nil
 			
 			local tp = type(names)
-			local fields = self.m__fields
+			local fields = self.m.__fields
 			
 			if tp == 'string' then
-				for str in names:gmatch("([^,]+)") do
+				for str in names:step(',') do
 					if not fields[str] then
-						error('model excepts function set a not exists field:', str)
+						error('model excepts function set a not exists field:' .. str)
 					end
 					
 					self.colExcepts[str] = true
@@ -158,7 +182,7 @@ queryMeta = {
 				for i = 1, #names do
 					local n = names[i]
 					if not fields[n] then
-						error('model excepts function set a not exists field:', n)
+						error('model excepts function set a not exists field:' .. n)
 					end
 					
 					self.colExcepts[n] = true
@@ -172,6 +196,7 @@ queryMeta = {
 			if not self.expressions then
 				self.expressions = {}
 			end
+			self.colCache = nil
 			
 			self.expressions[#self.expressions + 1] = expr
 			return self
@@ -327,7 +352,8 @@ queryMeta = {
 			
 			local model = self.m
 			local sqls = self.builder[self.op](self, model, db)
-
+ngx.say(sqls)
+do return end
 			if sqls then
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)

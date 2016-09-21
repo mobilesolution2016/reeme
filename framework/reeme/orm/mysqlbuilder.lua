@@ -446,6 +446,14 @@ end
 
 
 builder.buildColumns = function(self, model, sqls, alias, returnCols)
+	--列名有缓存，则直接使用
+	if self.colCache then
+		if returnCols ~= true and #self.colCache > 0 then
+			sqls[#sqls + 1] = self.colCache
+		end
+		return self.colCache
+	end
+	
 	--加入所有的表达式
 	local excepts, express = nil, nil
 	if self.expressions then
@@ -528,19 +536,21 @@ builder.buildColumns = function(self, model, sqls, alias, returnCols)
 		excepts = self.colExcepts
 	end
 	
-	local cols
+	local cols, colAlias, n2 = nil, self.aliasAB or {}, nil
 	if self.colSelects then
 		--只获取某几列
 		local plains = {}
 		if excepts then
-			for k,_ in pairs(self.colSelects) do
-				if not excepts[k] then
-					plains[#plains + 1] = k
+			for n,_ in pairs(self.colSelects) do
+				if not excepts[n] then
+					n2 = colAlias[n]
+					plains[#plains + 1] = n2 and (n .. ' AS ' .. n2) or n
 				end
 			end
 		else
-			for k,_ in pairs(self.colSelects) do
-				plains[#plains + 1] = k
+			for n,_ in pairs(self.colSelects) do
+				n2 = colAlias[n]
+				plains[#plains + 1] = n2 and (n .. ' AS ' .. n2) or n
 			end
 		end
 
@@ -550,14 +560,15 @@ builder.buildColumns = function(self, model, sqls, alias, returnCols)
 		--只排除掉某几列
 		local fps = {}
 		local fieldPlain = model.__fieldsPlain
-		
+
 		for i = 1, #fieldPlain do
 			local n = fieldPlain[i]
 			if not excepts[n] then
-				fps[#fps + 1] = n
+				n2 = colAlias[n]
+				fps[#fps + 1] = n2 and (n .. ' AS ' .. n2) or n
 			end
 		end
-		
+
 		cols = #fps > 0 and table.concat(fps, ',' .. alias) or '*'
 	else
 		--所有列
@@ -570,6 +581,7 @@ builder.buildColumns = function(self, model, sqls, alias, returnCols)
 		cols = alias .. cols
 	end
 
+	self.colCache = cols
 	if returnCols ~= true and #cols > 0 then
 		sqls[#sqls + 1] = cols
 	end

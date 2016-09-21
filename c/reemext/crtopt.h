@@ -16,4 +16,7 @@ REEME_API size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase = t
 // dtoaº¯ÊýÓÅ»¯
 REEME_API size_t opt_dtoa(double value, char* buffer);
 
+//////////////////////////////////////////////////////////////////////////
+REEME_API size_t opt_stristr(const char* str, size_t strLeng, const char* find, size_t findLeng);
+
 #endif
