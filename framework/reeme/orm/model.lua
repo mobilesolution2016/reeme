@@ -295,6 +295,7 @@ queryMeta = {
 			
 			return self
 		end,
+		
 		--限制数量
 		limit = function(self, start, total)
 			if (start or total) == nil then
@@ -352,8 +353,7 @@ queryMeta = {
 			
 			local model = self.m
 			local sqls = self.builder[self.op](self, model, db)
-ngx.say(sqls)
-do return end
+
 			if sqls then
 				result = resultPub.init(result, model)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
