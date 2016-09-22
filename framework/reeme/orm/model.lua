@@ -287,6 +287,7 @@ queryMeta = {
 			
 			return self
 		end,
+		
 		--限制数量
 		limit = function(self, start, total)
 			if (start or total) == nil then

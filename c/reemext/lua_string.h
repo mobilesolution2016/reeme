@@ -2949,7 +2949,7 @@ static void luaext_string(lua_State *L)
 	lua_pushinteger(L, kJsonLuaString);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "LUA_UNICODES");		// 字符串中的utf8/unicode不要转义，直接保留使用。上一个标志JSON_LUASTRING存在时，本标志被忽略
+	lua_pushliteral(L, "JSON_UNICODES");		// 字符串中的utf8/unicode不要转义，直接保留使用。上一个标志JSON_LUASTRING存在时，本标志被忽略
 	lua_pushinteger(L, kJsonUnicodes);
 	lua_rawset(L, -3);
 

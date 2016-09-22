@@ -57,7 +57,7 @@ local Utils = {
 		end,
 		
 		base64Decode = function(str)
-			return decode_base64(str)
+			return ngx.decode_base64(str)
 		end,
 		
 		jsonEncode = require("cjson.safe").encode,
