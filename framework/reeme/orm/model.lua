@@ -100,11 +100,11 @@ queryMeta = {
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列。同时会将只排除的列清空掉
 		columns = function(self, names)
 			if not self.colSelects then
-				self.colSelects = {}
+				self.colSelects = table.new(0, 8)
 			end
 			self.colExcepts = nil
 			self.colCache = nil
-			
+
 			local tp = type(names)
 			local fields = self.m.__fields
 			
@@ -114,18 +114,18 @@ queryMeta = {
 				else
 					for str in names:step(',') do
 						--取出as重命名
-						local as, alias = string.plainfind(str, ' AS ', 1, true), nil
+						local as, nto = string.plainfind(str, ' AS ', 1, true), nil
 						if as then
-							alias = str:sub(as + 4)
+							nto = str:sub(as + 4)
 							str = str:sub(1, as - 1)
 						end
 
 						local f = fields[str]
 						if f then
 							self.colSelects[str] = f
-							if alias then
+							if nto then
 								--添加重命名
-								self:alias(str, alias)
+								self:alias(str, nto)
 							end
 						else
 							error('model columns function set a not exists field:' .. str)
@@ -137,18 +137,18 @@ queryMeta = {
 				for i = 1, #names do					
 					--取出as重命名
 					local n = names[i]
-					local as, alias = string.plainfind(n, ' AS ', 1, true), nil
+					local as, nto = string.plainfind(n, ' AS ', 1, true), nil
 					if as then
-						alias = n:sub(as + 4)
+						nto = n:sub(as + 4)
 						n = n:sub(1, as - 1)
 					end
 					
 					local f = fields[n]
 					if f then
 						self.colSelects[n] = f
-						if alias then
+						if nto then
 							--添加重命名
-							self:alias(str, alias)
+							self:alias(str, nto)
 						end
 					else
 						error('model columns function set a not exists field:' .. n)
@@ -161,7 +161,7 @@ queryMeta = {
 		--设置只排除哪些列，同时会将只选择哪些列清空掉
 		excepts = function(self, names)
 			if not self.colExcepts then
-				self.colExcepts = {}
+				self.colExcepts = table.new(0, 8)
 			end
 			self.colSelects = nil
 			self.colCache = nil
@@ -194,7 +194,7 @@ queryMeta = {
 		--使用列表达式
 		expr = function(self, expr)
 			if not self.expressions then
-				self.expressions = {}
+				self.expressions = table.new(4, 0)
 			end
 			self.colCache = nil
 			
@@ -243,23 +243,23 @@ queryMeta = {
 		
 		--设置别名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
 		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消所有的别名
-		alias = function(self, name, alias)
+		alias = function(self, name, aliasTo)
 			if name then
-				if alias then
+				if aliasTo then
 					--字段别名
-					if not self.colAlias then
-						self.aliasAB = table.new(0, 4)
-						self.aliasBA = table.new(0, 4)
+					if not self.aliasAB then
+						self.aliasAB = table.new(0, 8)
+						self.aliasBA = table.new(0, 8)
 					end
 
 					local old = self.aliasAB[name]
 					if old then
 						self.aliasBA[old] = nil
 					end
-					
-					self.aliasAB[name] = alias
-					self.aliasBA[alias] = name
-					
+
+					self.aliasAB[name] = aliasTo
+					self.aliasBA[aliasTo] = name
+	
 				elseif #name > 0 then
 					--表的别名
 					local chk = name:match('_[A-Z]')
@@ -586,7 +586,7 @@ local modelMeta = {
 		--和find一样但是仅查找第1行，并且限制查找时的列名（不会将所有列都取出），如果列名只有1个，那么返回的将是单值或nil
 		findFirstWithNames = function(self, colnames, name, val)
 			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
-			
+
 			if name then q:where(name, val) end
 			q = q:columns(colnames):limit(1):exec()
 			

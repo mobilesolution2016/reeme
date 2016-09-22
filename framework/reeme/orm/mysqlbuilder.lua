@@ -543,7 +543,7 @@ builder.buildColumns = function(self, model, sqls, alias, returnCols)
 		if excepts then
 			for n,_ in pairs(self.colSelects) do
 				if not excepts[n] then
-					n2 = colAlias[n]
+					n2 = colAlias[n]					
 					plains[#plains + 1] = n2 and (n .. ' AS ' .. n2) or n
 				end
 			end
@@ -600,9 +600,12 @@ builder.buildKeyValuesSet = function(self, model, sqls, alias)
 		return 1
 	end
 
+	local colAlias = self.aliasBA or {}
 	local fieldCfgs = self.colSelects == nil and model.__fields or self.colSelects
 
 	for name,v in pairs(vals) do
+		name = colAlias[name] or name
+		
 		local cfg = fieldCfgs[name]
 		if cfg then
 			local tp = type(v)
