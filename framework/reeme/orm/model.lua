@@ -114,21 +114,20 @@ queryMeta = {
 				else
 					for str in names:step(',') do
 						--取出as重命名
-						local as, nto = string.plainfind(str, ' AS ', 1, true), nil
-						if as then
-							nto = str:sub(as + 4)
-							str = str:sub(1, as - 1)
+						local n, nto = string.cut(str, ' ')
+						if nto and string.cmp(nto, 'AS ', 3, true) then
+							nto = nto:sub(4)
 						end
 
-						local f = fields[str]
+						local f = fields[n]
 						if f then
-							self.colSelects[str] = f
+							self.colSelects[n] = f
 							if nto then
 								--添加重命名
-								self:alias(str, nto)
+								self:alias(n, nto)
 							end
 						else
-							error('model columns function set a not exists field:' .. str)
+							error('model columns function set a not exists field:' .. n)
 						end
 					end
 				end
@@ -136,11 +135,11 @@ queryMeta = {
 			elseif tp == 'table' then
 				for i = 1, #names do					
 					--取出as重命名
-					local n = names[i]
-					local as, nto = string.plainfind(n, ' AS ', 1, true), nil
-					if as then
-						nto = n:sub(as + 4)
-						n = n:sub(1, as - 1)
+					local n, nto = names[i]
+					
+					n, nto = string.cut(n, ' ')
+					if nto and string.cmp(nto, 'AS ', 3, true) then
+						nto = nto:sub(4)
 					end
 					
 					local f = fields[n]
@@ -224,16 +223,9 @@ queryMeta = {
 			local j = { q = query, type = jt, on = self.joinOn }
 			
 			if not self.joins then
-				self.joins = { j }
-				self.joinNames = { }
-				self.joinNames[tbname] = query
-				
-			elseif not self.joinNames[tbname] then
-				self.joins[#self.joins + 1] = j
-				self.joinNames[tbname] = query
-				
+				self.joins = { j }				
 			else
-				error(string.format("mode:join() with table named '%s' already exists", tbname))
+				self.joins[#self.joins + 1] = j				
 			end
 			
 			return self

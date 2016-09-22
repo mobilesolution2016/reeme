@@ -523,6 +523,7 @@ static int lua_string_cmp(lua_State* L)
 	size_t alen = 0, blen = 0, cmplen = -1;
 	const char* a = luaL_checklstring(L, 1, &alen);
 	const char* b = luaL_checklstring(L, 2, &blen);
+	int t3 = lua_type(L, 3);
 
 	if (!a || !b)
 	{
@@ -530,13 +531,13 @@ static int lua_string_cmp(lua_State* L)
 		return 1;
 	}
 
-	if (lua_isnumber(L, 3))
+	if (t3 == LUA_TNUMBER)
 	{
 		cmplen = luaL_checklong(L, 3);
 		if (lua_isboolean(L, 4))
 			ignoreCase = lua_toboolean(L, 4);
 	}
-	else if (lua_isboolean(L, 3))
+	else if (t3 == LUA_TBOOLEAN)
 	{
 		ignoreCase = lua_toboolean(L, 3);
 	}

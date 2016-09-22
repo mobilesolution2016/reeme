@@ -215,7 +215,7 @@ builder.processOn = function(self, condType, k, v)
 end
 
 --解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
-builder.processTokenedString = function(self, alias, expr, joinFrom)
+builder.processTokenedString = function(self, alias, expr, allJoins)
 	if #alias == 0 then return expr end	
 
 	local tokens, poses = _parseExpression(expr)
@@ -223,21 +223,9 @@ builder.processTokenedString = function(self, alias, expr, joinFrom)
 		return expr
 	end	
 	
-	--自己的表名以及联了自己的表的表名还有上上级联表的表名，最多支持到3级，不再往前支持更多级联表
-	local upJoin
-	local n1, n2, n3 = self.userAlias or self.m.__name, nil, nil
-	
-	if joinFrom then
-		n2 = joinFrom.m.__name
-		if joinFrom.joinFrom then
-			upJoin = joinFrom.joinFrom
-			n3 = upJoin.m.__name
-		end
-	end
-
 	--逐个token的循环进行处理
 	local sql, adjust = expr, 0
-	local fields, names = self.m.__fields, self.joinNames
+	local fields = self.m.__fields
 
 	for i=1, #tokens do
 		local one, newone = tokens[i], nil
@@ -248,17 +236,10 @@ builder.processTokenedString = function(self, alias, expr, joinFrom)
 			if a == n1 then
 				--出现自己的表名
 				newone = alias .. b
-			elseif a == n2 then
-				--出现被联表的表名
-				newone = (joinFrom.userAlias or joinFrom.alias) .. '.' .. b
-			elseif a == n3 then
-				--出现上上级联表的表名
-				newone = (upJoin.userAlias or upJoin.alias) .. '.' .. b
-			elseif names then
-				--联到自己身的其它表的表名
-				local q = names[a]
-				if q then
-					newone = q.useAlias or q.alias .. '.' .. b
+			else
+				newone = allJoins[a]
+				if newone then
+					newone = newone .. '.' .. b
 				end
 			end
 		elseif fields[a] then
@@ -284,18 +265,26 @@ builder.SELECT = function(self, model, db)
 	sqls[#sqls + 1] = 'SELECT'
 	
 	--main
-	local alias = ''
+	local alias, allJoins = '', nil
+	
 	self.db = db
 	if self.joins and #self.joins > 0 then
 		self.alias = self.userAlias or '_A'
 		alias = self.alias .. '.'
-	end	
+		
+		allJoins = table.new(0, 4)
+		allJoins[self.userAlias or self.m.__name] = self.alias
+	end
 	
 	local cols = builder.buildColumns(self, model, sqls, alias)
 	
 	--joins fields
-	builder.buildJoinsCols(self, sqls, 1, #cols > 0 and true or false)
-	
+	if allJoins then
+		builder.buildJoinsCols(self, sqls, 1, #cols > 0 and true or false, allJoins)
+	else
+		allJoins = {}
+	end
+
 	--from
 	sqls[#sqls + 1] = 'FROM'
 	sqls[#sqls + 1] = model.__name
@@ -304,10 +293,12 @@ builder.SELECT = function(self, model, db)
 	end
 
 	--joins conditions	
-	builder.buildJoinsConds(self, sqls)
+	if #alias > 0 then
+		builder.buildJoinsConds(self, sqls, false, allJoins)
+	end
 	
 	--where
-	local haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias)
+	local haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins)
 	builder.buildWhereJoins(self, sqls, haveWheres)
 	
 	--order by
@@ -326,21 +317,26 @@ builder.UPDATE = function(self, model, db)
 	sqls[#sqls + 1] = model.__name
 	
 	--has join(s) then alias
-	local alias = ''
+	local alias, allJoins = '', nil
 	self.db = db
 	if self.joins and #self.joins > 0 then
 		self.alias = self.userAlias or '_A'
 		alias = self.alias .. '.'
+
+		allJoins = table.new(0, 4)
+		allJoins[self.userAlias or self.m.__name] = self.alias
 		
 		sqls[#sqls + 1] = self.alias
 	end	
 
 	--joins fields
-	if #alias > 0 then
-		builder.buildJoinsCols(self, nil, 1)
+	if allJoins then
+		builder.buildJoinsCols(self, nil, 1, false, allJoins)
 		
 		--joins conditions	
-		builder.buildJoinsConds(self, sqls)
+		builder.buildJoinsConds(self, sqls, false, allJoins)
+	else
+		allJoins = {}
 	end
 	
 	--all values
@@ -352,7 +348,7 @@ builder.UPDATE = function(self, model, db)
 	if not builder.buildWheres(self, sqls, 'WHERE', alias) then
 		if type(self.__where) == 'string' then
 			sqls[#sqls + 1] = 'WHERE'
-			sqls[#sqls + 1] = builder.processTokenedString(self, alias, self.__where)
+			sqls[#sqls + 1] = builder.processTokenedString(self, alias, self.__where, allJoins)
 		else
 			--find primary key
 			local haveWheres = false
@@ -364,7 +360,7 @@ builder.UPDATE = function(self, model, db)
 						local v = vals[k]
 						if v and v ~= ngx.null then
 							builder.processWhere(self, 1, k, v)
-							haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias)
+							haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins)
 							break
 						end
 					end
@@ -411,8 +407,10 @@ builder.DELETE = function(self, model)
 	sqls[#sqls + 1] = 'FROM'
 	sqls[#sqls + 1] = model.__name
 	
+	local allJoins = {}
+	
 	--where
-	if not builder.buildWheres(self, sqls, 'WHERE') then
+	if not builder.buildWheres(self, sqls, 'WHERE', nil, allJoins) then
 		if type(self.__where) == 'string' then
 			sqls[#sqls + 1] = 'WHERE'
 			sqls[#sqls + 1] = builder.processTokenedString(self, '', self.__where)
@@ -424,7 +422,7 @@ builder.DELETE = function(self, model)
 				for k,v in pairs(idx) do
 					if (v.type == 1 or v.type == 2) and vals[k] then
 						builder.processWhere(self, 1, k, vals[k])
-						haveWheres = builder.buildWheres(self, sqls, 'WHERE', '')
+						haveWheres = builder.buildWheres(self, sqls, 'WHERE', '', nil, allJoins)
 						break
 					end
 				end
@@ -701,7 +699,7 @@ end
 
 
 --如果condValues非nil，说明现在处理的不是self代表的query自己的条件
-builder.buildWheres = function(self, sqls, condPre, alias, condValues)
+builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 	if not alias then alias = '' end
 	
 	if not condValues then
@@ -719,7 +717,6 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 	if condValues and #condValues > 0 then
 		local ignoreNextCond = (condPre == 'WHERE' or condPre == nil) and true or false
 		local wheres, conds = {}, builder.conds
-		local joinFrom = self.joinFrom
 		
 		for i = 1, #condValues do
 			local one, rsql = condValues[i], nil
@@ -738,7 +735,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 				local subq = one.sub
 				subq.limitStart, subq.limitTotal = nil, nil
 				
-				local expr = builder.processTokenedString(self, alias, one.n, joinFrom)
+				local expr = builder.processTokenedString(self, alias, one.n, allJoins)
 				local subsql = builder.SELECT(subq, subq.m, self.db)
 
 				if subsql then
@@ -757,7 +754,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 				--右括号左边的条件扔掉
 				rsql = one.expr
 			else
-				rsql = conds[onecond] .. builder.processTokenedString(self, alias, one.expr, joinFrom)
+				rsql = conds[onecond] .. builder.processTokenedString(self, alias, one.expr, allJoins)
 			end
 
 			wheres[#wheres + 1] = rsql
@@ -774,7 +771,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues)
 	return false
 end
 
-builder.buildWhereJoins = function(self, sqls, haveWheres)
+builder.buildWhereJoins = function(self, sqls, haveWheres, allJoins)
 	local cc = self.joins == nil and 0 or #self.joins
 	if cc < 1 then
 		return
@@ -782,17 +779,15 @@ builder.buildWhereJoins = function(self, sqls, haveWheres)
 
 	for i = 1, cc do
 		local q = self.joins[i].q
-		q.joinFrom = self
-		if builder.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.') then
+		if builder.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.', nil, allJoins) then
 			haveWheres = true
 		end
 		
-		builder.buildWhereJoins(q, sqls, haveWheres)
-		q.joinFrom = nil
+		builder.buildWhereJoins(q, sqls, haveWheres, allJoins)
 	end
 end
 
-builder.buildJoinsCols = function(self, sqls, indient, haveCols)
+builder.buildJoinsCols = function(self, sqls, indient, haveCols, allJoins)
 	local cc = self.joins == nil and 0 or #self.joins
 	if cc < 1 then
 		return
@@ -801,7 +796,9 @@ builder.buildJoinsCols = function(self, sqls, indient, haveCols)
 	for i = 1, cc do
 		local cols = nil
 		local q = self.joins[i].q
+				
 		q.alias = q.userAlias or ('_' .. string.char(65 + indient))
+		allJoins[q.userAlias or q.m.__name] = q.alias
 
 		if sqls then
 			cols = builder.buildColumns(q, q.m, sqls, q.alias .. '.', true)
@@ -815,14 +812,14 @@ builder.buildJoinsCols = function(self, sqls, indient, haveCols)
 			end
 		end
 		
-		local newIndient = builder.buildJoinsCols(q, sqls, indient + 1, cols or haveCols)
+		local newIndient = builder.buildJoinsCols(q, sqls, indient + 1, cols or haveCols, allJoins)
 		indient = newIndient or (indient + 1)
 	end
 	
 	return indient
 end
 
-builder.buildJoinsConds = function(self, sqls, haveOns)
+builder.buildJoinsConds = function(self, sqls, haveOns, allJoins)
 	local cc = self.joins == nil and 0 or #self.joins
 	if cc < 1 then
 		return
@@ -833,8 +830,6 @@ builder.buildJoinsConds = function(self, sqls, haveOns)
 	for i = 1, cc do
 		local join = self.joins[i]
 		local q = join.q
-		
-		q.joinFrom = self
 
 		sqls[#sqls + 1] = validJoins[join.type]
 		sqls[#sqls + 1] = q.m.__name
@@ -842,7 +837,7 @@ builder.buildJoinsConds = function(self, sqls, haveOns)
 		sqls[#sqls + 1] = 'ON('
 		
 		local pos = #sqls
-		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues) then
+		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues, allJoins) then
 			if join.type == 'inner' then
 				sqls[#sqls + 1] = '1)'
 			else
@@ -852,11 +847,9 @@ builder.buildJoinsConds = function(self, sqls, haveOns)
 			sqls[#sqls + 1] = ')'
 		end
 		
-		if builder.buildJoinsConds(q, sqls, haveOns) then
+		if builder.buildJoinsConds(q, sqls, haveOns, allJoins) then
 			haveOns = true
 		end
-		
-		q.joinFrom = nil
 	end
 	
 	return haveOns
