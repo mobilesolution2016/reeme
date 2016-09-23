@@ -54,6 +54,8 @@ local SERVER_MORE_RESULTS_EXISTS = 8
 -- 16MB - 1, the default max allowed packet size used by libmysqlclient
 local FULL_PACKET_SIZE = 16777215
 
+--unsigned flag
+local FIELD_UNSIGNED_FLAG = 0x20
 
 local mt = { __index = _M }
 
@@ -65,7 +67,14 @@ for i = 0x01, 0x05 do
     -- tiny, short, long, float, double
     converters[i] = tonumber
 end
-converters[0x08] = tonumber  -- long long
+converters[0x08] = function(value, flags)
+	if bit.band(flags, FIELD_UNSIGNED_FLAG) == FIELD_UNSIGNED_FLAG then
+		return uint64.fromstr(value)
+	else
+		return int64.fromstr(value)
+	end
+end
+--converters[0x08] = tonumber  -- long long
 converters[0x09] = tonumber  -- int24
 converters[0x0d] = tonumber  -- year
 converters[0xf6] = tonumber  -- newdecimal
@@ -95,8 +104,8 @@ local function _get_byte8(data, i)
     -- XXX workaround for the lack of 64-bit support in bitop:
     local lo = bor(a, lshift(b, 8), lshift(c, 16), lshift(d, 24))
     local hi = bor(e, lshift(f, 8), lshift(g, 16), lshift(h, 24))
-    return lo + hi * 4294967296, i + 8
-
+    return uint64.make(hi, lo), i + 8
+	--return lo + hi * 4294967296, i + 8
     -- return bor(a, lshift(b, 8), lshift(c, 16), lshift(d, 24), lshift(e, 32),
                -- lshift(f, 40), lshift(g, 48), lshift(h, 56)), i + 8
 end
@@ -257,7 +266,6 @@ local function _from_length_coded_bin(data, pos)
     local first = strbyte(data, pos)
 
     --print("LCB: first: ", first)
-
     if not first then
         return nil, pos
     end
@@ -372,7 +380,7 @@ local function _parse_field_packet(data)
     local catalog, db, table, orig_table, orig_name, charsetnr, length
     local pos
     catalog, pos = _from_length_coded_str(data, 1)
-
+	
     --print("catalog: ", col.catalog, ", pos:", pos)
 
     db, pos = _from_length_coded_str(data, pos)
@@ -389,7 +397,9 @@ local function _parse_field_packet(data)
     length, pos = _get_byte4(data, pos)
 
     col.type = strbyte(data, pos)
-
+	pos = pos + 1
+	
+	col.flags, pos = _get_byte2(data, pos)
     --[[
     pos = pos + 1
 
@@ -425,11 +435,11 @@ local function _parse_row_data_packet(data, cols, compact)
         local name = col.name
 
         --print("row field value: ", value, ", type: ", typ)
-
+		
         if value ~= null then
             local conv = converters[typ]
             if conv then
-                value = conv(value)
+                value = conv(value, typ == 0x8 and col.flags or nil)
             end
         end
 
