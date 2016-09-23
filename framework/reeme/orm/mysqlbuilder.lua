@@ -806,13 +806,13 @@ builder.buildJoinsCols = function(self, sqls, indient, haveCols, allJoins)
 				if haveCols then
 					sqls[#sqls + 1] = ','
 				end
+				
 				sqls[#sqls + 1] = cols
-			else
-				cols = false
+				cols, haveCols = true, true
 			end
 		end
 		
-		local newIndient = builder.buildJoinsCols(q, sqls, indient + 1, cols or haveCols, allJoins)
+		local newIndient = builder.buildJoinsCols(q, sqls, indient + 1, haveCols, allJoins)
 		indient = newIndient or (indient + 1)
 	end
 	
