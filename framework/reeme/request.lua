@@ -63,7 +63,7 @@ local RequestBase = {
 			return r
 		end
 		
-		return nil
+		return f
 	end,
 	__newindex = function(self, key, value)
 		local f = writeables[key]
@@ -124,7 +124,9 @@ local RequestStatics = {
 }
 
 return function(reeme)
-	local request = { R = reeme }
+	local request = table.new(0, 8)
+	
+	request.R = reeme
 	for k,f in pairs(RequestStatics) do
 		request[k] = f
 	end

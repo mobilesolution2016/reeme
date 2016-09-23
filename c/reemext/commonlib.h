@@ -320,9 +320,20 @@ const char initcodes[] = {
 	"	value = reemext.ltud2uint64\n"
 	"}\n"
 
-	"_G['int64'], _G['uint64'], _G['ffi'] = setmetatable(int64, { __call = function(self, a, b) return int64construct(a, b) end }),"
+	"_G.int64, _G.uint64, _G.ffi = setmetatable(int64, { __call = function(self, a, b) return int64construct(a, b) end }),"
 	"										setmetatable(uint64, { __call = function(self, a, b) return int64construct(a, b) end }),"
 	"										ffi\n"
+
+	"local _string = _G.string\n"
+	"_string.cut = function(str, p)\n"
+	"	if str then\n"
+	"		local pos = string.find(str, p, 1, true)\n"
+	"		if pos then\n"
+	"			return string.sub(str, 1, pos - 1), string.sub(str, pos + 1)\n"
+	"		end\n"
+	"	end\n"
+	"	return str\n"
+	"end\n"
 };
 
 static int lua_uint64_tolightuserdata(lua_State* L)

@@ -207,7 +207,7 @@ public:
 	char				*m_pLastPos;
 	size_t				m_nMemSize;
 	int					m_iErr, m_iNeedSetMarker, m_iTableIndex;
-	bool				m_bFreeMem, m_bQuoteStart, m_bNegativeVal;
+	bool				m_bFreeMem, m_bQuoteStart, m_bNegativeVal, m_bDropObjNull;
 	JSONValueType		m_kValType;
 
 	uint32_t			m_nOpens;
@@ -221,7 +221,7 @@ protected:
 	void onNodeEnd(bool bIsArray)
 	{
 		if (m_nOpens)
-			lua_settable(L, -3);
+			lua_rawset(L, -3);
 	}
 
 	//一个属性节点被确定。如果是数组或子节点类型，则此时数组/子节点数据还未确定，要到onNodeEnd才说明数组/子节点结束。而字符串/值类型的节点则是其值已经读完时本函数才被调用
@@ -272,6 +272,12 @@ protected:
 				lua_pushboolean(L, 0);
 				break;
 			case JVTNull:
+				if (m_bDropObjNull)
+				{
+					lua_pop(L, 1);
+					return ;
+				}
+
 				lua_pushlightuserdata(L, NULL);
 				break;
 			}
@@ -406,13 +412,14 @@ protected:
 	}
 
 public:
-	inline JSONFile(lua_State* p)
+	inline JSONFile(lua_State* p, int dropObjNull)
 		: m_pMemory		(0)
 		, m_nMemSize	(0)
 		, m_pLastPos	(0)
 		, m_iErr		(0)
 		, m_bFreeMem	(true)
 		, m_nOpens		(0)
+		, m_bDropObjNull(dropObjNull != 0)
 		, L				(p)
 	{
 	}

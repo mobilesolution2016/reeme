@@ -4,7 +4,7 @@ local validIndex = { primary = 1, unique = 2, index = 3 }
 return {
 	parseFields = function(m, modelName)
 		local aiExists = false
-		local fields, plains, indices = {}, {}, {}
+		local fields, plains, indices, alias = {}, {}, {}, nil
 		
 		for k,v in pairs(m.fields) do
 			if type(k) == 'string' then
@@ -36,7 +36,7 @@ return {
 				end
 				
 				--默认值开始位置
-				local defv = string.plainfind(v, ')', 3)
+				local defv = string.find(v, ')', 3, true)
 				if not defv then
 					error(string.format('use(%s) syntax error, expet a ) before default value when parse field "%s"', modelName, k))
 				end
@@ -113,10 +113,25 @@ return {
 			end
 		end
 		
+		if m.alias then
+			local aliascc = 0
+			local ab, ba = table.new(0, 8), table.new(0, 8)
+			for k,v in pairs(m.alias) do
+				ab[k] = v
+				ba[v] = k
+				aliascc = aliascc + 1
+			end
+			
+			if aliascc then
+				alias = { ab = ab, ba = ba }
+			end
+		end
+		
 		if #plains > 0 then
 			m.__fields = fields
 			m.__fieldsPlain = plains
 			m.__fieldIndices = indices
+			m.__fieldAlias = alias
 			return true
 		end
 		

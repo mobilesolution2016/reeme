@@ -21,6 +21,7 @@ enum StringJsonFlags {
 	kJsonRetCData = 0x40000000,
 	kJsonLuaString = 0x20000000,
 	kJsonUnicodes = 0x10000000,
+	kJsonDropObjectNull = 0x08000000,
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -368,112 +369,6 @@ _lastseg:
 	return retAs == LUA_TTABLE ? 1 : cc;
 }
 
-static int lua_string_step_r(lua_State* L)
-{
-	int t = lua_upvalueindex(1);
-	if (lua_isstring(L, t))
-	{
-		lua_pushvalue(L, t);
-		lua_pushnil(L);
-		lua_replace(L, t);
-		return 1;
-	}
-	return 0;
-}
-static int lua_string_step_aux(lua_State* L)
-{	
-	lua_Integer offset = luaL_optinteger(L, lua_upvalueindex(3), -1);
-	if (offset == -1)
-		return 0;
-
-	size_t len, byLen;
-	const char* s = lua_tolstring(L, lua_upvalueindex(1), &len);
-	const char* by = lua_tolstring(L, lua_upvalueindex(2), &byLen);
-	const char* found;
-
-	s += offset;
-	if (byLen == 1)
-		found = strchr(s, by[0]);
-	else
-		found = strstr(s, by);
-
-	if (found)
-	{		
-		size_t size = found - s;
-		lua_pushlstring(L, s, size);
-
-		offset += size + byLen;
-		if (offset < len)
-			lua_pushinteger(L, offset);
-		else
-			lua_pushnil(L);
-	}
-	else
-	{
-		lua_pushlstring(L, s, len - offset);
-		lua_pushnil(L);
-	}
-
-	lua_replace(L, lua_upvalueindex(3));
-	return 1;
-}
-// 单步按照字符串切分
-static int lua_string_step(lua_State* L)
-{
-	size_t len = 0, bylen = 0;
-	const char* s = luaL_checklstring(L, 1, &len);
-	const char* by =  luaL_checklstring(L, 2, &bylen);
-
-	lua_pushvalue(L, 1);
-	if (len < 1 || bylen > len)
-	{ 
-		lua_pushcclosure(L, &lua_string_step_r, 1);
-		return 1;
-	}
-	
-	lua_pushvalue(L, 2);
-	lua_pushinteger(L, 0);
-	lua_pushcclosure(L, &lua_string_step_aux, 3);
-	return 1;
-}
-
-static int lua_string_cut(lua_State* L)
-{
-	size_t srcLen = 0;
-	const char* src = luaL_optlstring(L, 1, 0, &srcLen);
-	if (srcLen < 1)
-	{
-		lua_pushvalue(L, 1);
-		return 1;
-	}
-
-	size_t byLen = 0;
-	const char* by = luaL_checklstring(L, 2, &byLen);
-	if (byLen < 1)
-	{
-		lua_pushvalue(L, 1);
-		return 1;
-	}
-
-	const char* pos;
-	if (byLen == 1)
-		pos = strchr(src, by[0]);
-	else
-		pos = strstr(src, by);
-
-	if (!pos || pos + byLen == src + srcLen)
-	{
-		lua_pushvalue(L, 1);
-		return 1;
-	}
-
-	size_t off = pos - src;
-	lua_pushlstring(L, src, off);
-	lua_pushlstring(L, pos + byLen, srcLen - off - byLen);
-
-	return 2;
-}
-
 //////////////////////////////////////////////////////////////////////////
 // 对字符串进行左右非可见符号去除，参数2和3如果存在且为true|false分别表示是否要处理左边|右边。如果没有参数2或3则默认左右都处理
 static int lua_string_trim(lua_State* L)
@@ -566,45 +461,6 @@ static int lua_string_cmp(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-// 字符串中所含字符/串的查找，直接使用STL函数，比string.find(xx, xx, 1, true)快
-static int lua_string_plainfind(lua_State* L)
-{
-	size_t len = 0, len2 = 0;
-	const char* s = luaL_checklstring(L, 1, &len);
-	const char* f = luaL_checklstring(L, 2, &len2);
-
-	if (len2 && len2 <= len)
-	{
-		long t = luaL_optinteger(L, 3, 0);
-		if (t > 1 && t <= len)
-		{
-			t --;
-			s += t;
-		}
-
-		if (lua_toboolean(L, 4))
-		{
-			size_t pos = opt_stristr(s, len - t, f, len2);
-			if (pos != -1)
-			{
-				lua_pushinteger(L, pos + 1);
-				return 1;
-			}
-		}
-		else
-		{
-			f = len2 > 1 ? strstr(s, f) : strchr(s, f[0]);
-			if (f)
-			{
-				lua_pushinteger(L, f - s + t + 1);
-				return 1;
-			}
-		}
-	}
-
-	return 0;
-}
-
 // 字符串中所含字符倒叙查找，仅支持对字符进行查找不支持字符串
 static int lua_string_rfindchar(lua_State* L)
 {
@@ -2766,6 +2622,7 @@ static int lua_string_json(lua_State* L)
 		size_t len = 0;
 		bool copy = true;
 		const char* str;
+		lua_Integer flags = 0;
 		int needSetMarker = 0;
 		
 		if (tp == LUA_TSTRING)
@@ -2790,7 +2647,7 @@ static int lua_string_json(lua_State* L)
 			needSetMarker = 2;
 		if (top >= 3)
 		{
-			lua_Integer flags = luaL_optinteger(L, 3, 0);
+			flags = luaL_optinteger(L, 3, 0);
 			if (flags & kJsonNoCopy)
 				copy = false;
 		}
@@ -2798,7 +2655,7 @@ static int lua_string_json(lua_State* L)
 		lua_newtable(L);
 		top = lua_gettop(L);
 
-		JSONFile f(L);
+		JSONFile f(L, flags & kJsonDropObjectNull);
 		size_t readlen = f.parse(str, len, copy, needSetMarker);
 		if (readlen == 0)
 		{
@@ -2871,17 +2728,11 @@ static void luaext_string(lua_State *L)
 	const luaL_Reg procs[] = {
 		// 字符串切分
 		{ "split", &lua_string_split },
-		// 字符串单步切分
-		{ "step", &lua_string_step },
-		// 快速的字符串左右分
-		{ "cut", &lua_string_cut },
 		// trim函数
 		{ "trim", &lua_string_trim },
 		// 字符串比较
 		{ "cmp", &lua_string_cmp },
 
-		// 单个字符/字符串正向查找，不需要用正则时的常规查找（3~5倍性能于string.find(str, by, 1, true)）
-		{ "plainfind", &lua_string_plainfind },
 		// 单个字符反向查找（不支持字符串反向）
 		{ "rfindchar", &lua_string_rfindchar },
 		// 对字符串进行所有字符出现次数的总计数
@@ -2951,6 +2802,10 @@ static void luaext_string(lua_State *L)
 
 	lua_pushliteral(L, "JSON_UNICODES");		// 字符串中的utf8/unicode不要转义，直接保留使用。上一个标志JSON_LUASTRING存在时，本标志被忽略
 	lua_pushinteger(L, kJsonUnicodes);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "JSON_OBJECT_DROPNULL");	// 当不是Array而是Object且某个member为userdata:null时，不将这个member编码成name:null而是直接扔掉
+	lua_pushinteger(L, kJsonDropObjectNull);
 	lua_rawset(L, -3);
 
 	// 所有扩展的函数

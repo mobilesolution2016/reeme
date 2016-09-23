@@ -91,6 +91,7 @@ local mysql = {
 				__builder = builder,
 				__name = truename or tbname,
 				__fields = m.__fields,
+				__fieldAlias = m.__fieldAlias,
 				__fieldsPlain = m.__fieldsPlain,
 				__fieldIndices = m.__fieldIndices,
 				__debug = self.debugMode,

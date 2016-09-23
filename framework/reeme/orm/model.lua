@@ -112,7 +112,7 @@ queryMeta = {
 				if names == '*' then
 					self.colSelects = nil
 				else
-					for str in names:step(',') do
+					for str in string.gmatch(names, '([^,]+)') do
 						--取出as重命名
 						local n, nto = string.cut(str, ' ')
 						if nto and string.cmp(nto, 'AS ', 3, true) then
@@ -133,7 +133,7 @@ queryMeta = {
 				end
 				
 			elseif tp == 'table' then
-				for i = 1, #names do					
+				for i = 1, #names do
 					--取出as重命名
 					local n, nto = names[i]
 					
@@ -169,7 +169,7 @@ queryMeta = {
 			local fields = self.m.__fields
 			
 			if tp == 'string' then
-				for str in names:step(',') do
+				for str in string.gmatch(names, '([^,]+)') do
 					if not fields[str] then
 						error('model excepts function set a not exists field:' .. str)
 					end
@@ -239,19 +239,40 @@ queryMeta = {
 			if name then
 				if aliasTo then
 					--字段别名
+					local baseab, baseba = self.m.__fieldAlias
+					
 					if not self.aliasAB then
 						self.aliasAB = table.new(0, 8)
 						self.aliasBA = table.new(0, 8)
+					elseif baseab then
+						baseab, baseba = baseab.ab, baseab.ba
+						if self.aliasAB == baseab then
+							self.aliasAB = table.clone(baseab)
+							self.aliasBA = table.clone(baseba)
+						end
 					end
 
-					local old = self.aliasAB[name]
-					if old then
-						self.aliasBA[old] = nil
-					end
+					baseab, baseba = self.aliasAB, self.aliasBA
+					local setone = function(n, to)
+						local old = baseab[n]
+						if old then
+							baseba[old] = nil
+						end
 
-					self.aliasAB[name] = aliasTo
-					self.aliasBA[aliasTo] = name
-	
+						baseab[n] = to
+						baseba[to] = n
+					end
+					
+					if type(name) == 'string' then
+						setone(name, aliasTo)
+					else
+						assert(type(aliasTo) == 'table')
+						
+						for i = 1, #name do
+							setone(name[i], aliasTo[i])
+						end
+					end
+		
 				elseif #name > 0 then
 					--表的别名
 					local chk = name:match('_[A-Z]')
@@ -261,6 +282,7 @@ queryMeta = {
 				end
 			else
 				--全部取消
+				self.userAlias = nil
 				self.aliasAB, self.aliasBA = nil, nil
 			end
 			
@@ -494,10 +516,23 @@ local modelMeta = {
 			r.__db = self.__db
 			return r
 		end,
+
+		--建立一个查询器
+		query = function(self, op)
+			local q = { m = self, R = self.__reeme, op = op or 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 1 }
+			local alias = self.__fieldAlias
+			if alias then
+				q.aliasAB = alias.ab
+				q.aliasBA = alias.ba
+			end
+
+			return setmetatable(q, queryMeta)
+		end,		
 		
 		--按条件查找并返回所有的结果（其实不指定limit也是默认只是前50条而非真的全部），注意本函数返回为结果集实例而非结果行数组
 		find = function(self, p1, p2, p3, p4)
-			local q = setmetatable({ m = self, R = self.__reeme, builder = self.__builder, op = 'SELECT' }, queryMeta)
+			local q = self:query()			
+			q.limitTotal = nil
 			
 			if p1 then
 				local tp = type(p1)
@@ -521,14 +556,10 @@ local modelMeta = {
 
 			return q:exec()
 		end,
-		
-		--建立一个select查询器
-		query = function(self)
-			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 1 }, queryMeta)
-		end,
+
 		--建立一个执行表达式的查询器而忽略其它行或列
 		expression = function(self, expr)
-			return setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 1 }, queryMeta):expr(expr):columns()
+			return self:query():expr(expr):columns()
 		end,
 		
 		--和find一样，只不过返回的是结果行而非结果集实例，并且在没有任何结果的时候也不会返回Nil而是返回一个空table
@@ -538,7 +569,8 @@ local modelMeta = {
 		end,
 		--和findAll一样，只不过可以限制只返回某些列而不是所有列
 		findAllWithNames = function(self, colnames, p1, p2, p3, p4)
-			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
+			local q = self:query()			
+			q.limitTotal = nil
 			
 			if p1 then
 				local tp = type(p1)
@@ -564,25 +596,27 @@ local modelMeta = {
 		end,
 		--和findFirst一样，但是仅查找第1行的指定的某1列，返回的将是一个所有行的这一列组成的一个新table(注意不是结果集实例)，并在没有结果集的时候并不会返回nil
 		findAllFirst = function(self, colname, name, val)
-			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)			
+			local q = self:query()			
+			q.limitTotal = nil
+
 			if name then q:where(name, val) end
 			return q:fetchAllFirst(colname)
 		end,
 		
 		--和find一样但是仅查找第1行，其实就是find加上limit(1)
 		findFirst = function(self, name, val)
-			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
+			local q = self:query()
 			if name then q:where(name, val) end
-			return q:limit(1):exec()
+			return q:exec()
 		end,
 		--和find一样但是仅查找第1行，并且限制查找时的列名（不会将所有列都取出），如果列名只有1个，那么返回的将是单值或nil
 		findFirstWithNames = function(self, colnames, name, val)
-			local q = setmetatable({ m = self, R = self.__reeme, op = 'SELECT', builder = self.__builder }, queryMeta)
+			local q = self:query()
 
 			if name then q:where(name, val) end
-			q = q:columns(colnames):limit(1):exec()
+			q = q:columns(colnames):exec()
 			
-			if string.plainfind(colnames, ',') then
+			if string.find(colnames, ',', 1, true) then
 				return q and q(false) or nil
 			end
 			return q and q[colnames] or nil
@@ -590,12 +624,52 @@ local modelMeta = {
 		
 		--建立一个delete查询器。条件可以直接给出一个语句或不给，也可以用where/xxxWhere来给出
 		delete = function(self, where)
-			return setmetatable({ m = self, R = self.__reeme, op = 'DELETE', builder = self.__builder, __where = where }, queryMeta)
+			local q = self:query('DELETE')
+			q.__where = where
+			return q
+		end,
+		--建立一个delete查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键，那么直接报错
+		deleteBy = function(self, val)
+			assert(val ~= nil, 'call model.deleteBy with nil value')
+
+			for k,v in pairs(self.__fieldIndices) do
+				if v.type == 1 then
+					local q = self:query('DELETE')
+					local tp, field = type(val), self.__fields[k]
+					
+					if tp == 'table' then
+						assert(#val >= 1)
+						q.__where = table.concat({field.colname, val[1]}, ' ')
+						
+					elseif tp == 'cdata' then
+						local newv 
+						val, newv = string.checkinteger(val)
+						if newv then
+							q.__where = string.format('%s=%s', newv)
+						end
+					else
+						q.__where = string.format('%s=%s', tostring(val))
+					end
+					
+					q = q:exec()
+					if q and q.rows == 1 then
+						return true
+					end
+					
+					return false
+				end
+			end
+			
+			error('the must a primary key declared first when call model.deleteBy')
 		end,
 		--建立一个update查询器，必须给出要更新的值的集合。条件可以直接给出一个语句或不给，也可以用where/xxxWhere来给出
 		update = function(self, vals, where)
 			assert(type(vals) == 'table' or type(vals) == 'string')
-			return setmetatable({ m = self, R = self.__reeme, op = 'UPDATE', builder = self.__builder, keyvals = vals, __where = where }, queryMeta)
+			
+			local q = self:query('UPDATE')
+			q.keyvals = vals
+			q.__where = where
+			return q
 		end,
 		
 		--按名称字段配置
