@@ -173,6 +173,15 @@ local pub = {
 
 		return false
 	end,
+	wrap = function(self, result)
+		rawset(self, -10001, #result)
+		rawset(self, -10002, 1)
+		rawset(self, -10003, result)
+		
+		if setResultRow(self, 1) then
+			return self
+		end
+	end
 }
 
 resultMeta.__index = {

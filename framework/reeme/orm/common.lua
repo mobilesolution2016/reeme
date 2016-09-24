@@ -4,7 +4,7 @@ local validIndex = { primary = 1, unique = 2, index = 3 }
 return {
 	parseFields = function(m, modelName)
 		local aiExists = false
-		local fields, plains, indices, alias = {}, {}, {}, nil
+		local fields, plains, indices, alias = {}, {}, { }, { ab = {}, ba = {}, cc = 0 }
 		
 		for k,v in pairs(m.fields) do
 			if type(k) == 'string' then
@@ -123,7 +123,7 @@ return {
 			end
 			
 			if aliascc then
-				alias = { ab = ab, ba = ba }
+				alias = { ab = ab, ba = ba, cc = aliascc }
 			end
 		end
 		

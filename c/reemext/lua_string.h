@@ -2446,7 +2446,7 @@ public:
 		break;\
 	case LUA_TNUMBER:\
 		v = lua_tonumber(L, -1);\
-		ival = (int64_t)v;\
+		ival = static_cast<int64_t>(v);\
 		if (v == ival) {\
 			if (v < 0) {\
 				if (ival < INT_MIN)\

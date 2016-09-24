@@ -203,6 +203,7 @@ local appMeta = {
 						return nil, nil, true
 					end
 				else
+					ngx.say(string.format("load controller '%s' failed:<br/>\n%s", path, errmsg))
 					return nil, nil, true
 				end
 			end

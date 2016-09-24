@@ -1,5 +1,6 @@
 local queryMeta = nil
 local resultPub = require('reeme.orm.result')
+local allConds = { ['AND'] = 2, ['OR'] = 3, ['XOR'] = 4, ['NOT'] = 5, ['and'] = 2, ['or'] = 3, ['xor'] = 4, ['not'] = 5 }
 
 --query的原型类
 queryMeta = {
@@ -19,7 +20,6 @@ queryMeta = {
 		
 		--设置条件
 		where = function(self, name, val)
-			self.condValues = nil
 			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 1, name, val)
 		end,
@@ -41,13 +41,12 @@ queryMeta = {
 		end,
 		clearWheres = function(self)
 			self.condValues, self.condString = nil, nil
-			self.setWheres = false
+			self.setWheres, self.setOns = true, false
 			return self
 		end,
 		
 		--设置join on条件
 		on = function(self, name, val)
-			self.onValues = nil
 			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 1, name, val)
 		end,
@@ -69,19 +68,18 @@ queryMeta = {
 		end,
 		clearOns = function(self)
 			self.onValues = nil
-			self.setOns = false
+			self.setOns, self.setWheres = true, false
 			return self
 		end,
 		
 		--where/on中增加一个左括号
-		lb = function(self)
+		lb = function(self, cond)
 			self.brackets = self.brackets and (self.brackets + 1) or 1
 
-			if self.setWheres then return self.builder.processWhere(self, 2, '(') end
-			if self.setOns then return self.builder.processOn(self, 2, '(') end 
-			
-			error('error for use lb function on query')
-			return self
+			if self.setOns then
+				return self.builder.processOn(self, allConds[cond] or 2, '(')
+			end
+			return self.builder.processWhere(self, allConds[cond] or 2, '(')
 		end,
 		--where/on中增加一个右括号
 		rb = function(self)
@@ -90,11 +88,10 @@ queryMeta = {
 			end
 			self.brackets = self.brackets - 1
 			
-			if self.setWheres then return self.builder.processWhere(self, 2, ')') end
-			if self.setOns then return self.builder.processOn(self, 2, ')') end 
-			
-			error('error for use lb function on query')
-			return self
+			if self.setOns then
+				return self.builder.processOn(self, 1, ')')
+			end
+			return self.builder.processWhere(self, 1, ')')
 		end,
 		
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列。同时会将只排除的列清空掉
@@ -111,7 +108,7 @@ queryMeta = {
 			if tp == 'string' then
 				if names == '*' then
 					self.colSelects = nil
-				else
+				elseif #names > 0 then
 					for str in string.gmatch(names, '([^,]+)') do
 						--取出as重命名
 						local n, nto = string.cut(str, ' ')
@@ -190,14 +187,18 @@ queryMeta = {
 			
 			return self
 		end,
-		--使用列表达式
+		--使用列表达式。不带参数的调用就是清除表达式
 		expr = function(self, expr)
-			if not self.expressions then
-				self.expressions = table.new(4, 0)
-			end
+			if expr then
+				if not self.expressions then
+					self.expressions = table.new(4, 0)
+				end
+				self.expressions[#self.expressions + 1] = expr
+			else
+				self.expressions = nil
+			end		
 			self.colCache = nil
 			
-			self.expressions[#self.expressions + 1] = expr
 			return self
 		end,
 		
@@ -289,6 +290,11 @@ queryMeta = {
 			return self
 		end,
 		
+		--获取表名
+		tableName = function(self)
+			return self.userAlias or self.m.__name
+		end,
+		
 		--设置排序
 		order = function(self, field, asc)
 			if field:find('[,]+') then
@@ -365,17 +371,16 @@ queryMeta = {
 				setvnil = true
 			end
 			
-			local model = self.m
-			local sqls = self.builder[self.op](self, model, db)
+			local sqls = self.builder[self.op](self, db)
 
 			if sqls then
-				result = resultPub.init(result, model)
+				result = resultPub.init(result, self.m)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 
 				self.lastSql = sqls				
 				if self.m.__debug then
 					if res then
-						print(sqls, ':insertid=', tostring(res.insert_id), 'affected=', res.affected_rows)
+						print(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
 					else
 						print(sqls, ':error')
 					end
@@ -515,6 +520,16 @@ local modelMeta = {
 			
 			r.__db = self.__db
 			return r
+		end,
+		
+		--将一个数组型的table包装成一个结果集
+		wrap = function(self, result)
+			if type(result) ~= 'table' or #result < 1 then
+				return nil
+			end
+			
+			local r = resultPub.init(nil, self)
+			return resultPub.wrap(r, result)
 		end,
 
 		--建立一个查询器
