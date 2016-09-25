@@ -108,10 +108,12 @@ queryMeta = {
 			if tp == 'string' then
 				if names == '*' then
 					self.colSelects = nil
+					
 				elseif #names > 0 then
-					for str in string.gmatch(names, '([^,]+)') do
+					local splits = string.split(names, ',', string.SPLIT_TRIM)
+					for i = 1, #splits do
 						--取出as重命名
-						local n, nto = string.cut(str, ' ')
+						local n, nto = string.cut(splits[i], ' ')
 						if nto and string.cmp(nto, 'AS ', 3, true) then
 							nto = nto:sub(4)
 						end
@@ -132,9 +134,7 @@ queryMeta = {
 			elseif tp == 'table' then
 				for i = 1, #names do
 					--取出as重命名
-					local n, nto = names[i]
-					
-					n, nto = string.cut(n, ' ')
+					local n, nto = string.cut(names[i], ' ')
 					if nto and string.cmp(nto, 'AS ', 3, true) then
 						nto = nto:sub(4)
 					end
@@ -290,9 +290,13 @@ queryMeta = {
 			return self
 		end,
 		
-		--获取表名
-		tableName = function(self)
+		--获取表名（如果表被别名过，那么返回的是别名）
+		name = function(self)
 			return self.userAlias or self.m.__name
+		end,
+		--返回原始表名忽略别名（如果有的话）
+		sourceName = function(self)
+			return self.m.__name
 		end,
 		
 		--设置排序
@@ -377,7 +381,7 @@ queryMeta = {
 				result = resultPub.init(result, self.m)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 
-				self.lastSql = sqls				
+				self.lastSql = sqls
 				if self.m.__debug then
 					if res then
 						print(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
@@ -534,7 +538,7 @@ local modelMeta = {
 
 		--建立一个查询器
 		query = function(self, op)
-			local q = { m = self, R = self.__reeme, op = op or 'SELECT', builder = self.__builder, limitStart = 0, limitTotal = 1 }
+			local q = { m = self, R = self.__reeme, op = op ~= nil and string.upper(op) or 'SELECT', builder = self.__builder }
 			local alias = self.__fieldAlias
 			if alias then
 				q.aliasAB = alias.ab
@@ -622,14 +626,14 @@ local modelMeta = {
 		findFirst = function(self, name, val)
 			local q = self:query()
 			if name then q:where(name, val) end
-			return q:exec()
+			return q:limit(1):exec()
 		end,
 		--和find一样但是仅查找第1行，并且限制查找时的列名（不会将所有列都取出），如果列名只有1个，那么返回的将是单值或nil
 		findFirstWithNames = function(self, colnames, name, val)
 			local q = self:query()
 
 			if name then q:where(name, val) end
-			q = q:columns(colnames):exec()
+			q = q:columns(colnames):limit(1):exec()
 			
 			if string.find(colnames, ',', 1, true) then
 				return q and q(false) or nil
@@ -666,7 +670,7 @@ local modelMeta = {
 						q.__where = string.format('%s=%s', tostring(val))
 					end
 					
-					q = q:exec()
+					q = q:limit(1):exec()
 					if q and q.rows == 1 then
 						return true
 					end

@@ -28,7 +28,7 @@ local function loadSubtemplate(self, env, name)
 	if t then
 		return string.parseTemplate(self, t, env)
 	end
-	return ''
+	return string.format('subtemplate("%s") failed, name not exists', name)
 end
 
 local function setCachesection(isBegin, rets, caches, ...)	

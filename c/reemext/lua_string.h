@@ -1574,11 +1574,30 @@ static int lua_string_fmt(lua_State* L)
 //////////////////////////////////////////////////////////////////////////
 #define TP_FIXED	16384
 
-static const char templInitCode[] = { "return function(self, __env__)\nlocal __ret__ = {}\n" };
-static const char templReturnCode[] = { "\nreturn table.concat(__ret__, '')\nend" };
+static const char templReturnCode[] = { "\nreturn __segcc__ > 0 and __segs__ or table.concat(__ret__, '')\nend" };
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
 static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
 static const char templErrTipCode[] = { ", the full template parsed code: <br/><br/>\r\n\r\n" };
+static const char templSegDecl[] = { "__ret__, __segcc__, __segs__['" };
+static const char templSegAdd[] = { "'] = table.new(0, 32), __segcc__ + 1, table.concat(__ret__, '')\n" };
+static const char templInitCode[] = { 
+	"return function(self, __env__)\n"
+	"local __ret__, __segs__, __segcc__ = table.new(32, 0), table.new(0, 4), 0\n"
+	"local function fetchsection()\n"
+	"	while true do\n"
+	"		local r = table.remove(__ret__)\n"
+	"		local tp = type(r)\n"
+	"		if tp == 'table' then return r end\n"
+	"		if tp ~= 'string' then break end\n"
+	"	end\n"
+	"end\n"
+	"local function echo(v)\n"
+	"	local tp = type(v)\n"
+	"	if tp == 'table' then v = table.concat(v, '')\n"
+	"	elseif tp ~= 'string' then v = tostring(v) end\n"
+	"	__ret__[#__ret__ + 1] = v\n"
+	"end\n"
+};
 
 class TemplateParser
 {
@@ -1768,11 +1787,18 @@ public:
 					varBegin ++;
 
 				const char* varEnd = varBegin + 1;
-				for ( ; ; varEnd ++)
+				const char* totalEnd = src + srcLen;
+				const char* subSec = NULL;
+
+				for ( ; varEnd < totalEnd; varEnd ++)
 				{
 					uint8_t ch2 = varEnd[0];
+					if (ch2 == '/' && !subSec)
+						subSec = varEnd;
 					if (ch2 == '}')
 						break;
+					if (ch == '\'')
+						return false;
 				}
 
 				close();
@@ -1780,10 +1806,29 @@ public:
 				// 引用子模板
 				if (ch == ':')
 				{
-					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
-					buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
-					buf += '\'';
-					buf.append(varBegin, varEnd - varBegin);
+					if (subSec)
+					{
+						// 这个模板不直接引用，而是赋于一个段名称
+						buf.append("local ", 6);
+						buf.append(varBegin, subSec - varBegin);
+						buf += '=';
+						buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
+						buf += '\'';
+
+						subSec ++;
+						while((uint8_t)subSec[0] <= 32)
+							subSec ++;
+						buf.append(subSec, varEnd - subSec);
+					}
+					else
+					{
+						// 直接引用模板
+						buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+						buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
+						buf += '\'';
+						buf.append(varBegin, varEnd - varBegin);
+					}
+
 					buf.append("\')", 2);					
 				}
 				else
@@ -1796,7 +1841,7 @@ public:
 				wrote = buf.size();
 
 				open();
-
+				
 				foundPos = varEnd + 1;
 				offset = foundPos - src;
 				goto _lastcheck;
@@ -1947,6 +1992,72 @@ public:
 				foundPos = cmdEnd;
 				offset = foundPos - src;
 				goto _lastcheck;
+			}
+			else if (ch == '-')
+			{
+				// 可能是模板分段定名，要有4个连接的-号
+				int bkchk = 1;
+				for ( ; ; ++ bkchk)
+				{
+					ch = foundPos[bkchk];
+					if (ch != '-')
+						break;
+				}
+
+				if (bkchk >= 4)
+				{
+					const char* segnameStart = foundPos + bkchk;
+					while((uint8_t)foundPos[0] <= 32)
+						segnameStart ++;
+
+					// 找到空格或}时停止，就是段名称
+					const char* segnameEnd = segnameStart + 1;
+					const char* totalEnd = src + srcLen;
+
+					while ((ch = segnameEnd[0]) != 0 && segnameEnd < totalEnd)
+					{
+						if (ch == ' ' || ch == '}')
+							break;
+						if (ch == '\'')
+							return false;
+						if (ch == '\n')
+						{
+							// 过程中不允许换行
+							segnameEnd = 0;
+							break;
+						}
+
+						segnameEnd ++;
+					}
+
+					if (segnameEnd)
+					{
+						// 添加代码
+						add = pos - offset;
+						if (pos >= offset && append(add) != add)
+						{
+							savedPos = foundPos - 1;
+							return true;
+						}
+
+						close();
+
+						buf.append(templSegDecl, sizeof(templSegDecl) - 1);
+						buf.append(segnameStart, segnameEnd - segnameStart);
+						buf.append(templSegAdd, sizeof(templSegAdd) - 1);
+						wrote = buf.size();
+
+						while (ch != '}' && segnameEnd < totalEnd)
+						{
+							segnameEnd ++;
+							ch = segnameEnd[0];
+						}
+
+						foundPos = segnameEnd + 1;
+						offset = foundPos - src;
+						goto _lastcheck;
+					}
+				}
 			}
 
 			append(foundPos - src - offset);
@@ -2250,85 +2361,13 @@ static int lua_string_bmfind(lua_State* L)
 //////////////////////////////////////////////////////////////////////////
 #define NODESIZE 8192 - sizeof(JsonMemNode)
 
-class JsonMemNode : public TListNode<JsonMemNode>
-{
-public:
-	size_t		used;
-};
+typedef TMemNode JsonMemNode;
 
-class JsonMemList : public TList<JsonMemNode>
+class JsonMemList : public TMemList
 {
 public:
 	lua_State		*L;
 
-	JsonMemNode* newNode(size_t size = NODESIZE)
-	{
-		JsonMemNode* n = (JsonMemNode*)malloc(size + sizeof(JsonMemNode));
-		new (n) JsonMemNode();
-		n->used = 0;
-
-		append(n);
-		return n;
-	}
-	void addChar(char ch)
-	{
-		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
-		if (n->used >= NODESIZE)
-			n = newNode();
-
-		char* ptr = (char*)(n + 1);
-		ptr[n->used ++] = ch;
-	}
-	void addChar2(char ch1, char ch2)
-	{
-		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
-		if (n->used + 1 >= NODESIZE)
-			n = newNode();
-
-		char* ptr = (char*)(n + 1);
-		size_t used = n->used;
-		ptr[used] = ch1;
-		ptr[used + 1] = ch2;
-		n->used += 2;
-	}
-	void addString(const char* s, size_t len)
-	{
-		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
-		char* ptr = (char*)(n + 1);
-
-		size_t copy = std::min(NODESIZE - n->used, len);
-		memcpy(ptr + n->used, s, copy);		
-		len -= copy;
-		n->used += copy;
-
-		if (len > 0)
-		{
-			// 剩下的直接一次分配够
-			n = newNode(std::max(NODESIZE, len));
-			ptr = (char*)(n + 1);
-
-			memcpy(ptr + n->used, s + copy, len);
-			n->used += len;
-		}
-	}
-	char* reserve(size_t len)
-	{
-		char* ptr;
-		JsonMemNode* n = (JsonMemNode*)m_pLastNode;
-		if (n->used + len < NODESIZE)
-		{
-			ptr = (char*)(n + 1);
-			ptr += n->used;
-		}
-		else
-		{
-			n = newNode(std::max(NODESIZE, len));
-			ptr = (char*)(n + 1);
-		}
-
-		n->used += len;
-		return ptr;
-	}
 	void escapeJsonString(const char* src, size_t len, uint32_t flags)
 	{		
 		uint8_t ch, v;
@@ -2417,6 +2456,7 @@ public:
 		if (i > spos)
 			addString(src + spos, i - spos);
 	}
+
 	void copyLuaString(const char* src, size_t len, uint32_t eqSymbols)
 	{
 		char* dst;
@@ -2701,6 +2741,7 @@ static int lua_string_json(lua_State* L)
 			if (memList.size() == 1)
 			{
 				r = pushJsonString(L, (char*)(n + 1), n->used, flags & kJsonRetCData, funcs);
+				memList.popFirst();
 				free(n);
 			}
 			else

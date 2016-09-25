@@ -8,6 +8,7 @@ local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
 local mysqlwords = require('reeme.orm.mysqlwords')
 local reemext = ffi.load('reemext')
+local allOps = { SELECT = 1, UPDATE = 2, DELETE = 3 }
 
 --合并器
 local builder = table.new(0, 32)
@@ -70,8 +71,12 @@ builder.parseWhere = function(self, condType, name, value)
 		end
 		
 		--{value}这种表达式
-		value = value[1]
-		return { expr = puredkeyname and string.format('%s=%s', name, value) or name .. value, c = condType }
+		if puredkeyname and #value == 1 then
+			return { expr = string.format('%s=%s', name, value[1]), c = condType }
+		end
+
+		--多值的话直接保存，后面再处理
+		return { expr = name, value = value, c = condType }
 
 	elseif value == ngx.null then
 		--设置为null值
@@ -184,18 +189,21 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 	--逐个token的循环进行处理
 	local sql, adjust = expr, 0
 	local fields = self.m.__fields
-	local lastField = nil
+	local selfname = self.m.__name
+	local lastField, lastToken
 
 	for i=1, #tokens do
-		local one, newone = tokens[i], nil
-		local a, b = string.cut(one, '.')
+		lastToken = tokens[i]
+		local newone = nil
+		local a, b = string.cut(lastToken, '.')
 
 		if b then
 			--可能是表名.字段名
-			if a == n1 then
-				--出现自己的表名
+			if a == selfname then
+				--出现自己的原表名
 				newone = alias .. b
 			else
+				--判断是否其它被join进来的原表名
 				newone = allJoins[a]
 				if newone then
 					newone = newone .. '.' .. b
@@ -222,12 +230,12 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 
 		if newone then
 			--替换掉最终的表达式
-			sql = sql:subreplace(newone, poses[i] + adjust, #one)
-			adjust = adjust + #newone - #one
+			sql = sql:subreplace(newone, poses[i] + adjust, #lastToken)
+			adjust = adjust + #newone - #lastToken
 		end
 	end
 	
-	return sql, lastField
+	return sql, lastField, lastToken
 end
 
 --将query设置的条件合并为SQL语句
@@ -245,7 +253,7 @@ builder.SELECT = function(self, db)
 		alias = self.alias .. '.'
 		
 		allJoins = table.new(4, 4)
-		allJoins[self.userAlias or self.m.__name] = self.alias
+		allJoins[self.m.__name] = self.alias
 		allJoins[#allJoins + 1] = self
 	end
 	
@@ -299,7 +307,7 @@ builder.UPDATE = function(self, db)
 		alias = self.alias .. '.'
 
 		allJoins = table.new(4, 4)
-		allJoins[self.userAlias or self.m.__name] = self.alias
+		allJoins[self.m.__name] = self.alias
 		allJoins[#allJoins + 1] = self
 		
 		sqls[#sqls + 1] = self.alias
@@ -571,37 +579,45 @@ end
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
 local function buildSqlValue(self, cfg, v)
 	local tp = type(v)
-	local quoteIt = false
 	local model = self.m
+	local op = allOps[self.op]
+	local quoteIt, multiVals = false, false
 
-	if cfg.ai then
+	if cfg.ai and op ~= 1 then
 		--自增长值要么是fullCreate/fullSave要么被忽略
 		if self.op == 'INSERT' and (not self.fullop or not string.checkinteger(v)) then
 			v = nil
 		end
 	elseif v == nil then
 		--值为nil，如果不可以忽略nil值，且字段没有默认值又不可以为NULL，则根据字段类型给一个
-		if self.op ~= 'UPDATE' and cfg.default == nil and not cfg.null then
+		if op ~= 2 and cfg.default == nil and not cfg.null then
 			v = cfg.type == 1 and "''" or '0'
 			tp = 'string'
 		end
 	elseif v == ngx.null then
 		--NULL值直接设置
 		v = 'NULL'
-	elseif tp == 'table' then
+	elseif tp == 'table' then	
 		--table类型则根据meta来进行判断是什么table
 		local mt = getmetatable(v)
-		
+
 		if mt == datetimeMeta then
 			--日期时间
 			v = ngx.quote_sql_str(tostring(v))
 		elseif mt == queryMeta then	
 			--子查询
-		else
-			--表达式
+			
+		elseif #v == 1 then
 			v = v[1]
 			tp = type(v)
 			quoteIt = false
+			
+		elseif #v > 1 then
+			--表达式或多值			
+			multiVals = true
+			quoteIt = false
+		else
+			return nil
 		end
 	elseif tp == 'cdata' then
 		--cdata类型，检测是否是boxed int64
@@ -620,20 +636,36 @@ local function buildSqlValue(self, cfg, v)
 	if v ~= nil then
 		if cfg.type == 1 then
 			--字段要求为字符串，所以引用
-			v = tostring(v)
-			if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
-				v = ngx.quote_sql_str(v)
+			if multiVals then
+				v = string.format("'%s'", table.concat(v, "','"))
+			else
+				v = tostring(v)			
+				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
+					v = ngx.quote_sql_str(v)
+				end
 			end
 		elseif cfg.type == 4 then
 			--布尔型使用1或0来处理
-			v = toboolean(v) and '1' or '0'
+			if multiVals then
+				v = table.concat(v, ',')
+			else
+				v = toboolean(v) and '1' or '0'
+			end
 		elseif cfg.type == 3 then
 			--数值/浮点数类型，检测值必须为浮点数
-			if not string.checknumeric(v) then
+			if multiVals then
+				v = table.concat(v, ',')
+				
+			elseif not string.checknumeric(v) then
 				print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, cfg.colname))
 				v = nil
 			end
+			
+		elseif multiVals then
+			--整数型，多值（就不对每一个值去做检查了）
+			v = table.concat(v, ',')
 		else
+			--必须是整数型的值
 			local reti, newv = string.checkinteger(v)
 			if not reti then
 				--否则就都是整数类型，检测值必须为整数
@@ -725,9 +757,9 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				local subq = one.sub
 				subq.limitStart, subq.limitTotal = nil, nil
 				
-				local expr = builder.processTokenedString(self, alias, one.n, allJoins)
+				local expr = builder.processTokenedString(self, alias, one.n, allJoins)				
 				local subsql = builder.SELECT(subq, subq.m, self.db)
-
+				
 				if subsql then
 					if one.puredkeyname then
 						rsql = string.format('%s%s IN(%s)', conds[onecond], expr, subsql)
@@ -744,13 +776,27 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				--右括号左边的条件扔掉
 				rsql = one.expr
 			else
-				merges[1] = conds[onecond]
-				merges[2], fieldCfg = builder.processTokenedString(self, alias, one.expr, allJoins)
+				local lastToken
 				
+				merges[1] = conds[onecond]
+				merges[2], fieldCfg, lastToken = builder.processTokenedString(self, alias, one.expr, allJoins)
+
 				if one.value then
 					assert(fieldCfg ~= nil)
+
 					merges[3] = buildSqlValue(self, fieldCfg, one.value)
-					rsql = merges[3] and table.concat(merges, '') or one.expr .. '#ERR#'
+					if merges[3] then
+						if mysqlwords[lastToken] == 1 then
+							--最后一个token是函数的调用，因此自动的加上括号（此种情况下是不会写有括号的，如果写括号的肯定就是完整表达式，代码是不会运行到这里的）
+							merges[2] = merges[2] .. '('
+							merges[3] = merges[3] .. ')'
+						end
+						
+						rsql = table.concat(merges, '')
+					else
+						--值出错
+						rsql = one.expr .. '#ERR#'
+					end
 				else
 					merges[3] = nil
 					rsql = table.concat(merges, '')
@@ -798,7 +844,7 @@ builder.buildJoinsCols = function(self, sqls, indient, haveCols, allJoins)
 		local q = self.joins[i].q
 				
 		q.alias = q.userAlias or ('_' .. string.char(65 + indient))
-		allJoins[q.userAlias or q.m.__name] = q.alias
+		allJoins[q.m.__name] = q.alias
 		allJoins[#allJoins + 1] = q
 
 		if sqls then

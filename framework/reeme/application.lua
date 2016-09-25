@@ -260,7 +260,7 @@ local appMeta = {
 				return
 			end
 			
-			local ok, err = pcall(function()
+			local ok, err = pcall(function()			
 				if self.preProc then
 					--执行动作前响应函数
 					r = self.preProc(self, c, path, act, mth)
@@ -295,7 +295,7 @@ local appMeta = {
 					self.missmatchProc(self, path, act)
 					r = nil
 				end
-				
+
 				if r ~= nil then
 					local tp = type(r)
 					local out = self.outputProc or outputRedirect

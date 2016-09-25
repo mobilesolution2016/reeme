@@ -2,7 +2,7 @@ static void doTableClone(lua_State* L, int src, int dst, int deepClone)
 {
 	if (dst == -1)
 	{
-		lua_newtable(L);
+		lua_createtable(L, lua_objlen(L, src), 4);
 		dst = lua_gettop(L);
 	}
 
@@ -83,6 +83,95 @@ static int lua_table_extend(lua_State* L)
 	}
 
 	lua_pushvalue(L, 1);
+	return 1;
+}
+
+static int lua_table_join(lua_State* L)
+{
+	const char* equation, *joins;
+	size_t keylen, vallen, joinlen = 0, eqlen = 1;
+
+	luaL_checktype(L, 1, LUA_TTABLE);
+	joins = luaL_optlstring(L, 2, ",", &joinlen);
+	equation = luaL_optlstring(L, 3, "=", &eqlen);
+
+	lua_pushnil(L);
+	bool tostring = false;
+	int tostringIdx = lua_gettop(L), cc = 0;
+
+	TMemList mems;
+	char fixedBuf[4096];
+	mems.wrapNode(fixedBuf, sizeof(fixedBuf));
+
+	lua_pushnil(L);
+	while (lua_next(L, 1))
+	{
+		int pop = 1;
+		const char* name = lua_tolstring(L, -2, &keylen);
+		const char* val = lua_tolstring(L, -1, &vallen);
+		if (!val)
+		{
+			if (tostring)
+			{
+				lua_pushvalue(L, tostringIdx);
+			}
+			else
+			{
+				tostring = true;
+				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
+				lua_pushvalue(L, -1);
+				lua_replace(L, tostringIdx);
+			}
+
+			lua_pushvalue(L, -2);
+			if (lua_pcall(L, 1, 1, 0) == 0)
+				val = lua_tolstring(L, -1, &vallen);
+
+			pop = 2;
+		}
+
+		if (val)
+		{
+			if (joinlen && cc)
+			{
+				switch (joinlen)
+				{
+				case 1: mems.addChar(joins[0]); break;
+				case 2: mems.addChar2(joins[0], joins[1]); break;
+				default: mems.addString(joins, joinlen); break;
+				}
+			}
+
+			mems.addString(name, keylen);
+
+			switch (eqlen)
+			{
+			case 1: mems.addChar(equation[0]); break;
+			case 2: mems.addChar2(equation[0], equation[1]); break;
+			default: mems.addString(equation, eqlen); break;
+			}
+
+			mems.addString(val, vallen);
+
+			cc ++;
+		}
+		lua_pop(L, pop);
+	}
+
+	TMemNode* n = mems.first();
+	if (mems.size() == 1)
+	{
+		lua_pushlstring(L, *n, n->used);
+		mems.popFirst();
+	}
+	else
+	{
+		size_t total = 0;
+		char* dst = mems.joinAll(&total);
+		lua_pushlstring(L, dst, total);
+		free(dst);
+	}
+
 	return 1;
 }
 
@@ -611,6 +700,8 @@ static void luaext_table(lua_State *L)
 		{ "clone", &lua_table_clone },
 		// 字符串指定位置+结束位置替换
 		{ "extend", &lua_table_extend },
+		// 将key和value组合成一个大字符串（不支持递归）
+		{ "join", &lua_table_join },
 		// 过滤
 		{ "filter", &lua_table_filter },
 		// value和key互转

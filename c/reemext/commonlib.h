@@ -334,6 +334,8 @@ const char initcodes[] = {
 	"	end\n"
 	"	return str\n"
 	"end\n"
+
+	""
 };
 
 static int lua_uint64_tolightuserdata(lua_State* L)
