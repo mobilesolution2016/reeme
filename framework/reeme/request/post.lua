@@ -1,6 +1,5 @@
 --from reqargs
 local upload  = require "resty.upload"
-local decode  = require "cjson.safe".decode
 local tmpname = os.tmpname
 local concat  = table.concat
 local type    = type
@@ -168,7 +167,7 @@ local function getPostArgsAndFiles(options)
         if not t then return nil, e end
     elseif sub(ct, 1, 16) == "application/json" then
         body()
-        post = decode(data()) or {}
+        post = string.json(data()) or {}
     else
         body()
         post = pargs()

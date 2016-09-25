@@ -8,7 +8,7 @@ local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
 local mysqlwords = require('reeme.orm.mysqlwords')
 local reemext = ffi.load('reemext')
-local allOps = { SELECT = 1, UPDATE = 2, DELETE = 3 }
+local allOps = { SELECT = 1, UPDATE = 2, INSERT = 3, DELETE = 4 }
 
 --合并器
 local builder = table.new(0, 32)
@@ -583,20 +583,22 @@ local function buildSqlValue(self, cfg, v)
 	local op = allOps[self.op]
 	local quoteIt, multiVals = false, false
 
-	if cfg.ai and op ~= 1 then
-		--自增长值要么是fullCreate/fullSave要么被忽略
-		if self.op == 'INSERT' and (not self.fullop or not string.checkinteger(v)) then
-			v = nil
-		end
-	elseif v == nil then
-		--值为nil，如果不可以忽略nil值，且字段没有默认值又不可以为NULL，则根据字段类型给一个
+	--自增长型字段的值，如果是在insert下的话，就必须是fullCreate，否则被忽略
+	if cfg.ai and op == 3 and (not self.fullop or not string.checkinteger(v)) then
+		return nil
+	end
+
+	if v == nil then
+		--值为nil又不是UPDATE操作，且字段没有默认值又不可以为NULL，则根据字段类型给一个默认值，防止SQL出错
 		if op ~= 2 and cfg.default == nil and not cfg.null then
 			v = cfg.type == 1 and "''" or '0'
 			tp = 'string'
 		end
+		
 	elseif v == ngx.null then
 		--NULL值直接设置
 		v = 'NULL'
+		
 	elseif tp == 'table' then	
 		--table类型则根据meta来进行判断是什么table
 		local mt = getmetatable(v)
@@ -606,19 +608,20 @@ local function buildSqlValue(self, cfg, v)
 			v = ngx.quote_sql_str(tostring(v))
 		elseif mt == queryMeta then	
 			--子查询
+			error('Cannot support sub-query in key=>value(s) set')
 			
 		elseif #v == 1 then
 			v = v[1]
 			tp = type(v)
-			quoteIt = false
+			quoteIt = true
 			
 		elseif #v > 1 then
 			--表达式或多值			
 			multiVals = true
-			quoteIt = false
 		else
 			return nil
 		end
+		
 	elseif tp == 'cdata' then
 		--cdata类型，检测是否是boxed int64
 		local s = tostring(v)
@@ -629,21 +632,24 @@ local function buildSqlValue(self, cfg, v)
 			v, quoteIt = newv, true
 		end
 		tp = 'string'
+		
 	else
 		quoteIt = true
 	end
 
 	if v ~= nil then
 		if cfg.type == 1 then
-			--字段要求为字符串，所以引用
+			--字段要求为字符串
 			if multiVals then
 				v = string.format("'%s'", table.concat(v, "','"))
 			else
-				v = tostring(v)			
+				v = tostring(v)
 				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
+					--没有引用，那么增加引用
 					v = ngx.quote_sql_str(v)
 				end
 			end
+			
 		elseif cfg.type == 4 then
 			--布尔型使用1或0来处理
 			if multiVals then
@@ -651,6 +657,7 @@ local function buildSqlValue(self, cfg, v)
 			else
 				v = toboolean(v) and '1' or '0'
 			end
+			
 		elseif cfg.type == 3 then
 			--数值/浮点数类型，检测值必须为浮点数
 			if multiVals then
@@ -664,8 +671,9 @@ local function buildSqlValue(self, cfg, v)
 		elseif multiVals then
 			--整数型，多值（就不对每一个值去做检查了）
 			v = table.concat(v, ',')
-		else
-			--必须是整数型的值
+			
+		elseif quoteIt then
+			--这个字符串必须是整数型的值
 			local reti, newv = string.checkinteger(v)
 			if not reti then
 				--否则就都是整数类型，检测值必须为整数
@@ -688,8 +696,9 @@ builder.buildKeyValuesSet = function(self, sqls, alias)
 	local vals, keyvals = self.keyvals, table.new(0, 8)
 
 	if not vals then
-		vals = self
-	elseif type(vals) == 'string' then
+		error(string.format('mysqlbuilder operator "%s" failed, no key=>value(s) set', self.op))
+	end
+	if type(vals) == 'string' then
 		sqls[#sqls + 1] = vals
 		return 1
 	end
@@ -699,7 +708,7 @@ builder.buildKeyValuesSet = function(self, sqls, alias)
 
 	for name,v in pairs(vals) do
 		name = colAlias[name] or name
-		
+
 		local cfg = fieldCfgs[name]
 		if cfg then
 			v = buildSqlValue(self, cfg, v)
@@ -708,7 +717,7 @@ builder.buildKeyValuesSet = function(self, sqls, alias)
 					keyvals[#keyvals + 1] = string.format("%s%s=%s", alias, name, v)
 				else
 					keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
-				end				
+				end
 			end
 		end
 	end
