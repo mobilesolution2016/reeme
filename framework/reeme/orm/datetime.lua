@@ -24,50 +24,23 @@
   local DAYNUM_MIN = -365242500 -- Mon Jan 01 1000000 BCE 00:00:00
   local DAYNUM_DEF =  0 -- Mon Jan 01 0001 00:00:00
   local _;
---[[ LOCAL ARE FASTER ]]--
-  local type     = type
-  local pairs    = pairs
-  local error    = error
-  local assert   = assert
-  local tonumber = tonumber
-  local tostring = tostring
-  local string   = string
-  local math     = math
-  local os       = os
-  local unpack   = unpack or table.unpack
-  local pack     = table.pack or function(...) return { n = select('#', ...), ... } end
-  local setmetatable = setmetatable
-  local getmetatable = getmetatable
 --[[ EXTRA FUNCTIONS ]]--
   local fmt  = string.format
-  local lwr  = string.lower
-  local upr  = string.upper
-  local rep  = string.rep
-  local len  = string.len
-  local sub  = string.sub
-  local gsub = string.gsub
-  local gmatch = string.gmatch or string.gfind
-  local find = string.find
-  local ostime = os.time
-  local osdate = os.date
-  local floor = math.floor
-  local ceil  = math.ceil
-  local abs   = math.abs
   -- removes the decimal part of a number
-  local function fix(n) n = tonumber(n) return n and ((n > 0 and floor or ceil)(n)) end
+  local function fix(n) n = tonumber(n) return n and ((n > 0 and math.floor or math.ceil)(n)) end
   -- returns the modulo n % d;
-  local function mod(n,d) return n - d*floor(n/d) end
+  local function mod(n,d) return n - d*math.floor(n/d) end
   -- rounds a number;
-  local function round(n, d) d=d^10 return floor((n*d)+.5)/d end
+  local function round(n, d) d=d^10 return math.floor((n*d)+.5)/d end
   -- rounds a number to whole;
-  local function whole(n)return floor(n+.5)end
-  -- is `str` in string list `tbl`, `ml` is the minimun len
+  local function whole(n)return math.floor(n+.5)end
+  -- is `str` in string list `tbl`, `ml` is the minimun string.len
   local function inlist(str, tbl, ml, tn)
-    local sl = len(str)
+    local sl = string.len(str)
     if sl < (ml or 0) then return nil end
-    str = lwr(str)
+    str = string.lower(str)
     for k, v in pairs(tbl) do
-      if str == lwr(sub(v, 1, sl)) then
+      if str == string.lower(string.sub(v, 1, sl)) then
         if tn then tn[0] = k end
         return k
       end
@@ -113,35 +86,35 @@
   end
   -- day since year 0
   local function dayfromyear(y) -- y must be int!
-    return 365*y + floor(y/4) - floor(y/100) + floor(y/400)
+    return 365*y + math.floor(y/4) - math.floor(y/100) + math.floor(y/400)
   end
   -- day number from date, month is zero base
   local function makedaynum(y, m, d)
     local mm = mod(mod(m,12) + 10, 12)
-    return dayfromyear(y + floor(m/12) - floor(mm/10)) + floor((mm*306 + 5)/10) + d - 307
-    --local yy = y + floor(m/12) - floor(mm/10)
-    --return dayfromyear(yy) + floor((mm*306 + 5)/10) + (d - 1)
+    return dayfromyear(y + math.floor(m/12) - math.floor(mm/10)) + math.floor((mm*306 + 5)/10) + d - 307
+    --local yy = y + math.floor(m/12) - math.floor(mm/10)
+    --return dayfromyear(yy) + math.floor((mm*306 + 5)/10) + (d - 1)
   end
   -- date from day number, month is zero base
   local function breakdaynum(g)
     local g = g + 306
-    local y = floor((10000*g + 14780)/3652425)
+    local y = math.floor((10000*g + 14780)/3652425)
     local d = g - dayfromyear(y)
     if d < 0 then y = y - 1; d = g - dayfromyear(y) end
-    local mi = floor((100*d + 52)/3060)
-    return (floor((mi + 2)/12) + y), mod(mi + 2,12), (d - floor((mi*306 + 5)/10) + 1)
+    local mi = math.floor((100*d + 52)/3060)
+    return (math.floor((mi + 2)/12) + y), mod(mi + 2,12), (d - math.floor((mi*306 + 5)/10) + 1)
   end
   --[[ for floats or int32 Lua Number data type
   local function breakdaynum2(g)
     local g, n = g + 306;
-    local n400 = floor(g/DI400Y);n = mod(g,DI400Y);
-    local n100 = floor(n/DI100Y);n = mod(n,DI100Y);
-    local n004 = floor(n/DI4Y);   n = mod(n,DI4Y);
-    local n001 = floor(n/365);   n = mod(n,365);
+    local n400 = math.floor(g/DI400Y);n = mod(g,DI400Y);
+    local n100 = math.floor(n/DI100Y);n = mod(n,DI100Y);
+    local n004 = math.floor(n/DI4Y);   n = mod(n,DI4Y);
+    local n001 = math.floor(n/365);   n = mod(n,365);
     local y = (n400*400) + (n100*100) + (n004*4) + n001  - ((n001 == 4 or n100 == 4) and 1 or 0)
     local d = g - dayfromyear(y)
-    local mi = floor((100*d + 52)/3060)
-    return (floor((mi + 2)/12) + y), mod(mi + 2,12), (d - floor((mi*306 + 5)/10) + 1)    
+    local mi = math.floor((100*d + 52)/3060)
+    return (math.floor((mi + 2)/12) + y), mod(mi + 2,12), (d - math.floor((mi*306 + 5)/10) + 1)    
   end
   ]]    
   -- day fraction from time
@@ -151,9 +124,9 @@
   -- time from day fraction
   local function breakdayfrc(df)
     return
-      mod(floor(df/TICKSPERHOUR),HOURPERDAY),
-      mod(floor(df/TICKSPERMIN ),MINPERHOUR),
-      mod(floor(df/TICKSPERSEC ),SECPERMIN),
+      mod(math.floor(df/TICKSPERHOUR),HOURPERDAY),
+      mod(math.floor(df/TICKSPERMIN ),MINPERHOUR),
+      mod(math.floor(df/TICKSPERSEC ),SECPERMIN),
       mod(df,TICKSPERSEC)
   end
   -- weekday sunday = 0, monday = 1 ...
@@ -191,7 +164,7 @@
         y = y - 1
       end
     end
-    return floor((dn-w1)/7)+1, y
+    return math.floor((dn-w1)/7)+1, y
   end
   local function isoy(dn)
     local y = (breakdaynum(dn))
@@ -213,7 +186,7 @@
   dobj.__index = dobj
   dobj.__metatable = dobj
   -- shout invalid arg
-  local function date_error_arg() return error("invalid argument(s)",0) end
+  local function date_error_arg() return error("reeme.orm.datetime: invalid argument(s)",0) end
   -- create new date object
   local function date_new(dn, df)
     return setmetatable({daynum=dn, dayfrc=df}, dobj)
@@ -258,17 +231,17 @@
     local y,m,d = breakdaynum(self.daynum)
     local h,r,s = breakdayfrc(self.dayfrc)
     local tvu = totv(y,m,d,h,r,s) -- get the utc TimeValue of date and time
-    local tml = osdate("*t", tvu) -- get the local TimeTable of tvu
+    local tml = os.date("*t", tvu) -- get the local TimeTable of tvu
     if (not tml) or (tml.year > (y+1) or tml.year < (y-1)) then -- failed try the magic
       y = getequivyear(y)
       tvu = totv(y,m,d,h,r,s)
-      tml = osdate("*t", tvu)
+      tml = os.date("*t", tvu)
     end
     local tvl = tmtotv(tml)
     if tvu and tvl then
       return tvu - tvl, tvu, tvl
     else
-      return error("failed to get bias from utc time")
+      return error("reeme.orm.datetime: failed to get bias from utc time")
     end
   end
   -- Returns the bias in seconds of local time daynum and dayfrc
@@ -283,8 +256,8 @@
     local tvl = tmtotv(tml)
 
     local function chkutc()
-      tml.isdst =  nil; local tvug = ostime(tml) if tvug and (tvl == tmtotv(osdate("*t", tvug))) then tvu = tvug return end
-      tml.isdst = true; local tvud = ostime(tml) if tvud and (tvl == tmtotv(osdate("*t", tvud))) then tvu = tvud return end
+      tml.isdst =  nil; local tvug = os.time(tml) if tvug and (tvl == tmtotv(os.date("*t", tvug))) then tvu = tvug return end
+      tml.isdst = true; local tvud = os.time(tml) if tvud and (tvl == tmtotv(os.date("*t", tvud))) then tvu = tvud return end
       tvu = tvud or tvug
     end
     chkutc()
@@ -293,7 +266,7 @@
       tvl = tmtotv(tml)
       chkutc()
     end
-    return ((tvu and tvl) and (tvu - tvl)) or error("failed to get bias from local time"), tvu, tvl
+    return ((tvu and tvl) and (tvu - tvl)) or error("reeme.orm.datetime: failed to get bias from local time"), tvu, tvl
   end
 --#end -- not NO_LOCAL_TIME_SUPPORT
 
@@ -301,23 +274,23 @@
   -- the date parser
   local strwalker = {} -- ^Lua regular expression is not as powerful as Perl$
   strwalker.__index = strwalker
-  local function newstrwalker(s)return setmetatable({s=s, i=1, e=1, c=len(s)}, strwalker) end
-  function strwalker:aimchr() return "\n" .. self.s .. "\n" .. rep(".",self.e-1) .. "^" end
+  local function newstrwalker(s)return setmetatable({s=s, i=1, e=1, c=string.len(s)}, strwalker) end
+  function strwalker:aimchr() return "\n" .. self.s .. "\n" .. string.rep(".",self.e-1) .. "^" end
   function strwalker:finish() return self.i > self.c  end
   function strwalker:back()  self.i = self.e return self  end
   function strwalker:restart() self.i, self.e = 1, 1 return self end
-  function strwalker:match(s)  return (find(self.s, s, self.i)) end
+  function strwalker:match(s)  return (string.find(self.s, s, self.i)) end
   function strwalker:__call(s, f)-- print("strwalker:__call "..s..self:aimchr())
-    local is, ie; is, ie, self[1], self[2], self[3], self[4], self[5] = find(self.s, s, self.i)
-    if is then self.e, self.i = self.i, 1+ie; if f then f(unpack(self)) end return self end
+    local is, ie; is, ie, self[1], self[2], self[3], self[4], self[5] = string.find(self.s, s, self.i)
+    if is then self.e, self.i = self.i, 1+ie; if f then f(table.unpack(self)) end return self end
   end
    local function date_parse(str)
     local y,m,d, h,r,s,  z,  w,u, j,  e,  k,  x,v,c,  chkfin,  dn,df;
-    local sw = newstrwalker(gsub(gsub(str, "(%b())", ""),"^(%s*)","")) -- remove comment, trim leading space
+    local sw = newstrwalker(string.gsub(string.gsub(str, "(%b())", ""),"^(%s*)","")) -- remove comment, trim leading space
     --local function error_out() print(y,m,d,h,r,s) end
-    local function error_dup(q) --[[error_out()]] error("duplicate value: " .. (q or "") .. sw:aimchr()) end
-    local function error_syn(q) --[[error_out()]] error("syntax error: " .. (q or "") .. sw:aimchr()) end
-    local function error_inv(q) --[[error_out()]] error("invalid date: " .. (q or "") .. sw:aimchr()) end
+    local function error_dup(q) --[[error_out()]] error("reeme.orm.datetime: duplicate value: " .. (q or "") .. sw:aimchr()) end
+    local function error_syn(q) --[[error_out()]] error("reeme.orm.datetime: syntax error: " .. (q or "") .. sw:aimchr()) end
+    local function error_inv(q) --[[error_out()]] error("reeme.orm.datetime: invalid date: " .. (q or "") .. sw:aimchr()) end
     local function sety(q) y = y and error_dup() or tonumber(q); end
     local function setm(q) m = (m or w or j) and error_dup(m or w or j) or tonumber(q) end
     local function setd(q) d = d and error_dup() or tonumber(q) end
@@ -327,7 +300,7 @@
     local function adds(q) s = s + tonumber(q) end
     local function setj(q) j = (m or w or j) and error_dup() or tonumber(q); end
     local function setz(q) z = (z ~= 0 and z) and error_dup() or q end
-    local function setzn(zs,zn) zn = tonumber(zn); setz( ((zn<24) and (zn*60) or (mod(zn,100) + floor(zn/100) * 60))*( zs=='+' and -1 or 1) ) end
+    local function setzn(zs,zn) zn = tonumber(zn); setz( ((zn<24) and (zn*60) or (mod(zn,100) + math.floor(zn/100) * 60))*( zs=='+' and -1 or 1) ) end
     local function setzc(zs,zh,zm) setz( ((tonumber(zh)*60) + tonumber(zm))*( zs=='+' and -1 or 1) ) end
 
     if not (sw("^(%d%d%d%d)",sety) and (sw("^(%-?)(%d%d)%1(%d%d)",function(_,a,b) setm(tonumber(a)); setd(tonumber(b)) end) or sw("^(%-?)[Ww](%d%d)%1(%d?)",function(_,a,b) w, u = tonumber(a), tonumber(b or 1) end) or sw("^%-?(%d%d%d)",setj) or sw("^%-?(%d%d)",function(a) setm(a);setd(1) end))
@@ -340,7 +313,7 @@
         if sw("^[tT:]?%s*(%d%d?):",seth) then --print("$Time")
           _ = sw("^%s*(%d%d?)",setr) and sw("^%s*:%s*(%d%d?)",sets) and sw("^(%.%d+)",adds)
         elseif sw("^(%d+)[/\\%s,-]?%s*") then --print("$Digits")
-          x, c = tonumber(sw[1]), len(sw[1])
+          x, c = tonumber(sw[1]), string.len(sw[1])
           if (x >= 70) or (m and d and (not y)) or (c > 3) then
             sety( x + ((x >= 100 or c>3)and 0 or 1900) )
           else
@@ -364,7 +337,7 @@
             elseif sw("^([aA])%s*(%.?)%s*[Dd]%s*(%2)%s*") or sw("^([cC])%s*(%.?)%s*[Ee]%s*(%2)%s*") then
               e = e and error_dup() or 1
             elseif sw("^([PApa])%s*(%.?)%s*[Mm]?%s*(%2)%s*") then
-              x = lwr(sw[1]) -- there should be hour and it must be correct
+              x = string.lower(sw[1]) -- there should be hour and it must be correct
               if (not h) or (h > 12) or (h < 0) then return error_inv() end
               if x == 'a' and h == 12 then h = 0 end -- am
               if x == 'p' and h ~= 12 then h = h + 12 end -- pm
@@ -392,13 +365,13 @@
     local y, m, d = fix(v.year), getmontharg(v.month), fix(v.day)
     local h, r, s, t = tonumber(v.hour), tonumber(v.min), tonumber(v.sec), tonumber(v.ticks)
     -- atleast there is time or complete date
-    if (y or m or d) and (not(y and m and d)) then return error("incomplete table")  end
+    if (y or m or d) and (not(y and m and d)) then return error("reeme.orm.datetime: incomplete table")  end
     return (y or h or r or s or t) and date_new(y and makedaynum(y, m, d) or DAYNUM_DEF, makedayfrc(h or 0, r or 0, s or 0, t or 0))
   end
   local tmap = {
     ['number'] = function(v) return date_epoch:copy():addseconds(v) end,
     ['string'] = function(v) return date_parse(v) end,
-    ['boolean']= function(v) return date_fromtable(osdate(v and "!*t" or "*t")) end,
+    ['boolean']= function(v) return date_fromtable(os.date(v and "!*t" or "*t")) end,
     ['table']  = function(v) local ref = getmetatable(v) == dobj; return ref and v or date_fromtable(v), ref end
   }
   local function date_getdobj(v)
@@ -407,7 +380,7 @@
   end
 --#end -- not DATE_OBJECT_AFX
   local function date_from(...)
-    local arg = pack(...)
+    local arg = table.pack(...)
     local y, m, d = fix(arg[1]), getmontharg(arg[2]), fix(arg[3])
     local h, r, s, t = tonumber(arg[4] or 0), tonumber(arg[5] or 0), tonumber(arg[6] or 0), tonumber(arg[7] or 0)
     if y and m and d and h and r and s and t then
@@ -420,8 +393,8 @@
  --[[ THE DATE OBJECT METHODS ]]--
   function dobj:normalize()
     local dn, df = fix(self.daynum), self.dayfrc
-    self.daynum, self.dayfrc = dn + floor(df/TICKSPERDAY), mod(df, TICKSPERDAY)
-    return (dn >= DAYNUM_MIN and dn <= DAYNUM_MAX) and self or error("date beyond imposed limits:"..self)
+    self.daynum, self.dayfrc = dn + math.floor(df/TICKSPERDAY), mod(df, TICKSPERDAY)
+    return (dn >= DAYNUM_MIN and dn <= DAYNUM_MAX) and self or error("reeme.orm.datetime: date beyond imposed limits:"..self)
   end
 
   function dobj:getdate()  local y, m, d = breakdaynum(self.daynum) return y, m+1, d end
@@ -435,10 +408,10 @@
   function dobj:getyear()   local r,_,_ = breakdaynum(self.daynum)  return r end
   function dobj:getmonth() local _,r,_ = breakdaynum(self.daynum)  return r+1 end-- in lua month is 1 base
   function dobj:getday()   local _,_,r = breakdaynum(self.daynum)  return r end
-  function dobj:gethours()  return mod(floor(self.dayfrc/TICKSPERHOUR),HOURPERDAY) end
-  function dobj:getminutes()  return mod(floor(self.dayfrc/TICKSPERMIN), MINPERHOUR) end
-  function dobj:getseconds()  return mod(floor(self.dayfrc/TICKSPERSEC ),SECPERMIN)  end
-  function dobj:getfracsec()  return mod(floor(self.dayfrc/TICKSPERSEC ),SECPERMIN)+(mod(self.dayfrc,TICKSPERSEC)/TICKSPERSEC) end
+  function dobj:gethours()  return mod(math.floor(self.dayfrc/TICKSPERHOUR),HOURPERDAY) end
+  function dobj:getminutes()  return mod(math.floor(self.dayfrc/TICKSPERMIN), MINPERHOUR) end
+  function dobj:getseconds()  return mod(math.floor(self.dayfrc/TICKSPERSEC ),SECPERMIN)  end
+  function dobj:getfracsec()  return mod(math.floor(self.dayfrc/TICKSPERSEC ),SECPERMIN)+(mod(self.dayfrc,TICKSPERSEC)/TICKSPERSEC) end
   function dobj:getticks(u)  local x = mod(self.dayfrc,TICKSPERSEC) return u and ((x*u)/TICKSPERSEC) or x  end
 
   function dobj:getweeknumber(wdb)
@@ -451,7 +424,7 @@
         return date_error_arg()
       end
     end
-    return (yd < wd and 0) or (floor(yd/7) + ((mod(yd, 7)>=wd) and 1 or 0))
+    return (yd < wd and 0) or (math.floor(yd/7) + ((mod(yd, 7)>=wd) and 1 or 0))
   end
 
   function dobj:getisoweekday() return mod(weekday(self.daynum)-1,7)+1 end   -- sunday = 7, monday = 1 ...
@@ -534,7 +507,7 @@
   local function dobj_adddayfrc(self,n,pt,pd)
     n = tonumber(n)
     if n then
-      local x = floor(n/pd);
+      local x = math.floor(n/pd);
       self.daynum = self.daynum + x;
       self.dayfrc = self.dayfrc + (n-x*pd)*pt;
       return self:normalize()
@@ -595,7 +568,7 @@
     -- Year with century (2000, 1914, 0325, 0001)
     ['%Y']=function(self) return fmt("%.4d", self:getyear()) end,
     -- Time zone offset, the date object is assumed local time (+1000, -0230)
-    ['%z']=function(self) local b = -self:getbias(); local x = abs(b); return fmt("%s%.4d", b < 0 and "-" or "+", fix(x/60)*100 + floor(mod(x,60))) end,
+    ['%z']=function(self) local b = -self:getbias(); local x = math.abs(b); return fmt("%s%.4d", b < 0 and "-" or "+", fix(x/60)*100 + math.floor(mod(x,60))) end,
     -- Time zone name, the date object is assumed local time
     ['%Z']=function(self) return self:gettzname() end,
     -- Misc --
@@ -636,10 +609,10 @@
     -- asctime format, same as "%a %b %d %T %Y"
     ['${asctime}'] = function(self) return self:fmt0("%a %b %d %T %Y") end,
   }
-  function dobj:fmt0(str) return (gsub(str, "%%[%a%%\b\f]", function(x) local f = tvspec[x];return (f and f(self)) or x end)) end
+  function dobj:fmt0(str) return (string.gsub(str, "%%[%a%%\b\f]", function(x) local f = tvspec[x];return (f and f(self)) or x end)) end
   function dobj:fmt(str)
     str = str or self.fmtstr or fmtstr
-    return self:fmt0((gmatch(str, "${%w+}")) and (gsub(str, "${%w+}", function(x)local f=tvspec[x];return (f and f(self)) or x end)) or str)
+    return self:fmt0((string.gmatch(str, "${%w+}")) and (string.gsub(str, "${%w+}", function(x)local f=tvspec[x];return (f and f(self)) or x end)) or str)
   end
 
   function dobj.__lt(a, b) if (a.daynum == b.daynum) then return (a.dayfrc < b.dayfrc) else return (a.daynum < b.daynum) end end
@@ -691,7 +664,7 @@
 
   function dobj:gettzname()
     local _, tvu, _ = getbiasloc2(self.daynum, self.dayfrc)
-    return tvu and osdate("%Z",tvu) or ""
+    return tvu and os.date("%Z",tvu) or ""
   end
 
 --#if not DATE_OBJECT_AFX then
@@ -705,7 +678,7 @@
   end
 
   function date:__call(...)
-    local arg = pack(...)
+    local arg = table.pack(...)
     if arg.n  > 1 then return (date_from(...))
     elseif arg.n == 0 then return (date_getdobj(false))
     else local o, r = date_getdobj(arg[1]);  return r and o:copy() or o end
@@ -733,13 +706,13 @@
   function date.ticks(t) if t then setticks(t) end return TICKSPERSEC  end
 --#end -- not DATE_OBJECT_AFX
 
-  local tm = osdate("!*t", 0);
+  local tm = os.date("!*t", 0);
   if tm then
     date_epoch = date_new(makedaynum(tm.year, tm.month - 1, tm.day), makedayfrc(tm.hour, tm.min, tm.sec, 0))
     -- the distance from our epoch to os epoch in daynum
     DATE_EPOCH = date_epoch and date_epoch:spandays()
   else -- error will be raise only if called!
-    date_epoch = setmetatable({},{__index = function() error("failed to get the epoch date") end})
+    date_epoch = setmetatable({},{__index = function() error("reeme.orm.datetime: failed to get the epoch date") end})
   end
 
 --#if not DATE_OBJECT_AFX then

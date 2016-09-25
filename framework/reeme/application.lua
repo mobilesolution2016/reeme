@@ -260,7 +260,7 @@ local appMeta = {
 				return
 			end
 			
-			local ok, err = pcall(function()			
+			local ok, err = xpcall(function()			
 				if self.preProc then
 					--执行动作前响应函数
 					r = self.preProc(self, c, path, act, mth)
@@ -321,7 +321,7 @@ local appMeta = {
 					end
 				end
 
-			end)
+			end, debug.traceback)
 			
 			--结束动作
 			if self.endProc then
@@ -338,9 +338,9 @@ local appMeta = {
 			c = nil
 
 			if not ok then
-				local msg = err.msg
-				local msgtp = type(msg)
+				local msg = type(err) == 'table' and err.msg or err				
 				local out = self.outputProc or outputRedirect
+				local msgtp = type(msg)
 				
 				if msgtp == "string" then
 					out(self, msg)

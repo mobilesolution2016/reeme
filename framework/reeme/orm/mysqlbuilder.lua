@@ -85,7 +85,13 @@ builder.parseWhere = function(self, condType, name, value)
 
 	if type(name) == 'string' then
 		--key=value
-		return { expr = puredkeyname and name .. '=' or name, value = value, c = condType }
+		if puredkeyname then
+			if value then
+				return { expr = name .. '=' .. value, c = condType }
+			end
+		else
+			return { expr = name, value = value, c = condType }
+		end		
 	end
 end
 
@@ -791,7 +797,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				merges[2], fieldCfg, lastToken = builder.processTokenedString(self, alias, one.expr, allJoins)
 
 				if one.value then
-					assert(fieldCfg ~= nil)
+					assert(fieldCfg ~= nil, string.format("table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
 
 					merges[3] = buildSqlValue(self, fieldCfg, one.value)
 					if merges[3] then
