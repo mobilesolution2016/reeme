@@ -26,6 +26,9 @@
   local _;
 --[[ EXTRA FUNCTIONS ]]--
   local fmt  = string.format
+  if not table.pack then
+	table.pack = function(...) return { n = select('#', ...), ... } end
+  end
   -- removes the decimal part of a number
   local function fix(n) n = tonumber(n) return n and ((n > 0 and math.floor or math.ceil)(n)) end
   -- returns the modulo n % d;
