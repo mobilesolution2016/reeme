@@ -60,7 +60,9 @@ end
 strlib.casecmp = function(a, b)
 	return ffi.C.strcasecmp(a, b) == 0
 end
-strlib.ncasecmp = ffi.C.strncasecmp
+strlib.ncasecmp = function(a, b)
+	return ffi.C.strncasecmp == 0
+end
 strlib.cmp = function(a, b, c, d)
 	local func
 	if type(c) == 'number' then

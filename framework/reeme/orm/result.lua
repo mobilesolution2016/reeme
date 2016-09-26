@@ -153,6 +153,12 @@ local pub = {
 			
 			setmetatable(rVals, resultMeta)
 			r = setmetatable({}, valsMeta)
+
+		else
+			local mt = getmetatable(r)
+			if mt ~= resultMeta and (not mt or not mt.__index or getmetatable(mt.__index) ~= resultMeta) then
+				error('Result.init function called by a table without result meta type')
+			end
 		end
 		
 		rawset(r, -10000, m)

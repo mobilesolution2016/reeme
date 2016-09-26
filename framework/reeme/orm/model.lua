@@ -376,7 +376,6 @@ queryMeta = {
 			end
 			
 			local sqls = self.builder[self.op](self, db)
-
 			if sqls then
 				result = resultPub.init(result, self.m)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)

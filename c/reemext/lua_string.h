@@ -1871,6 +1871,7 @@ public:
 
 						if (ln == 0 && add >= 4)
 						{
+							// 只有在表达式不换行的时候才会处理自动添加，如果{%后面的表达式有多行的话，是不会去处理这个自动添加的
 							switch (checkTemplateKeywords(expStart, expEnd, add))
 							{
 							case KEND_THEN:

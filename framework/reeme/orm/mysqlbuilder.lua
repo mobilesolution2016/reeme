@@ -794,8 +794,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 					assert(fieldCfg ~= nil, string.format("table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
 
 					merges[4] = buildSqlValue(self, fieldCfg, one.value)
-					if merges[4] then
-						
+					if merges[4] then						
 						if mysqlwords[lastToken] == 1 then
 							--最后一个token是函数的调用，因此自动的加上括号（此种情况下是不会写有括号的，如果写括号的肯定就是完整表达式，代码是不会运行到这里的）
 							merges[3] = '('
@@ -814,7 +813,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 						rsql = one.expr .. '#ERR#'
 					end
 				else
-					merges[3], merges[5] = '', nil
+					merges[3], merges[4], merges[5] = nil, nil, nil
 					rsql = table.concat(merges, '')
 				end
 			end

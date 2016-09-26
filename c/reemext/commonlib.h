@@ -138,10 +138,10 @@ static int lua_checknull(lua_State* L)
 		else
 			lua_pushboolean(L, 1);
 	}
+	else if (top >= 2)
+		lua_pushvalue(L, 1);
 	else
-	{
 		lua_pushboolean(L, 0);
-	}
 	return 1;
 }
 
