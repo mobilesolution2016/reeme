@@ -114,7 +114,7 @@ queryMeta = {
 					for i = 1, #splits do
 						--取出as重命名
 						local n, nto = string.cut(splits[i], ' ')
-						if nto and string.cmp(nto, 'AS ', 3, true) then
+						if nto and string.ncasecmp(nto, 'AS ', 3) then
 							nto = nto:sub(4)
 						end
 
@@ -135,7 +135,7 @@ queryMeta = {
 				for i = 1, #names do
 					--取出as重命名
 					local n, nto = string.cut(names[i], ' ')
-					if nto and string.cmp(nto, 'AS ', 3, true) then
+					if nto and string.ncasecmp(nto, 'AS ', 3) then
 						nto = nto:sub(4)
 					end
 					
@@ -382,6 +382,7 @@ queryMeta = {
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 
 				self.lastSql = sqls
+				ngx.say(sqls)
 				if self.m.__debug then
 					if res then
 						print(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)

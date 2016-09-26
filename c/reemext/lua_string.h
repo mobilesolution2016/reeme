@@ -411,56 +411,6 @@ static int lua_string_trim(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-// 对参数1和2的字符串进行比对，参数3可以为一个整数表示要比对的字符串长度，参数3可以是一个布尔值表示是否要忽略大小写比对。参数3如果没有，参数3可以成为参数3
-static int lua_string_cmp(lua_State* L)
-{	
-	int ignoreCase = 0, r = 0;
-	size_t alen = 0, blen = 0, cmplen = -1;
-	const char* a = luaL_checklstring(L, 1, &alen);
-	const char* b = luaL_checklstring(L, 2, &blen);
-	int t3 = lua_type(L, 3);
-
-	if (!a || !b)
-	{
-		lua_pushboolean(L, 0);
-		return 1;
-	}
-
-	if (t3 == LUA_TNUMBER)
-	{
-		cmplen = luaL_checklong(L, 3);
-		if (lua_isboolean(L, 4))
-			ignoreCase = lua_toboolean(L, 4);
-	}
-	else if (t3 == LUA_TBOOLEAN)
-	{
-		ignoreCase = lua_toboolean(L, 3);
-	}
-
-	if (ignoreCase)
-	{
-		if (cmplen == -1)
-			r = alen == blen ? stricmp(a, b) == 0 : 0;
-		else if (cmplen > alen || cmplen > blen)
-			r = 0;
-		else
-			r = strnicmp(a, b, cmplen) == 0;
-	}
-	else
-	{
-		if (cmplen == -1)
-			r = alen == blen ? strcmp(a, b) == 0 : 0;
-		else if (cmplen > alen || cmplen > blen)
-			r = 0;
-		else
-			r = strncmp(a, b, cmplen) == 0;
-	}
-
-	lua_pushboolean(L, r);
-	return 1;
-}
-
-//////////////////////////////////////////////////////////////////////////
 // 字符串中所含字符倒叙查找，仅支持对字符进行查找不支持字符串
 static int lua_string_rfindchar(lua_State* L)
 {
@@ -2771,8 +2721,6 @@ static void luaext_string(lua_State *L)
 		{ "split", &lua_string_split },
 		// trim函数
 		{ "trim", &lua_string_trim },
-		// 字符串比较
-		{ "cmp", &lua_string_cmp },
 
 		// 单个字符反向查找（不支持字符串反向）
 		{ "rfindchar", &lua_string_rfindchar },

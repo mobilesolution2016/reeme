@@ -85,13 +85,7 @@ builder.parseWhere = function(self, condType, name, value)
 
 	if type(name) == 'string' then
 		--key=value
-		if puredkeyname then
-			if value then
-				return { expr = name .. '=' .. value, c = condType }
-			end
-		else
-			return { expr = name, value = value, c = condType }
-		end		
+		return { puredkeyname = puredkeyname, expr = name, value = value, c = condType }
 	end
 end
 
@@ -227,8 +221,9 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 				local m = allJoins[i]
 				local fs = m.m.__fields
 
-				lastField = fs[a] or fs[m.m.__fieldAlias.ba[a]]
-				if lastField then
+				local field = fs[a] or fs[m.m.__fieldAlias.ba[a]]
+				if field then
+					lastField = field
 					newone = (m.userAlias or m.alias) .. '.' .. a
 				end
 			end
@@ -619,7 +614,6 @@ local function buildSqlValue(self, cfg, v)
 		elseif #v == 1 then
 			v = v[1]
 			tp = type(v)
-			quoteIt = true
 			
 		elseif #v > 1 then
 			--表达式或多值			
@@ -753,7 +747,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 	if condValues and #condValues > 0 then
 		local ignoreNextCond = (condPre == 'WHERE' or condPre == nil) and true or false
 		local wheres, conds = {}, builder.conds
-		local fieldCfg, merges = nil, table.new(4, 0)
+		local fieldCfg, merges = nil, table.new(6, 0)
 		
 		for i = 1, #condValues do
 			local one, rsql = condValues[i], nil
@@ -799,21 +793,28 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				if one.value then
 					assert(fieldCfg ~= nil, string.format("table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
 
-					merges[3] = buildSqlValue(self, fieldCfg, one.value)
-					if merges[3] then
+					merges[4] = buildSqlValue(self, fieldCfg, one.value)
+					if merges[4] then
+						
 						if mysqlwords[lastToken] == 1 then
 							--最后一个token是函数的调用，因此自动的加上括号（此种情况下是不会写有括号的，如果写括号的肯定就是完整表达式，代码是不会运行到这里的）
-							merges[2] = merges[2] .. '('
-							merges[3] = merges[3] .. ')'
+							merges[3] = '('
+							merges[5] = ')'
+						elseif one.puredkeyname and type(one.value) ~= 'table' then
+							--一个纯字段名，后面又没有使用原始值，因此加上一个等于号
+							merges[3] = '='
+							merges[5] = ''
+						else
+							merges[3], merges[5] = '', nil
 						end
-						
+
 						rsql = table.concat(merges, '')
 					else
 						--值出错
 						rsql = one.expr .. '#ERR#'
 					end
 				else
-					merges[3] = nil
+					merges[3], merges[5] = '', nil
 					rsql = table.concat(merges, '')
 				end
 			end

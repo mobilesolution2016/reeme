@@ -1,4 +1,4 @@
-require("reemext")
+require('reemext')
 
 local appRootDir = ngx.var.APP_ROOT
 if not appRootDir then

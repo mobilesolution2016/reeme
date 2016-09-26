@@ -365,6 +365,9 @@ REEME_API int luaopen_reemext(lua_State* L)
 		// 从指定的位置开始取一个词
 		{ "find_token", lua_sql_findtoken },
 
+		// 将boxed int64直接转成void*型，以保证不同cdata int64的值唯一
+		{ "int64ltud", &lua_uint64_tolightuserdata },
+
 		{ NULL, NULL }
 	};
 

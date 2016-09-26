@@ -1,3 +1,147 @@
+--一些扩展函数
+local ffi = require('ffi')
+local reemext = ffi.load('reemext')
+local int64Buf = ffi.new('char[?]', 32)
+local cExtLib = findmetatable('REEME_C_EXTLIB')
+
+if ffi.abi('win') then
+	ffi.cdef [[
+		int __cdecl strcmp(const char*, const char*);
+		int __cdecl strcasecmp(const char*, const char*) __asm__("_stricmp");
+		int __cdecl strncmp(const char*, const char*, size_t);
+		int __cdecl strncasecmp(const char*, const char*, size_t) __asm__("_strnicmp");
+	]]
+else
+	ffi.cdef [[
+		int strcmp(const char*, const char*);
+		int strcasecmp(const char*, const char*);
+		int strncmp(const char*, const char*, size_t);
+		int strncasecmp(const char*, const char*, size_t);
+	]]
+end
+
+ffi.cdef[[
+	int64_t str2int64(const char* str);
+	uint64_t str2uint64(const char* str);
+	uint32_t cdataisint64(const char* str, size_t len);
+	int64_t double2int64(double dbl);
+	uint64_t double2uint64(double dbl);
+	int64_t ltud2int64(void* p);
+	uint64_t ltud2uint64(void* p);
+	size_t opt_i64toa(int64_t value, char* buffer);
+	size_t opt_u64toa(uint64_t value, char* buffer);
+	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);
+]]
+
+_G.table.unique = function(tbl)
+	local cc = #tbl
+	local s, r = table.new(0, cc), table.new(cc, 0)
+	for i = 1, cc do
+		s[tbl[i]] = true
+	end
+	local i = 1
+	for k,_ in pairs(s) do
+		r[i] = k
+		i = i + 1
+	end
+	return r
+end
+
+local strlib = _G.string
+strlib.cut = function(str, p)
+	if str then
+		local pos = string.find(str, p, 1, true)
+		if pos then
+			return string.sub(str, 1, pos - 1), string.sub(str, pos + 1)
+		end
+	end
+	return str
+end
+strlib.casecmp = function(a, b)
+	return ffi.C.strcasecmp(a, b) == 0
+end
+strlib.ncasecmp = ffi.C.strncasecmp
+strlib.cmp = function(a, b, c, d)
+	local func
+	if type(c) == 'number' then
+		func = d == true and ffi.C.strncasecmp or ffi.C.strncmp
+		if func(a, b, c) == 0 then
+			return true
+		end
+	else
+		func = c == true and ffi.C.strcasecmp or ffi.C.strcmp
+		if func(a, b) == 0 then
+			return true
+		end
+	end
+	
+	return false
+end
+
+local int64construct = function(a, b)
+	local t = type(a)
+	if t == 'string' then a = reemext.str2int64(a)
+	elseif t == 'number' then a = reemext.double2int64(a)
+	elseif t == 'lightuserdata' then a = reemext.ltud2int64(a)
+	elseif t ~= 'cdata' then return error('error construct value by int64') end
+	if b then
+		t = type(b)
+		if t == 'string' then b = reemext.str2int64(b)
+		elseif t == 'number' then a = reemext.double2int64(b)
+		elseif t == 'lightuserdata' then b = reemext.ltud2int64(b)
+		elseif t ~= 'cdata' then return error('error construct value by int64') end
+		return bit.lshift(a, 32) + b
+	end
+	return a
+end
+
+local int64 = {
+	fromstr = reemext.str2int64,
+	is = function(str)
+		if type(str) == 'cdata' then
+			local s = tostring(str)
+			return reemext.cdataisint64(s, #s) >= 2, s
+		end
+		return false
+	end,
+	tostr = function(v)
+		local len = reemext.opt_i64toa(v, int64Buf)
+		return ffi.string(int64Buf, len)
+	end,
+	value = reemext.ltud2int64,
+	key = cExtLib.int64ltud,
+}
+
+local uint64 = {
+	fromstr = reemext.str2uint64,
+	is = function(str)
+		if type(str) == 'cdata' then
+			local s = tostring(str)
+			return reemext.cdataisint64(s, #s) == 3, s
+		end
+		return false
+	end,
+	make = function(hi, lo)
+		return bit.lshift(hi, 32) + lo
+	end,
+	tostr = function(v)
+		local len = reemext.opt_u64toa(v, int64Buf)
+		return ffi.string(int64Buf, len)
+	end,
+	tohex = function(v, upcase)
+		local len = reemext.opt_u64toa_hex(v, int64Buf, upcase or true)
+		return ffi.string(int64Buf, len, true)
+	end,
+	value = reemext.ltud2uint64,
+	key = cExtLib.int64ltud,
+}
+
+_G.int64, _G.uint64, _G.ffi = setmetatable(int64, { __call = function(self, a, b) return int64construct(a, b) end }),
+							  setmetatable(uint64, { __call = function(self, a, b) return int64construct(a, b) end }),
+							  ffi
+
+-----------------------------------------------------------------------------------------------------------------------
+
 local configs = nil
 local defConfigs = {
 	dirs = {
@@ -88,14 +232,17 @@ local copybasees = {
 	},
 }
 
-local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1 }
+local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, ffi_reflect = require('reeme.ffi_reflect') }
 local application = {
 	__index = function(self, key)	
 		local f = loadables[key]
+		local reeme = self.__reeme
+		
 		if f == 1 then
 			f = require('reeme.' .. key)
-			if type(f) == 'function' then
-				local reeme = self.__reeme
+			
+			local ft = type(f)
+			if ft == 'function' then
 				local r = f(reeme)
 
 				rawset(reeme, key, r)
@@ -103,16 +250,20 @@ local application = {
 				
 				return r
 			end
+			if ft == 'table' then
+				rawset(reeme, key, f)
+				return f
+			end
 			
 		elseif f then
-			local r = f(self.__reeme)
-			rawset(self, key, r)
+			local r = type(f) == 'function' and f(reeme) or f
+			rawset(reeme, key, r)
 			return r
 		end
 		
 		f = self.__bases[key] or self.__users[key]
 		if f then
-			rawset(self.__reeme, key, f)
+			rawset(reeme, key, f)
 			return f
 		end
 	end,
@@ -141,6 +292,7 @@ local function lazyLoaderProc(self, key, ...)
 	end
 end
 
+-----------------------------------------------------------------------------------------------------------------------
 local outputRedirect = function(app, v)
 	ngx.say(v)
 end
