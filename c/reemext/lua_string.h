@@ -2589,9 +2589,10 @@ static int pushJsonString(lua_State* L, JsonMemList& mems, size_t total, uint32_
 	char* dst = (char*)malloc(total), *ptr = dst;
 	while ((n = mems.popFirst()) != NULL)
 	{
-		memcpy(ptr, (char*)(n + 1), n->used);
+		memcpy(ptr, (char*)(n + 1), n->used);		
+		if (ptr != dst)
+			free(n);	// 第一个不需要释放，因为不是用malloc分配的
 		ptr += n->used;
-		free(n);
 	}
 
 	lua_pushlstring(L, dst, total);
@@ -2668,11 +2669,13 @@ static int lua_string_json(lua_State* L)
 	{
 		// lua table to json string
 		JsonMemList memList;
+		char fixedBuf[4096];
+
 		int32_t funcs[2] = { 0 };
 		uint32_t flags = 0;
 
 		memList.L = L;
-		memList.newNode();
+		memList.wrapNode(fixedBuf, sizeof(fixedBuf));
 
 		if (top >= 2)
 			flags = luaL_optinteger(L, 2, 0);
@@ -2691,8 +2694,7 @@ static int lua_string_json(lua_State* L)
 			if (memList.size() == 1)
 			{
 				r = pushJsonString(L, (char*)(n + 1), n->used, flags & kJsonRetCData, funcs);
-				memList.popFirst();
-				free(n);
+				memList.clear();
 			}
 			else
 			{

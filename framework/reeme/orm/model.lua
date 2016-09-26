@@ -382,7 +382,6 @@ queryMeta = {
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 
 				self.lastSql = sqls
-				ngx.say(sqls)
 				if self.m.__debug then
 					if res then
 						print(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
