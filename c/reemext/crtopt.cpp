@@ -942,6 +942,12 @@ extern "C" size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase)
 	const char upperChars[] = { "0123456789ABCDEF" };
 	const char lowerChars[] = { "0123456789abcdef" };
 
+	if (value == 0)
+	{
+		dst[0] = '0';
+		return 1;
+	}
+
 	char* buffer = dst;
 	int32_t endt = 32, i;
 	uint32_t mask = 0xF0000000;
@@ -972,6 +978,12 @@ extern "C" size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase)
 {
 	const char upperChars[] = { "0123456789ABCDEF" };
 	const char lowerChars[] = { "0123456789abcdef" };
+
+	if (value == 0)
+	{
+		dst[0] = '0';
+		return 1;
+	}
 
 	char* buffer = dst;
 	int32_t endt = 64, i;
