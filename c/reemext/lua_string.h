@@ -457,22 +457,21 @@ struct ReplacePosGreater : public std::binary_function <StringReplacePos&, Strin
 static int lua_string_replace(lua_State* L)
 {
 	int top = lua_gettop(L);
-	if (top < 3)
+	if (top < 2)
 		return 0;
 
 	luaL_Buffer buf;
+	StringReplacePos newrep;
+	std::list<StringReplacePos> replacePoses;
 	size_t srcLen = 0, fromLen = 0, toLen = 0, offset;
 	const char* src = luaL_checklstring(L, 1, &srcLen), *srcptr, *foundPos, *from, *to;
 
 	luaL_buffinit(L, &buf);
 
-	int tp1 = lua_type(L, 2), tp2 = lua_type(L, 3);
+	int tp1 = lua_type(L, 2), tp2 = lua_type(L, 3);	
 	if (tp2 == LUA_TTABLE)
 	{
 		int i;
-		StringReplacePos newrep;
-		std::list<StringReplacePos> replacePoses;
-
 		if (tp1 == LUA_TTABLE)
 		{
 			// 字符串数组对字符串数组
@@ -537,41 +536,6 @@ static int lua_string_replace(lua_State* L)
 		}
 		else
 			return luaL_error(L, "error type for the 2-th parameter of string.replcae", 0);
-
-		// 排序之后按顺序替换
-		i = 0;
-		offset = 0;
-		if (replacePoses.size())
-		{
-			replacePoses.sort(ReplacePosGreater());
-			for (std::list<StringReplacePos>::iterator ite = replacePoses.begin(), iend = replacePoses.end(); ite != iend; ++ ite)
-			{
-				StringReplacePos& rep = *ite;
-
-				if (i && rep.offset < offset)
-				{
-					std::string strfrom;
-					strfrom.append(rep.from, rep.fromLen);
-					return luaL_error(L, "string.replace from '%s' have appeared multiple times", strfrom.c_str());
-				}
-
-				lua_string_addbuf(&buf, src + offset, rep.offset - offset);
-				lua_string_addbuf(&buf, rep.to, rep.toLen);
-
-				offset = rep.offset + rep.fromLen;
-				++ i;
-			}
-
-			if (offset < srcLen)
-				lua_string_addbuf(&buf, src + offset, srcLen - offset);
-		}
-
-		if (i)
-			luaL_pushresult(&buf);
-		else
-			lua_pushvalue(L, 1);
-
-		return 1;
 	}
 	else if (tp2 == LUA_TSTRING)
 	{
@@ -623,8 +587,74 @@ static int lua_string_replace(lua_State* L)
 				lua_string_addbuf(&buf, src + fromLen, srcLen - fromLen);
 		}
 	}
+	else if (top == 2 && tp1 == LUA_TTABLE)
+	{
+		// keyy=>value表替换，所以只需要有两个参数
+		lua_pushnil(L);
+		while(lua_next(L, 2))
+		{
+			from = lua_tolstring(L, -2, &fromLen);
+			if (!from || !fromLen)
+				return luaL_error(L, "cannot replace from empty string by string.replace", 0);
 
-	lua_pushvalue(L, 1);
+			to = lua_tolstring(L, -1, &toLen);
+			if (!to)
+				to = "";
+
+			srcptr = src;
+			while((foundPos = fromLen == 1 ? strchr(srcptr, from[0]) : strstr(srcptr, from)) != 0)
+			{			
+				newrep.offset = foundPos - src;
+				newrep.fromLen = fromLen;
+				newrep.toLen = toLen;
+				newrep.from = from;
+				newrep.to = to;
+				replacePoses.push_back(newrep);
+				srcptr = foundPos + fromLen;
+			}
+
+			lua_pop(L, 1);
+		}
+	}
+
+	if (replacePoses.size())
+	{
+		// 排序之后按顺序替换
+		int i = 0;
+		offset = 0;
+		if (replacePoses.size())
+		{
+			replacePoses.sort(ReplacePosGreater());
+			for (std::list<StringReplacePos>::iterator ite = replacePoses.begin(), iend = replacePoses.end(); ite != iend; ++ ite)
+			{
+				StringReplacePos& rep = *ite;
+
+				if (i && rep.offset < offset)
+				{
+					std::string strfrom;
+					strfrom.append(rep.from, rep.fromLen);
+					return luaL_error(L, "string.replace from '%s' have appeared multiple times", strfrom.c_str());
+				}
+
+				lua_string_addbuf(&buf, src + offset, rep.offset - offset);
+				lua_string_addbuf(&buf, rep.to, rep.toLen);
+
+				offset = rep.offset + rep.fromLen;
+				++ i;
+			}
+
+			if (offset < srcLen)
+				lua_string_addbuf(&buf, src + offset, srcLen - offset);
+		}
+
+		if (i)
+			luaL_pushresult(&buf);
+		else
+			lua_pushvalue(L, 1);
+	}
+	else
+		lua_pushvalue(L, 1);
+
 	return 1;
 }
 
@@ -1739,16 +1769,44 @@ public:
 				const char* varEnd = varBegin + 1;
 				const char* totalEnd = src + srcLen;
 				const char* subSec = NULL;
+				int brackets = 0, quotes = 0;
 
 				for ( ; varEnd < totalEnd; varEnd ++)
 				{
 					uint8_t ch2 = varEnd[0];
-					if (ch2 == '/' && !subSec)
-						subSec = varEnd;
-					if (ch2 == '}')
+					
+					if (brackets)
+					{
+						if (ch2 == ')')
+							brackets --;
+						continue;
+					}
+					if (quotes)
+					{
+						if (ch2 == '\'' || ch2 == '"')
+							quotes --;
+						continue;
+					}
+
+					if (ch2 == '(')
+					{
+						brackets ++;
+						continue;
+					}
+					else if (ch2 == '\'' || ch2 == '"')
+					{
+						quotes ++;
+						continue;
+					}
+
+					if (ch2 == '\\')
+					{
+						if (!subSec && varEnd[1] == ' ')
+							subSec = varEnd;
+						varEnd ++;
+					}
+					else if (ch2 == '}')
 						break;
-					if (ch == '\'')
-						return false;
 				}
 
 				close();
@@ -1946,7 +2004,7 @@ public:
 			}
 			else if (ch == '-')
 			{
-				// 可能是模板分段定名，要有4个连接的-号
+				// 可能是模板分段定名，至少要有4个连接的-号，多于4个都可以
 				int bkchk = 1;
 				for ( ; ; ++ bkchk)
 				{

@@ -1,3 +1,5 @@
+local viewf = require("reeme.response.view")
+
 local writeMembers = {
 	status = function(self, value)
 		ngx.status = value
@@ -59,11 +61,11 @@ local Response = {
 		end,
 		
 		view = function(self, tpl, env, method)
-			local t = require("reeme.response.view")(rawget(self, "R"), tpl)
+			local t = viewf(rawget(self, "R"), tpl)
 			return t:render(env or {}, method)
 		end,
 		loadView = function(self, tpl)
-			return require("reeme.response.view")(rawget(self, "R"), tpl)
+			return viewf(rawget(self, "R"), tpl)
 		end,
 	},
 	__newindex = function(self, key, value)

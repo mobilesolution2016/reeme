@@ -1,5 +1,7 @@
 local viewDir = nil 
 local viewMeta = { }
+local globalTplCaches = nil
+local globalSectionCaches = nil
 
 --tpl为文件名，如果以/开头则表示绝对路径（绝对路径将被直接使用不会做任何修改），否则将会被加上views路径以及默认的view文件扩展名后再做为路径被使用
 local function loadTemplateFile(reeme, tpl)
@@ -13,25 +15,96 @@ local function loadTemplateFile(reeme, tpl)
 			tpl = tpl:sub(2)
 		end
 		
-		local f, err = io.open(tpl, "rb")
-		if f then
-			local t = f:read("*all")
-			f:close()
-			
+		local t
+		if globalTplCaches then
+			t = globalTplCaches:get(tpl)
 			return t
 		end
+
+		local f, err = io.open(tpl, "rb")
+		if f then
+			t = f:read("*all")
+			f:close()
+		end
+		
+		return t, tpl
 	end
 end
 
-local function loadSubtemplate(self, env, name)
-	local t = loadTemplateFile(self.__reeme, name)
-	if t then
-		return string.parseTemplate(self, t, env)
+local function dumpFile(name, code)
+	local f, err = io.open(name, "wb")
+	if f then
+		t = f:write(code, #code)
+		f:close()
 	end
+end
+
+local function cacheTemplate(name, code)
+	--如果缓存支持二进制，那么就编译
+	if globalTplCaches.isSupportFunction then
+		globalTplCaches:writeFunction(name, loadstring(code, '__templ_tempr__'))
+	else
+		globalTplCaches:writeCode(name, code)
+	end
+end
+
+local subNameCallMeta = {
+	__call = function(self, params)
+		if type(params) == 'table' then
+			return string.replace(self[1], params)
+		end
+		
+		return self[1]
+	end,
+}
+
+local function loadSubtemplate(self, env, name)
+	local t, cacheName = loadTemplateFile(self.__reeme, name)
+	if t then
+		if cacheName then
+			--有cache名字说明这不是缓存中取出来的
+			t = string.parseTemplate(self, t, env)
+			if not t then
+				return ''
+			end
+		elseif type(t) == 'function' then
+			--缓存的模板代码已经编译为函数了，直接调用
+			t = t(self, env)
+		else
+			--缓存的模板代码，已经解析过了，只需要加载
+			local f = loadstring(source, '__templ_tempr__')
+			t = f(self, env)
+		end
+		
+		if type(t) == 'table' then
+			--返回的是一个分段命名的子模板，于是要检测其中是否含有函数调用式的命名
+			for n,v in pairs(t) do
+				local pos = string.find(n, '(', 2, true)
+				if pos then
+					--将原名字对应的值去掉，换成模拟函数调用的值
+					t[n] = nil
+					n = n:sub(1, pos - 1)
+					t[n] = setmetatable({ v }, subNameCallMeta)
+				end
+			end
+		end
+		
+		if cacheName and globalTplCaches then
+			cacheTemplate(cacheName, t)
+		end
+
+		return t
+	end
+	
 	return string.format('subtemplate("%s") failed, name not exists', name)
 end
 
 local function setCachesection(isBegin, rets, caches, ...)	
+	if not caches then
+		--cache没有，于是永远返回true，表示模板缓存或读取缓存失败
+		return true
+	end
+	
 	local cc = #caches
 	if isBegin then
 		--创建
@@ -71,7 +144,7 @@ local function setCachesection(isBegin, rets, caches, ...)
 	return true
 end
 
-local renderMethods = {
+local sourceRenderMethods = {
 	debug = function(self, olds, source, env)
 		local r = string.parseTemplate(self, source)
 		rawset(self, 'finalHTML', r)
@@ -79,11 +152,40 @@ local renderMethods = {
 	end,
 	overwrite = function(self, olds, source, env)
 		local r = string.parseTemplate(self, source, env)
+		dumpFile('d:/dump.txt', r)
 		rawset(self, 'finalHTML', r)
 		return self
 	end,
 	append = function(self, olds, source, env)
 		local r = string.parseTemplate(self, source, env)
+		rawset(self, 'finalHTML', table.concat({ olds, r }, ''))
+		return self
+	end,
+}
+local parsedRenderMethods = {
+	debug = function(self, olds, source, env)
+		if type(source) == 'function' then
+			return 'template function cached mode cannot support "debug" render'
+		end
+		return source
+	end,
+	overwrite = function(self, olds, source, env)
+		local f = source
+		if type(f) == 'string' then
+			f = loadstring(source, '__templ_tempr__')
+		end
+
+		local r = f(self, env)
+		rawset(self, 'finalHTML', r)
+		return self
+	end,
+	append = function(self, olds, source, env)
+		local f = source
+		if type(f) == 'string' then
+			f = loadstring(source, '__templ_tempr__')
+		end
+
+		local r = f(self, env)
 		rawset(self, 'finalHTML', table.concat({ olds, r }, ''))
 		return self
 	end,
@@ -123,18 +225,23 @@ viewMeta.__index = {
 	--参数2为所有的模板参数，参数3为nil表示重新渲染并且清除掉上一次的结果，否则将会累加在上一次的结果之后（如果本参数不是true而是string，那么将会做为join字符串放在累加的字符串中间）
 	render = function(self, env, method)
 		--如果没有source那么就无法渲染
+		local methods = sourceRenderMethods
 		local src = rawget(self, 'sourceCode')
 		if not src then
-			error('render view with no source code')
+			methods = parsedRenderMethods
+			src = rawget(self, 'parsedCode')
+			if not src then
+				error('render view with no source code')
+			end
 		end
-		
+
 		--切换meta
 		local vals = {
 			self = self,
 			reeme = self.__reeme,
 			subtemplate = loadSubtemplate,
 			cachesection = setCachesection,
-			__cachesecs__ = rawget(self, 'caches'),
+			__cachesecs__ = rawget(self, 'caches') or globalSectionCaches,
 		}
 		local meta = { __index = vals, __newindex = vals }
 		setmetatable(vals, { __index = _G })
@@ -148,9 +255,9 @@ viewMeta.__index = {
 		end
 
 		--使用某个方法渲染模板
-		local m = renderMethods[method or 'overwrite']
+		local m = sourceRenderMethods[method or 'overwrite']
 		if not m then
-			m = renderMethods.overwrite
+			m = sourceRenderMethods.overwrite
 		end
 		
 		r = m(self, rawget(self, 'finalHTML'), src, env)
@@ -219,6 +326,36 @@ end
 
 --tpl是模板的名称，名称中的.符号将被替换为/，表示多级目录
 return function(r, tpl)
-	local t = tpl and loadTemplateFile(r, tpl) or nil
-	return setmetatable({ __reeme = r, sourceCode = t }, viewMeta)
+	if type(r) == 'string' then
+		if r == 'templatecache' then
+			--设置全局模板缓存
+			globalTplCaches = tbl
+		elseif r == 'sectioncache' then
+			--设置模板段缓存
+			globalSectionCaches = tbl
+		elseif r == 'getmeta' then
+			return viewMeta
+		end
+		
+		return
+	end
+	
+	if tpl then
+		local t, cacheName = loadTemplateFile(r, tpl)
+		if t then
+			if cacheName then
+				--返回了缓存名字说明这个模板不是从缓存中取出来的，那么t就是源码，顺便缓存一下其代码
+				if globalTplCaches then
+					cacheTemplate(cacheName, t)
+				end
+
+				return setmetatable({ __reeme = r, sourceCode = t }, viewMeta)
+			else
+				--没有缓存名字，说明模板是从缓存中取出来的，就不要再设置sourceCode了
+				return setmetatable({ __reeme = r, parsedCode = t }, viewMeta)
+			end
+		end
+	end
+	
+	return setmetatable({ __reeme = r }, viewMeta)
 end

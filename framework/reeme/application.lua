@@ -60,8 +60,8 @@ end
 strlib.casecmp = function(a, b)
 	return ffi.C.strcasecmp(a, b) == 0
 end
-strlib.ncasecmp = function(a, b)
-	return ffi.C.strncasecmp == 0
+strlib.ncasecmp = function(a, b, n)
+	return ffi.C.strncasecmp(a, b, n) == 0
 end
 strlib.cmp = function(a, b, c, d)
 	local func
@@ -236,10 +236,15 @@ local copybasees = {
 
 local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, ffi_reflect = require('reeme.ffi_reflect') }
 local application = {
-	__index = function(self, key)	
-		local f = loadables[key]
+	__index = function(self, key)
 		local reeme = self.__reeme
-		
+		local f = self.__bases[key] or self.__users[key]
+		if f then
+			rawset(reeme, key, f)
+			return f
+		end
+
+		f = loadables[key]
 		if f == 1 then
 			f = require('reeme.' .. key)
 			
@@ -256,18 +261,12 @@ local application = {
 				rawset(reeme, key, f)
 				return f
 			end
-			
+
 		elseif f then
 			local r = type(f) == 'function' and f(reeme) or f
 			rawset(reeme, key, r)
 			return r
-		end
-		
-		f = self.__bases[key] or self.__users[key]
-		if f then
-			rawset(reeme, key, f)
-			return f
-		end
+		end		
 	end,
 }
 
@@ -295,6 +294,9 @@ local function lazyLoaderProc(self, key, ...)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+local responseView = require('reeme.response.view')
+local viewMeta = responseView('getmeta')
+
 local outputRedirect = function(app, v)
 	ngx.say(v)
 end
@@ -313,14 +315,18 @@ local appMeta = {
 			return self
 		end,
 		
+		--响应某个方法
 		on = function(self, name, func)
 			local valids = { pre = 1, err = 1, denied = 1, missmatch = 1, tblfmt = 1, output = 1, ['end'] = 1 }
 			if type(func) == 'function' and valids[name] then
 				self[name .. 'Proc'] = func
+			else
+				error('Error for application.on function call')
 			end
 			return self
 		end,
 		
+		--添加用户级自定义变量
 		addUsers = function(self, vals)
 			local u = self.users
 			for k,v in pairs(vals) do
@@ -329,8 +335,19 @@ local appMeta = {
 			return self
 		end,
 		
+		--设置所有控制器公共的父级
 		setControllerBase = function(self, tbl)
 			self.controllerBase = tbl
+			return self
+		end,
+		
+		--启用全局模板缓存
+		setTemplateCache = function(self, cacheObj)
+			if cacheObj.get and (cacheObj.writeFunction or cacheObj.writeCode) then				
+				responseView('templatecache', cacheObj)
+			else
+				error('Error for application.setTemplateCache call, cache object invalid')
+			end
 			return self
 		end,
 		
@@ -450,37 +467,42 @@ local appMeta = {
 					r = nil
 				end
 
+				--处理返回的结果
 				if r ~= nil then
 					local tp = type(r)
 					local out = self.outputProc or outputRedirect
 
 					if tp == 'table' then
+						--可能是一个view也可能是json
 						local o
-						if not getmetatable(r) then
-							local tblfmt = self.tblfmtProc or defTblfmt
-							o = tblfmt(self, r)
-						else
+						if getmetatable(r) == viewMeta then
 							o = r:content()
+						else
+							o = (self.tblfmtProc or defTblfmt)(self, r)
 						end
+						
 						out(self, o)
+						
 					elseif tp == 'string' then
+						--字符串直接输出
 						out(self, r)
+
 					elseif r == false then
 						--动作函数返回false表示拒绝访问，此时如果定义有deniedProc的话就会被执行，否则统一返回ErrorAccess的报错
 						if self.deniedProc then
 							self.deniedProc(self, c, path, act)
 						else
-							out(self, 'Error Access!')
+							out(self, 'Denied Error Access!')
 						end
 					end
 				end
 
-			end, debug.traceback)
-			
-			--结束动作
-			if self.endProc then
-				self.endProc(self, c, path, act)
-			end
+				--结束动作
+				if self.endProc then
+					self.endProc(self, c, path, act)
+				end
+				
+			end, debug.traceback)		
 			
 			--清理
 			if c then
