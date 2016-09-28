@@ -20,19 +20,23 @@ end
 
 if ffi.abi('win') then
 	ffi.cdef [[
-		int __cdecl strcmp(const char*, const char*);
-		int __cdecl strcasecmp(const char*, const char*) __asm__("_stricmp");
-		int __cdecl strncmp(const char*, const char*, size_t);
-		int __cdecl strncasecmp(const char*, const char*, size_t) __asm__("_strnicmp");
+		int strcmp(const char*, const char*);
+		int strcasecmp(const char*, const char*) __asm__("_stricmp");
+		int strncmp(const char*, const char*, size_t);
+		int strncasecmp(const char*, const char*, size_t) __asm__("_strnicmp");
 		
 		int access(const char *, int) __asm__("_access");
 	]]
 	
 	ffi.load = function(name)
-		if string.byte(name, 1) == 47 or (string.byte(name, 2) == 58 and string.byte(name, 3) == 47) then
-			return ffiload(name)
+		local h
+		local ok = pcall(function()
+			h = ffiload(name)
+		end)
+		if not h and not (string.byte(name, 1) == 47 or (string.byte(name, 2) == 58 and string.byte(name, 3) == 47)) then
+			h = newffiload(name)
 		end
-		return newffiload(name)
+		return h
 	end
 else
 	ffi.cdef [[
@@ -45,11 +49,21 @@ else
 	]]
 	
 	ffi.load = function(name)
-		return string.byte(name, 1) == 47 and ffiload(name) or newffiload(name)
+		local h
+		local ok = pcall(function()
+			h = ffiload(name)
+		end)
+		if not h and string.byte(name, 1) ~= 47 then
+			return newffiload(name)
+		end
+		return h
 	end
 end
 
 ffi.cdef[[
+	int strcspn(const char*, const char*);
+	int strspn(const char*, const char*);
+	
 	int64_t str2int64(const char* str);
 	uint64_t str2uint64(const char* str);
 	uint32_t cdataisint64(const char* str, size_t len);
@@ -112,6 +126,8 @@ strlib.cmp = function(a, b, c, d)
 	
 	return false
 end
+strlib.spn = ffi.C.strspn
+strlib.cspn = ffi.C.strcspn
 
 local int64construct = function(a, b)
 	local t = type(a)
