@@ -852,6 +852,13 @@ cairo_surface_write_to_png (cairo_surface_t *surface,
 cairo_surface_write_to_png_stream (cairo_surface_t *surface,
 	   cairo_write_func_t write_func,
 	   void *closure);
+cairo_status_t
+cairo_surface_write_to_jpg (cairo_surface_t *surface, int quality,
+	   const char *filename);
+ cairo_status_t
+cairo_surface_write_to_jpg_stream (cairo_surface_t *surface, int quality,
+	   cairo_write_func_t write_func,
+	   void *closure);
  void *
 cairo_surface_get_user_data (cairo_surface_t *surface,
 		const cairo_user_data_key_t *key);

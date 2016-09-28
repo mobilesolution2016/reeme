@@ -58,9 +58,19 @@ local subNameCallMeta = {
 	end,
 }
 
-local function loadSubtemplate(self, env, name)
+local function loadSubtemplate(self, env, name, envForSub)
 	local t, cacheName = loadTemplateFile(self.__reeme, name)
 	if t then
+		local restore = nil
+		if type(envForSub) == 'table' then
+			--专用于这个模板的附加值，先保存原值再设置
+			restore = table.new(0, 8)
+			for k,v in pairs(envForSub) do
+				restore[k] = env[k]
+				env[k] = v
+			end
+		end
+		
 		if cacheName then
 			--有cache名字说明这不是缓存中取出来的
 			t = string.parseTemplate(self, t, env)
@@ -74,6 +84,13 @@ local function loadSubtemplate(self, env, name)
 			--缓存的模板代码，已经解析过了，只需要加载
 			local f = loadstring(source, '__templ_tempr__')
 			t = f(self, env)
+		end
+		
+		if restore then
+			--恢复被覆盖的值
+			for k,v in pairs(restore) do
+				env[k] = restore[k]
+			end
 		end
 		
 		if type(t) == 'table' then

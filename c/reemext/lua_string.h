@@ -628,13 +628,7 @@ static int lua_string_replace(lua_State* L)
 			for (std::list<StringReplacePos>::iterator ite = replacePoses.begin(), iend = replacePoses.end(); ite != iend; ++ ite)
 			{
 				StringReplacePos& rep = *ite;
-
-				if (i && rep.offset < offset)
-				{
-					std::string strfrom;
-					strfrom.append(rep.from, rep.fromLen);
-					return luaL_error(L, "string.replace from '%s' have appeared multiple times", strfrom.c_str());
-				}
+				assert(i == 0 || rep.offset >= offset);
 
 				lua_string_addbuf(&buf, src + offset, rep.offset - offset);
 				lua_string_addbuf(&buf, rep.to, rep.toLen);
@@ -1584,6 +1578,11 @@ class TemplateParser
 public:
 	std::string	buf, errorMsg;
 	size_t		offset, srcLen, wrote, mlsLength;
+	
+	uint32_t	expLines;
+	char		expQuoted;
+	const char	*expSub;
+
 	const char	*src;
 	const char	*savedPos;
 	const char	*errorStart;
@@ -1659,44 +1658,57 @@ public:
 		return s;
 	}
 
-	const char* findExpEnd(const char* expStart, const char* totalEnd, uint32_t *pLinesCC = 0, uint32_t *pQuoted = 0)
+	const char* findExpEnd(const char* expStart, const char* totalEnd)
 	{
-		uint8_t quoted = 0, ln = 0;
+		int brackets = 0;
 		const char* expEnd = expStart;
+
+		expSub = 0;
+		expLines = 0;
+		expQuoted = 0;
 
 		while (expEnd < totalEnd)
 		{
-			char ch = *expEnd ++;
-			if (quoted)
+			char ch = expEnd[0];
+			if (expQuoted)
 			{
 				if (ch == '\\')
 					expEnd ++;
-				else if (ch == '\'' || ch == '"')
-					quoted = 0;
 				else if (ch == '\n')
-					ln = 1;
+					expLines ++;
+				else if (ch == expQuoted)
+					expQuoted = 0;
+			}
+			else if (brackets)
+			{
+				if (ch == ')')
+					brackets --;
 			}
 			else if (ch == '\'' || ch == '"')
 			{
-				if (quoted)
+				if (expQuoted)
 				{
 					errorStart = expStart;
 					errorMsg = "not closed string";
 					expEnd = 0;
 					break;
 				}
-				quoted = ch;
+				expQuoted = ch;
 			}
+			else if (ch == '\\')
+				expSub = expEnd;
+			else if (ch == '(')
+				brackets ++;
 			else if (ch == '\n')
-				ln = 1;
+				expLines ++;
 			else if (ch == '}')
 				break;
+
+			expEnd ++;
 		}
 
-		if (pLinesCC)
-			*pLinesCC = ln;
-		if (pQuoted)
-			*pQuoted = quoted;
+		if (expEnd >= totalEnd)
+			return 0;
 
 		return expEnd;
 	}
@@ -1730,103 +1742,63 @@ public:
 			foundPos ++;
 			ch = foundPos[0];
 
-			if (ch <= 32)
+			if (ch == '\\' && string_template_ctls[foundPos[1]] == 1)
 			{
-				append(foundPos - src - offset);
-				goto _lastcheck;
-			}
-
-			if (ch == '\\')
-			{
-				ch = foundPos[1];
-				if (ch == '=' || ch == ':' | ch == '%')
-				{
-					// 大括号转义
-					add = pos - offset + 1;
-					if (pos >= offset && append(add) != add)
-					{
-						savedPos = foundPos;
-						return true;
-					}
-				}
-
-				offset = pos + 2;
-				continue;
-			}
-			else if (ch == '=' || ch == ':')
-			{
-				add = pos - offset;
+				// 控制符转义
+				add = pos - offset + 1;
 				if (pos >= offset && append(add) != add)
 				{
 					savedPos = foundPos;
 					return true;
 				}
 
+				offset = pos + 2;
+				continue;
+			}
+
+			if (string_template_ctls[ch] != 1)
+			{
+				append(foundPos - src - offset);
+				goto _lastcheck;
+			}
+
+			// 先关闭之前未输出的部分
+			add = pos - offset;
+			if (pos >= offset && append(add) != add)
+			{
+				savedPos = foundPos - 1;
+				return true;
+			}
+
+			close();
+
+			if (ch == '=' || ch == ':')
+			{
+				// 寻找表达式的结束
 				const char* varBegin = foundPos + 1;
 				while((uint8_t)varBegin[0] <= 32)
 					varBegin ++;
-
-				const char* varEnd = varBegin + 1;
-				const char* totalEnd = src + srcLen;
-				const char* subSec = NULL;
-				int brackets = 0, quotes = 0;
-
-				for ( ; varEnd < totalEnd; varEnd ++)
-				{
-					uint8_t ch2 = varEnd[0];
-					
-					if (brackets)
-					{
-						if (ch2 == ')')
-							brackets --;
-						continue;
-					}
-					if (quotes)
-					{
-						if (ch2 == '\'' || ch2 == '"')
-							quotes --;
-						continue;
-					}
-
-					if (ch2 == '(')
-					{
-						brackets ++;
-						continue;
-					}
-					else if (ch2 == '\'' || ch2 == '"')
-					{
-						quotes ++;
-						continue;
-					}
-
-					if (ch2 == '\\')
-					{
-						if (!subSec && varEnd[1] == ' ')
-							subSec = varEnd;
-						varEnd ++;
-					}
-					else if (ch2 == '}')
-						break;
-				}
-
-				close();
-
-				// 引用子模板
+				
+				const char* varEnd = findExpEnd(varBegin, src + srcLen);				
+				if (!varEnd)
+					return false;
+				
 				if (ch == ':')
 				{
-					if (subSec)
+					// 引用子模板
+					if (expSub)
 					{
 						// 这个模板不直接引用，而是赋于一个段名称
 						buf.append("local ", 6);
-						buf.append(varBegin, subSec - varBegin);
+						buf.append(varBegin, expSub - varBegin);
 						buf += '=';
 						buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
 						buf += '\'';
 
-						subSec ++;
-						while((uint8_t)subSec[0] <= 32)
-							subSec ++;
-						buf.append(subSec, varEnd - subSec);
+						expSub ++;
+						while((uint8_t)expSub[0] <= 32)
+							expSub ++;
+						buf.append(expSub, varEnd - expSub);
 					}
 					else
 					{
@@ -1841,168 +1813,134 @@ public:
 				}
 				else
 				{
+					// 使用值
 					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
 					buf.append(varBegin, varEnd - varBegin);
 				}
 
 				buf += '\n';
 				wrote = buf.size();
-
-				open();
 				
 				foundPos = varEnd + 1;
 				offset = foundPos - src;
+
+				open();
 				goto _lastcheck;
 			}
 			else if (ch == '%')
 			{
-				// 先关闭之前的输出，因为表达式不可能与字符串也不可能与其它的表达式位于同一行
-				add = pos - offset;
-				//while (pos > offset)
-				//{
-				//	// 向前去掉空字符和空行
-				//	if ((uint8_t)src[pos - 1] <= 32)
-				//	{
-				//		pos --;
-				//		add --;
-				//	}
-				//	else
-				//		break;
-				//}
-
-				if (pos >= offset && append(add) != add)
-				{
-					savedPos = foundPos - 1;
-					return true;
-				}
-
-				close();
-
 				// 找到表达式的结束位置
-				uint32_t ln = 0, quoted = 0;
 				const char* expStart = foundPos + 1, *expEnd;
 				const char* totalEnd = src + srcLen;
 
 				while(expStart[0] <= 32)
 					expStart ++;
 
-				expEnd = findExpEnd(expStart, totalEnd, &ln, &quoted);
+				expEnd = findExpEnd(expStart, totalEnd);
 				if (!expEnd)
 					return false;
-				if (expEnd <= totalEnd)
-				{					
-					add = expEnd - expStart - 1;
-					if (add >= 14 && memcmp(expStart, "subtemplate", 11) == 0 && sql_where_splits[expStart[11]] == 1)
-					{
-						// 特殊处理subtemplate
-						buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
-						buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
-
-						expStart += 11;
-						while(expStart[0] <= 32)
-							expStart ++;
-
-						if (expStart[0] == '(')
-							expStart ++;
-
-						add = expEnd - expStart - 1;
-						buf.append(expStart, add);
-
-						const char* revFindBracket = expEnd - 1;
-						while (revFindBracket > expStart)
-						{
-							if ((uint8_t)revFindBracket[0] <= 32)
-								revFindBracket --;
-							else if (revFindBracket[0] == ')')
-								revFindBracket = 0;
-							else
-								break;
-						}
-
-						if (revFindBracket)
-							buf += ')';
-					}
-					else
-					{
-						// 其它的表达式，判断一下是否是某些关键字，如果是的话，则再判断有没有相应的then do语句。这个地方是很容易被忘记的，因此由程序来自动添加
-						buf.append(expStart, add);
-
-						if (ln == 0 && add >= 4)
-						{
-							// 只有在表达式不换行的时候才会处理自动添加，如果{%后面的表达式有多行的话，是不会去处理这个自动添加的
-							switch (checkTemplateKeywords(expStart, expEnd, add))
-							{
-							case KEND_THEN:
-								buf.append(" then", 5);
-								break;
-							case KEND_DO:
-								buf.append(" do", 3);
-								break;
-							}
-						}
-					}
-
-					buf += '\n';
-					wrote = buf.size();
-
-					foundPos = expEnd;
-					offset = foundPos - src;
-					goto _lastcheck;
-				}
-			}
-			else if (ch == '?')
-			{
-				// 关闭之前的输出，模板部分缓存功能不可能与其它位于同一行
-				add = pos - offset;
-				if (pos >= offset && append(add) != add)
+				
+				add = expEnd - expStart;
+				if (add >= 14 && memcmp(expStart, "subtemplate", 11) == 0 && sql_where_splits[expStart[11]] == 1)
 				{
-					savedPos = foundPos - 1;
-					return true;
-				}
+					// 特殊处理subtemplate
+					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+					buf.append(templSubtemplCode, sizeof(templSubtemplCode) - 1);
 
-				close();
+					expStart += 11;
+					while(expStart[0] <= 32)
+						expStart ++;
 
-				// 判断是开始还是结束
-				uint32_t quoted = 0;
-				const char* cmdStart = foundPos + 1;
-				const char* totalEnd = src + srcLen;
+					if (expStart[0] == '(')
+						expStart ++;
 
-				while(cmdStart[0] <= 32)
-					cmdStart ++;
+					buf.append(expStart, expEnd - expStart);
 
-				const char* cmdEnd = findExpEnd(cmdStart, totalEnd, 0, &quoted);
-				if (!cmdEnd)
-					return false;
-				if (cmdEnd <= totalEnd)
-				{
-					size_t add = cmdEnd - cmdStart - 1;
-					if (add == 0)
+					const char* revFindBracket = expEnd - 1;
+					while (revFindBracket > expStart)
 					{
-						// 结束
-						buf.append("cachesection(false, __ret__, __cachesecs__)\nend");
+						if ((uint8_t)revFindBracket[0] <= 32)
+							revFindBracket --;
+						else if (revFindBracket[0] == ')')
+							revFindBracket = 0;
+						else
+							break;
 					}
-					else
-					{
-						// 开始
-						buf.append("if cachesection(true, __ret__, __cachesecs__");
-						if (add)
-						{
-							buf += ',';
-							buf.append(cmdStart, add);
-						}
 
-						buf.append(") then", 6);
+					if (revFindBracket)
+						buf += ')';
+				}
+				else
+				{
+					// 其它的表达式，判断一下是否是某些关键字，如果是的话，则再判断有没有相应的then do语句。这个地方是很容易被忘记的，因此由程序来自动添加
+					buf.append(expStart, add);
+
+					if (expLines == 0 && add >= 4)
+					{
+						// 只有在表达式不换行的时候才会处理自动添加，如果{%后面的表达式有多行的话，是不会去处理这个自动添加的
+						switch (checkTemplateKeywords(expStart, expEnd, add))
+						{
+						case KEND_THEN:
+							buf.append(" then", 5);
+							break;
+						case KEND_DO:
+							buf.append(" do", 3);
+							break;
+						}
 					}
 				}
 
 				buf += '\n';
 				wrote = buf.size();
 
-				foundPos = cmdEnd;
+				foundPos = expEnd + 1;
 				offset = foundPos - src;
+
+				open();
 				goto _lastcheck;
 			}
-			else if (ch == '-')
+			else if (ch == '?')
+			{
+				// 判断是开始还是结束
+				const char* cmdStart = foundPos + 1;
+				const char* totalEnd = src + srcLen;
+
+				while(cmdStart[0] <= 32)
+					cmdStart ++;
+
+				const char* cmdEnd = findExpEnd(cmdStart, totalEnd);
+				if (!cmdEnd)
+					return false;
+
+				size_t add = cmdEnd - cmdStart - 1;
+				if (add == 0)
+				{
+					// 结束
+					buf.append("cachesection(false, __ret__, __cachesecs__)\nend");
+				}
+				else
+				{
+					// 开始
+					buf.append("if cachesection(true, __ret__, __cachesecs__");
+					if (add)
+					{
+						buf += ',';
+						buf.append(cmdStart, add);
+					}
+
+					buf.append(") then", 6);
+				}
+
+				buf += '\n';
+				wrote = buf.size();
+
+				foundPos = cmdEnd + 1;
+				offset = foundPos - src;
+
+				open();
+				goto _lastcheck;
+			}
+			else
 			{
 				// 可能是模板分段定名，至少要有4个连接的-号，多于4个都可以
 				int bkchk = 1;
@@ -2027,7 +1965,7 @@ public:
 					{
 						if (ch == ' ' || ch == '}')
 							break;
-						if (ch == '\'')
+						if (ch == '\'' || ch == '"')
 							return false;
 						if (ch == '\n')
 						{
@@ -2064,6 +2002,8 @@ public:
 
 						foundPos = segnameEnd + 1;
 						offset = foundPos - src;
+
+						open();
 						goto _lastcheck;
 					}
 				}

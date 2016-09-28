@@ -27,6 +27,7 @@ static uint8_t json_escape_chars[256] = { 0 };
 static uint8_t json_unescape_chars[256] = { 0 };
 static uint8_t integer64_valid_bits[256] = { 0 };
 static uint8_t string_fmt_valid_fmt[256] = { 0 };
+static uint8_t string_template_ctls[256] = { 0 };
 
 struct initJsonEscapeChars
 {
@@ -85,6 +86,9 @@ struct initJsonEscapeChars
 		string_fmt_valid_fmt['+'] = 0x20;		// 数字时，输出正负号
 		string_fmt_valid_fmt['#'] = 0x40;		// x或X时，增加0x，小数时一定增加小数点，g或G时，保留尾部的0
 		string_fmt_valid_fmt[' '] = 0x80;		// 正数时留空，负数时用-填充
+
+		// 所有的模板控制符
+		string_template_ctls['%'] = string_template_ctls[':'] = string_template_ctls['='] = string_template_ctls['?'] = string_template_ctls['-'] = 1;
 	}
 } _g_initJsonEscapeChars;
 

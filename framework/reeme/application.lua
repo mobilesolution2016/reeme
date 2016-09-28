@@ -4,20 +4,49 @@ local reemext = ffi.load('reemext')
 local int64Buf = ffi.new('char[?]', 32)
 local cExtLib = findmetatable('REEME_C_EXTLIB')
 
+local ffiload = ffi.load
+local newffiload = function(name)
+	local paths = string.split(package.cpath, ';')
+	for i = 1, #paths do
+		local h = string.replace(paths[i], '?', name)
+		if ffi.C.access(h, 0) == 0 then
+			h = ffiload(h)
+			if h then
+				return h
+			end
+		end
+	end
+end
+
 if ffi.abi('win') then
 	ffi.cdef [[
 		int __cdecl strcmp(const char*, const char*);
 		int __cdecl strcasecmp(const char*, const char*) __asm__("_stricmp");
 		int __cdecl strncmp(const char*, const char*, size_t);
 		int __cdecl strncasecmp(const char*, const char*, size_t) __asm__("_strnicmp");
+		
+		int access(const char *, int) __asm__("_access");
 	]]
+	
+	ffi.load = function(name)
+		if string.byte(name, 1) == 47 or (string.byte(name, 2) == 58 and string.byte(name, 3) == 47) then
+			return ffiload(name)
+		end
+		return newffiload(name)
+	end
 else
 	ffi.cdef [[
 		int strcmp(const char*, const char*);
 		int strcasecmp(const char*, const char*);
 		int strncmp(const char*, const char*, size_t);
 		int strncasecmp(const char*, const char*, size_t);
+		
+		int access(const char *, int);
 	]]
+	
+	ffi.load = function(name)
+		return string.byte(name, 1) == 47 and ffiload(name) or newffiload(name)
+	end
 end
 
 ffi.cdef[[
@@ -45,6 +74,10 @@ _G.table.unique = function(tbl)
 		i = i + 1
 	end
 	return r
+end
+
+_G.io.exists = function(name)
+	return ffi.C.access(name, 0) == 0
 end
 
 local strlib = _G.string
@@ -107,8 +140,8 @@ local int64 = {
 		return false
 	end,
 	tostr = function(v)
-		local len = reemext.opt_i64toa(v, int64Buf)
-		return ffi.string(int64Buf, len)
+		local l = reemext.opt_i64toa(v, int64Buf)
+		return ffi.string(int64Buf, l)
 	end,
 	value = reemext.ltud2int64,
 	key = cExtLib.int64ltud,
@@ -127,12 +160,12 @@ local uint64 = {
 		return bit.lshift(hi, 32) + lo
 	end,
 	tostr = function(v)
-		local len = reemext.opt_u64toa(v, int64Buf)
-		return ffi.string(int64Buf, len)
+		local l = reemext.opt_u64toa(v, int64Buf)
+		return ffi.string(int64Buf, l)
 	end,
 	tohex = function(v, upcase)
-		local len = reemext.opt_u64toa_hex(v, int64Buf, upcase or true)
-		return ffi.string(int64Buf, len, true)
+		local l = reemext.opt_u64toa_hex(v, int64Buf, upcase or true)
+		return ffi.string(int64Buf, l)
 	end,
 	value = reemext.ltud2uint64,
 	key = cExtLib.int64ltud,

@@ -10,9 +10,8 @@
 local ffi = require'ffi'
 local reflect = require'reeme.ffi_reflect'
 require'reeme.cairo.cairo_h'
-require'reeme.cairo.cairo_c'
 
-local C = ffi.load'cairoc'
+local C = ffi.load'cairo'
 local M = {C = C}
 
 local function pargs(func)
@@ -906,13 +905,41 @@ map('CAIRO_SURFACE_TYPE_', {
 sr.type = getflag_func(C.cairo_surface_get_type, 'CAIRO_SURFACE_TYPE_')
 sr.content = getflag_func(C.cairo_surface_get_content, 'CAIRO_CONTENT_')
 
-sr.save_png = status_func(function(self, arg1, ...)
-	if type(arg1) == 'string' then
-		return C.cairo_surface_write_to_png(self, arg1, ...)
-	else
-		return C.cairo_surface_write_to_png_stream(self, arg1, ...)
-	end
+sr.save_png = status_func(function(self, filename)
+	return C.cairo_surface_write_to_png(self, filename)
 end)
+sr.save_png_string = function(self)
+	local str = nil
+	local recv = ffi.cast('cairo_write_func_t', function(closure, data, leng)
+		str = ffi.string(data, leng)
+		return C.CAIRO_STATUS_SUCCESS
+	end)
+	
+	if not C.cairo_surface_write_to_png_stream(self, recv, nil) then
+		str = nil
+	end
+	
+	recv:free()
+	return str
+end
+
+sr.save_jpg = status_func(function(self, quality, filename, ...)
+	return C.cairo_surface_write_to_jpg(self, quality, filename, ...)
+end)
+sr.save_jpg_string = function(self, quality)
+	local str = nil
+	local recv = ffi.cast('cairo_write_func_t', function(closure, data, leng)
+		str = ffi.string(data, leng)
+		return C.CAIRO_STATUS_SUCCESS
+	end)
+	
+	if not C.cairo_surface_write_to_jpg_stream(self, quality or 60, recv, nil) then
+		str = nil
+	end
+	
+	recv:free()
+	return str
+end
 
 local data_buf = ffi.new'void*[1]'
 local len_buf = ffi.new'unsigned long[1]'
