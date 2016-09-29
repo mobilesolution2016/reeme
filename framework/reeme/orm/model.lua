@@ -201,6 +201,16 @@ queryMeta = {
 			
 			return self
 		end,
+		--清除掉所有的列和表达式
+		clearColumns = function(self, withJoins)
+			self.expressions, self.colSelects, self.colExcepts, self.colCache = nil, nil, nil, nil
+			if withJoins and self.joins then
+				for i = 1, #self.joins do
+					self.joins[i]:clearColumns(self, withJoins)
+				end
+			end
+			return self
+		end,
 		
 		--直接设置where条件语句
 		conditions = function(self, conds)

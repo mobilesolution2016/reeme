@@ -205,7 +205,7 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 				newone = alias .. b
 			else
 				--判断是否其它被join进来的表名
-				newone = allJoins[a]				
+				newone = allJoins[a]
 				if newone then
 					lastField = newone:getField(b)
 					newone = newone._alias .. '.' .. b
@@ -217,15 +217,22 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 			newone = alias .. '*'
 
 		elseif not mysqlwords[a] then
-			--在所有表中寻找别名后的字段名
-			for i = 1, #allJoins do
-				local m = allJoins[i]
-				lastField = m:getField(a)
-				if lastField then
-					if m._alias then
-						newone = m._alias .. '.' .. a
+			--查找是否字段名。先在自己身上查找，没有找到再去所联的表中查找
+			lastField = self:getField(a)
+			if lastField then				
+				if self._alias then
+					newone = self._alias .. '.' .. a
+				end
+			else
+				for i = 1, #allJoins do
+					local m = allJoins[i]
+					lastField = m ~= self and m:getField(a) or nil
+					if lastField then
+						if m._alias then
+							newone = m._alias .. '.' .. a
+						end
+						break
 					end
-					break
 				end
 			end
 		end
