@@ -224,9 +224,9 @@ queryMeta = {
 			local j = { q = query, type = jt, on = self.joinOn }
 			
 			if not self.joins then
-				self.joins = { j }				
+				self.joins = { j }
 			else
-				self.joins[#self.joins + 1] = j				
+				table.insert(self.joins, j)
 			end
 			
 			return self
@@ -393,7 +393,7 @@ queryMeta = {
 			if sqls then
 				result = resultPub.init(result, self.m)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
-ngx.say(sqls)
+
 				self.lastSql = sqls
 				if self.m.__debug then
 					if res then

@@ -208,7 +208,7 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 				newone = allJoins[a]				
 				if newone then
 					lastField = newone:getField(b)
-					newone = newone.alias .. '.' .. b
+					newone = newone._alias .. '.' .. b
 				end
 			end
 			
@@ -222,7 +222,9 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 				local m = allJoins[i]
 				lastField = m:getField(a)
 				if lastField then
-					newone = m.alias .. '.' .. a
+					if m._alias then
+						newone = m._alias .. '.' .. a
+					end
 					break
 				end
 			end
@@ -252,13 +254,13 @@ builder.SELECT = function(self, db)
 	self.db = db
 	if self.joins and #self.joins > 0 then
 		if self.userAlias then
-			self.alias = self.userAlias
-			allJoins[self.alias] = self
+			self._alias = self.userAlias
+			allJoins[self._alias] = self
 		else
-			self.alias = '_A'			
+			self._alias = '_A'			
 		end
 
-		alias = self.alias .. '.'
+		alias = self._alias .. '.'
 	end
 
 	allJoins[self.m.__name] = self
@@ -275,7 +277,7 @@ builder.SELECT = function(self, db)
 	sqls[#sqls + 1] = 'FROM'
 	sqls[#sqls + 1] = model.__name
 	if #alias > 0 then
-		sqls[#sqls + 1] = self.alias
+		sqls[#sqls + 1] = self._alias
 	end
 
 	--joins conditions	
@@ -307,21 +309,22 @@ builder.UPDATE = function(self, db)
 	sqls[#sqls + 1] = model.__name
 	
 	--has join(s) then alias
-	local alias, allJoins = '', nil
+	local alias, allJoins = '', table.new(4, 4)
 	self.db = db
 	if self.joins and #self.joins > 0 then
-		allJoins = table.new(4, 4)
 		if self.userAlias then
-			self.alias = self.userAlias
-			allJoins[self.alias] = self
+			self._alias = self.userAlias
+			allJoins[self._alias] = self
 		else
-			self.alias = '_A'			
+			self._alias = '_A'			
 		end
-		
-		allJoins[self.m.__name] = self
-		alias = self.alias .. '.'
-		sqls[#sqls + 1] = self.alias
+				
+		alias = self._alias .. '.'
+		sqls[#sqls + 1] = self._alias
 	end	
+	
+	allJoins[self.m.__name] = self
+	allJoins[#allJoins + 1] = self
 
 	--joins fields
 	if allJoins then
@@ -329,8 +332,6 @@ builder.UPDATE = function(self, db)
 		
 		--joins conditions	
 		builder.buildJoinsConds(self, sqls, false, allJoins)
-	else
-		allJoins = {}
 	end
 	
 	--all values
@@ -407,7 +408,10 @@ builder.DELETE = function(self)
 	sqls[#sqls + 1] = 'FROM'
 	sqls[#sqls + 1] = model.__name
 	
-	local allJoins = {}
+	local allJoins = table.new(1, 1)
+
+	allJoins[self.m.__name] = self
+	allJoins[#allJoins + 1] = self
 	
 	--where
 	if not builder.buildWheres(self, sqls, 'WHERE', '', nil, allJoins) then
@@ -855,7 +859,7 @@ builder.buildWhereJoins = function(self, sqls, haveWheres, allJoins)
 
 	for i = 1, cc do
 		local q = self.joins[i].q
-		if builder.buildWheres(q, sqls, haveWheres and 'AND (' or 'WHERE', q.alias .. '.', nil, allJoins) then
+		if builder.buildWheres(q, sqls, haveWheres and 'AND (' or 'WHERE', q._alias .. '.', nil, allJoins) then
 			if haveWheres then
 				sqls[#sqls + 1] = ')'
 			end
@@ -877,16 +881,16 @@ builder.buildJoinsCols = function(self, sqls, indient, haveCols, allJoins)
 		local q = self.joins[i].q
 
 		if q.userAlias then
-			q.alias = q.userAlias
-			allJoins[q.alias] = q
+			q._alias = q.userAlias
+			allJoins[q._alias] = q
 		else
-			q.alias = ('_' .. string.char(65 + indient))
+			q._alias = ('_' .. string.char(65 + indient))
 		end
 		allJoins[q.m.__name] = q
 		allJoins[#allJoins + 1] = q
 
 		if sqls then
-			cols = builder.buildColumns(q, sqls, q.alias .. '.', true)
+			cols = builder.buildColumns(q, sqls, q._alias .. '.', true)
 			if #cols > 0 then
 				if haveCols then
 					sqls[#sqls + 1] = ','
@@ -918,11 +922,11 @@ builder.buildJoinsConds = function(self, sqls, haveOns, allJoins)
 
 		sqls[#sqls + 1] = validJoins[join.type]
 		sqls[#sqls + 1] = q.m.__name
-		sqls[#sqls + 1] = q.alias
+		sqls[#sqls + 1] = q._alias
 		sqls[#sqls + 1] = 'ON('
 		
 		local pos = #sqls
-		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q.alias .. '.', q.onValues, allJoins) then
+		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q._alias .. '.', q.onValues, allJoins) then
 			if join.type == 'inner' then
 				sqls[#sqls + 1] = '1)'
 			else
