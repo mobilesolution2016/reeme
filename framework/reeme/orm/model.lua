@@ -274,7 +274,7 @@ queryMeta = {
 						end
 					end
 		
-				elseif #name > 0 then
+				elseif #name > 0 and name ~= self.m.__name then
 					--表的别名
 					local chk = name:match('_[A-Z]')
 					if not chk or #chk ~= #name then
@@ -288,6 +288,16 @@ queryMeta = {
 			end
 			
 			return self
+		end,
+		
+		--可按照原名或别名获取字段
+		getField = function(self, n)
+			local fs = self.m.__fields
+			local f = fs[n]
+			if not f and self.aliasAB then
+				f = fs[self.aliasAB[n]]
+			end
+			return f
 		end,
 		
 		--获取表名（如果表被别名过，那么返回的是别名）
@@ -365,8 +375,12 @@ queryMeta = {
 				return nil
 			end
 			
-			if self.brackets and self.brackets ~= 0 then
-				error('bracket(s) not paired for query')
+			if self.brackets then
+				--关闭括号
+				repeat
+					self:rb()
+					self.brackets = self.brackets - 1
+				until self.brackets == 0
 			end
 			
 			local setvnil = false
@@ -379,7 +393,7 @@ queryMeta = {
 			if sqls then
 				result = resultPub.init(result, self.m)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
-
+ngx.say(sqls)
 				self.lastSql = sqls
 				if self.m.__debug then
 					if res then

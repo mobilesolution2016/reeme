@@ -11,7 +11,7 @@ local reemext = ffi.load('reemext')
 local allOps = { SELECT = 1, UPDATE = 2, INSERT = 3, DELETE = 4 }
 
 --合并器
-local builder = table.new(0, 32)
+local builder = table.new(0, 24)
 
 --数据库类型名字
 builder.dbTypeName = 'mysql'
@@ -188,43 +188,42 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 	
 	--逐个token的循环进行处理
 	local sql, adjust = expr, 0
-	local fields = self.m.__fields
-	local selfname = self.m.__name
+	local fields, aliasab = self.m.__fields, self.aliasAB
+	local selfname = self.userAlias or self.m.__name
 	local lastField, lastToken
 
 	for i=1, #tokens do
 		lastToken = tokens[i]
-		local newone = nil
+		local newone
 		local a, b = string.cut(lastToken, '.')
 
 		if b then
 			--可能是表名.字段名
 			if a == selfname then
-				--出现自己的原表名
+				--出现自己的原表名，那么b就一定是字段名了
+				lastField = fields[b] or fields[aliasab[b]]
 				newone = alias .. b
 			else
-				--判断是否其它被join进来的原表名
+				--判断是否其它被join进来的表名
 				newone = allJoins[a]
 				if newone then
-					newone = newone .. '.' .. b
+					lastField = newone:getField(b)
+					newone = newone.alias .. '.' .. b
 				end
 			end
-		elseif fields[a] then
-			--字段名
-			lastField = fields[a]
-			newone = alias .. a
+			
 		elseif a == '*' then
+			--所有字段
 			newone = alias .. '*'
-		elseif #alias > 0 then
-			--所有连接的表的字段名
+
+		elseif not mysqlwords[a] then
+			--在所有表中寻找别名后的字段名
 			for i = 1, #allJoins do
 				local m = allJoins[i]
-				local fs = m.m.__fields
-
-				local field = fs[a] or fs[m.m.__fieldAlias.ba[a]]
-				if field then
-					lastField = field
-					newone = (m.userAlias or m.alias) .. '.' .. a
+				lastField = m:getField(a)
+				if lastField then
+					newone = m.alias .. '.' .. a
+					break
 				end
 			end
 		end
@@ -239,6 +238,8 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 	return sql, lastField, lastToken
 end
 
+
+-----------------------------------------------------------------------------------------------------------------------
 --将query设置的条件合并为SQL语句
 builder.SELECT = function(self, db)
 	local sqls = {}
@@ -250,12 +251,17 @@ builder.SELECT = function(self, db)
 	
 	self.db = db
 	if self.joins and #self.joins > 0 then
-		self.alias = self.userAlias or '_A'
-		alias = self.alias .. '.'
-		
 		allJoins = table.new(4, 4)
-		allJoins[self.m.__name] = self.alias
+		if self.userAlias then
+			self.alias = self.userAlias
+			allJoins[self.alias] = self
+		else
+			self.alias = '_A'			
+		end
+		
+		allJoins[self.m.__name] = self
 		allJoins[#allJoins + 1] = self
+		alias = self.alias .. '.'
 	end
 	
 	local cols = builder.buildColumns(self, sqls, alias)
@@ -290,6 +296,8 @@ builder.SELECT = function(self, db)
 	
 	--end
 	self.db = nil
+	allJoins = nil
+	
 	return table.concat(sqls, ' ')
 end
 	
@@ -304,13 +312,16 @@ builder.UPDATE = function(self, db)
 	local alias, allJoins = '', nil
 	self.db = db
 	if self.joins and #self.joins > 0 then
-		self.alias = self.userAlias or '_A'
-		alias = self.alias .. '.'
-
 		allJoins = table.new(4, 4)
-		allJoins[self.m.__name] = self.alias
-		allJoins[#allJoins + 1] = self
+		if self.userAlias then
+			self.alias = self.userAlias
+			allJoins[self.alias] = self
+		else
+			self.alias = '_A'			
+		end
 		
+		allJoins[self.m.__name] = self
+		alias = self.alias .. '.'
 		sqls[#sqls + 1] = self.alias
 	end	
 
@@ -367,6 +378,8 @@ builder.UPDATE = function(self, db)
 	builder.buildLimits(self, sqls, true)
 	
 	--end
+	allJoins = nil
+	
 	return table.concat(sqls, ' ')
 end
 
@@ -428,10 +441,126 @@ builder.DELETE = function(self)
 	builder.buildLimits(self, sqls, true)
 	
 	--end
+	allJoins = nil
+	
 	return table.concat(sqls, ' ')
 end
 
 
+--处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
+local function buildSqlValue(self, cfg, v)
+	local tp = type(v)
+	local model = self.m
+	local op = allOps[self.op]
+	local quoteIt, multiVals = false, false
+
+	--自增长型字段的值，如果是在insert下的话，就必须是fullCreate，否则被忽略
+	if cfg.ai and op == 3 and (not self.fullop or not string.checkinteger(v)) then
+		return nil
+	end
+
+	if v == nil then
+		--值为nil又不是UPDATE操作，且字段没有默认值又不可以为NULL，则根据字段类型给一个默认值，防止SQL出错
+		if op ~= 2 and cfg.default == nil and not cfg.null then
+			v = cfg.type == 1 and "''" or '0'
+			tp = 'string'
+		end
+		
+	elseif v == ngx.null then
+		--NULL值直接设置
+		v = 'NULL'
+		
+	elseif tp == 'table' then	
+		--table类型则根据meta来进行判断是什么table
+		local mt = getmetatable(v)
+
+		if mt == datetimeMeta then
+			--日期时间
+			v = ngx.quote_sql_str(tostring(v))
+		elseif mt == queryMeta then	
+			--子查询
+			error('Cannot support sub-query in key=>value(s) set')
+			
+		elseif #v == 1 then
+			v = v[1]
+			tp = type(v)
+			
+		elseif #v > 1 then
+			--表达式或多值			
+			multiVals = true
+		else
+			return nil
+		end
+		
+	elseif tp == 'cdata' then
+		--cdata类型，检测是否是boxed int64
+		local s = tostring(v)
+		local i64type, newv = reemext.cdataisint64(s, #s), s
+		if i64type > 0 then
+			v = newv:sub(1, #newv - i64type)
+		else
+			v, quoteIt = newv, true
+		end
+		tp = 'string'
+		
+	else
+		quoteIt = true
+	end
+
+	if v ~= nil then
+		if cfg.type == 1 then
+			--字段要求为字符串
+			if multiVals then
+				v = string.format("'%s'", table.concat(v, "','"))
+			else
+				v = tostring(v)
+				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
+					--没有引用，那么增加引用
+					v = ngx.quote_sql_str(v)
+				end
+			end
+			
+		elseif cfg.type == 4 then
+			--布尔型使用1或0来处理
+			if multiVals then
+				v = table.concat(v, ',')
+			else
+				v = toboolean(v) and '1' or '0'
+			end
+			
+		elseif cfg.type == 3 then
+			--数值/浮点数类型，检测值必须为浮点数
+			if multiVals then
+				v = table.concat(v, ',')
+				
+			elseif not string.checknumeric(v) then
+				print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, cfg.colname))
+				v = nil
+			end
+			
+		elseif multiVals then
+			--整数型，多值（就不对每一个值去做检查了）
+			v = table.concat(v, ',')
+			
+		elseif quoteIt then
+			--这个字符串必须是整数型的值
+			local reti, newv = string.checkinteger(v)
+			if not reti then
+				--否则就都是整数类型，检测值必须为整数
+				print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, cfg.colname))
+				v = nil
+			end
+			
+			if newv then
+				v = newv
+			end
+		end
+	end
+	
+	return v
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 builder.buildColumns = function(self, sqls, alias, returnCols)
 	local model = self.m
 
@@ -577,119 +706,6 @@ builder.buildColumns = function(self, sqls, alias, returnCols)
 	return cols
 end
 
---处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
-local function buildSqlValue(self, cfg, v)
-	local tp = type(v)
-	local model = self.m
-	local op = allOps[self.op]
-	local quoteIt, multiVals = false, false
-
-	--自增长型字段的值，如果是在insert下的话，就必须是fullCreate，否则被忽略
-	if cfg.ai and op == 3 and (not self.fullop or not string.checkinteger(v)) then
-		return nil
-	end
-
-	if v == nil then
-		--值为nil又不是UPDATE操作，且字段没有默认值又不可以为NULL，则根据字段类型给一个默认值，防止SQL出错
-		if op ~= 2 and cfg.default == nil and not cfg.null then
-			v = cfg.type == 1 and "''" or '0'
-			tp = 'string'
-		end
-		
-	elseif v == ngx.null then
-		--NULL值直接设置
-		v = 'NULL'
-		
-	elseif tp == 'table' then	
-		--table类型则根据meta来进行判断是什么table
-		local mt = getmetatable(v)
-
-		if mt == datetimeMeta then
-			--日期时间
-			v = ngx.quote_sql_str(tostring(v))
-		elseif mt == queryMeta then	
-			--子查询
-			error('Cannot support sub-query in key=>value(s) set')
-			
-		elseif #v == 1 then
-			v = v[1]
-			tp = type(v)
-			
-		elseif #v > 1 then
-			--表达式或多值			
-			multiVals = true
-		else
-			return nil
-		end
-		
-	elseif tp == 'cdata' then
-		--cdata类型，检测是否是boxed int64
-		local s = tostring(v)
-		local i64type, newv = reemext.cdataisint64(s, #s), s
-		if i64type > 0 then
-			v = newv:sub(1, #newv - i64type)
-		else
-			v, quoteIt = newv, true
-		end
-		tp = 'string'
-		
-	else
-		quoteIt = true
-	end
-
-	if v ~= nil then
-		if cfg.type == 1 then
-			--字段要求为字符串
-			if multiVals then
-				v = string.format("'%s'", table.concat(v, "','"))
-			else
-				v = tostring(v)
-				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
-					--没有引用，那么增加引用
-					v = ngx.quote_sql_str(v)
-				end
-			end
-			
-		elseif cfg.type == 4 then
-			--布尔型使用1或0来处理
-			if multiVals then
-				v = table.concat(v, ',')
-			else
-				v = toboolean(v) and '1' or '0'
-			end
-			
-		elseif cfg.type == 3 then
-			--数值/浮点数类型，检测值必须为浮点数
-			if multiVals then
-				v = table.concat(v, ',')
-				
-			elseif not string.checknumeric(v) then
-				print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, cfg.colname))
-				v = nil
-			end
-			
-		elseif multiVals then
-			--整数型，多值（就不对每一个值去做检查了）
-			v = table.concat(v, ',')
-			
-		elseif quoteIt then
-			--这个字符串必须是整数型的值
-			local reti, newv = string.checkinteger(v)
-			if not reti then
-				--否则就都是整数类型，检测值必须为整数
-				print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, cfg.colname))
-				v = nil
-			end
-			
-			if newv then
-				v = newv
-			end
-		end
-	end
-	
-	return v
-end
-
 builder.buildKeyValuesSet = function(self, sqls, alias)
 	local model = self.m
 	local fieldCfgs = model.__fields
@@ -785,6 +801,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				--右括号左边的条件扔掉
 				rsql = one.expr
 			else
+				--按照表达式进行解析
 				local lastToken
 				
 				merges[1] = conds[onecond]
@@ -840,7 +857,10 @@ builder.buildWhereJoins = function(self, sqls, haveWheres, allJoins)
 
 	for i = 1, cc do
 		local q = self.joins[i].q
-		if builder.buildWheres(q, sqls, haveWheres and 'AND' or 'WHERE', q.alias .. '.', nil, allJoins) then
+		if builder.buildWheres(q, sqls, haveWheres and 'AND (' or 'WHERE', q.alias .. '.', nil, allJoins) then
+			if haveWheres then
+				sqls[#sqls + 1] = ')'
+			end
 			haveWheres = true
 		end
 		
@@ -857,9 +877,14 @@ builder.buildJoinsCols = function(self, sqls, indient, haveCols, allJoins)
 	for i = 1, cc do
 		local cols = nil
 		local q = self.joins[i].q
-				
-		q.alias = q.userAlias or ('_' .. string.char(65 + indient))
-		allJoins[q.m.__name] = q.alias
+
+		if q.userAlias then
+			q.alias = q.userAlias
+			allJoins[q.alias] = q
+		else
+			q.alias = ('_' .. string.char(65 + indient))
+		end
+		allJoins[q.m.__name] = q
 		allJoins[#allJoins + 1] = q
 
 		if sqls then
