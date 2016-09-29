@@ -205,7 +205,7 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 				newone = alias .. b
 			else
 				--判断是否其它被join进来的表名
-				newone = allJoins[a]
+				newone = allJoins[a]				
 				if newone then
 					lastField = newone:getField(b)
 					newone = newone.alias .. '.' .. b
@@ -247,30 +247,28 @@ builder.SELECT = function(self, db)
 	
 	--main
 	local model = self.m
-	local alias, allJoins = '', nil
+	local alias, allJoins = '', table.new(4, 4)
 	
 	self.db = db
 	if self.joins and #self.joins > 0 then
-		allJoins = table.new(4, 4)
 		if self.userAlias then
 			self.alias = self.userAlias
 			allJoins[self.alias] = self
 		else
 			self.alias = '_A'			
 		end
-		
-		allJoins[self.m.__name] = self
-		allJoins[#allJoins + 1] = self
+
 		alias = self.alias .. '.'
 	end
-	
+
+	allJoins[self.m.__name] = self
+	allJoins[#allJoins + 1] = self
+		
 	local cols = builder.buildColumns(self, sqls, alias)
 	
 	--joins fields
-	if allJoins then
+	if #alias > 0 then
 		builder.buildJoinsCols(self, sqls, 1, #cols > 0 and true or false, allJoins)
-	else
-		allJoins = {}
 	end
 
 	--from
@@ -287,7 +285,7 @@ builder.SELECT = function(self, db)
 	
 	--where
 	local haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins)
-	builder.buildWhereJoins(self, sqls, haveWheres)
+	builder.buildWhereJoins(self, sqls, haveWheres, allJoins)
 	
 	--order by
 	builder.buildOrder(self, sqls, alias)
@@ -341,7 +339,7 @@ builder.UPDATE = function(self, db)
 	end
 	
 	--where
-	if not builder.buildWheres(self, sqls, 'WHERE', alias) then
+	if not builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins) then
 		if type(self.__where) == 'string' then
 			sqls[#sqls + 1] = 'WHERE'
 			sqls[#sqls + 1] = builder.processTokenedString(self, alias, self.__where, allJoins)
@@ -412,10 +410,10 @@ builder.DELETE = function(self)
 	local allJoins = {}
 	
 	--where
-	if not builder.buildWheres(self, sqls, 'WHERE', nil, allJoins) then
+	if not builder.buildWheres(self, sqls, 'WHERE', '', nil, allJoins) then
 		if type(self.__where) == 'string' then
 			sqls[#sqls + 1] = 'WHERE'
-			sqls[#sqls + 1] = builder.processTokenedString(self, '', self.__where)
+			sqls[#sqls + 1] = builder.processTokenedString(self, '', self.__where, allJoins)
 		else
 			--find primary or unique
 			local haveWheres = false
