@@ -192,6 +192,8 @@ _G.int64, _G.uint64, _G.ffi = setmetatable(int64, { __call = function(self, a, b
 							  ffi
 
 -----------------------------------------------------------------------------------------------------------------------
+--初始化全局变量logger，但不会真正产生连接，除非在外部通过self(reeme).log否则log客户端不会真的完成初始化
+require('reeme.log')
 
 local configs = nil
 local defConfigs = {
@@ -283,7 +285,7 @@ local copybasees = {
 	},
 }
 
-local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, ffi_reflect = require('reeme.ffi_reflect') }
+local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, ffi_reflect = require('reeme.ffi_reflect') }
 local application = {
 	__index = function(self, key)
 		local reeme = self.__reeme

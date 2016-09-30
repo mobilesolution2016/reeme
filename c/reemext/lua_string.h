@@ -25,14 +25,16 @@ enum StringJsonFlags {
 };
 
 //////////////////////////////////////////////////////////////////////////
-static void lua_string_addbuf(luaL_Buffer* buf, const char* str, size_t len)
+static int lua_string_addbuf(luaL_Buffer* buf, const char* str, size_t len)
 {
+	int addBuf = 0;
 	size_t lenleft = len, copy;
 	while(lenleft > 0)
 	{
 		copy = std::min(lenleft, (size_t)(LUAL_BUFFERSIZE - (buf->p - buf->buffer)));
 		if (!copy)
 		{
+			addBuf ++;
 			luaL_prepbuffer(buf);
 			copy = std::min(lenleft, (size_t)LUAL_BUFFERSIZE);
 		}
@@ -42,6 +44,8 @@ static void lua_string_addbuf(luaL_Buffer* buf, const char* str, size_t len)
 		buf->p += copy;
 		str += copy;
 	}
+
+	return addBuf;
 }
 
 static uint32_t cdataValueIsInt64(const uint8_t* ptr, size_t len, size_t* lenout, uint32_t minDigits = 1)
@@ -2715,6 +2719,114 @@ static int lua_string_json(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_string_merge(lua_State* L)
+{
+	int i, n = lua_gettop(L);
+	if (n < 1)
+	{
+		lua_pushlstring(L, "", 0);
+		return 0;
+	}
+
+	char fmtbuf[64];
+	luaL_Buffer buf;
+
+	luaL_buffinit(L, &buf);
+
+	for (i = 1; i <= n; i ++)
+	{
+		size_t len = 0;
+		const char *s = 0;
+		bool needPop = false;
+
+		switch(lua_type(L, i))
+		{
+		case LUA_TNUMBER:
+		case LUA_TSTRING:
+			s = lua_tolstring(L, i, &len);
+			break;
+
+		case LUA_TBOOLEAN:
+			if (lua_toboolean(L, i))
+			{
+				s = "true";
+				len = 4;
+			}
+			else
+			{
+				s = "false";
+				len = 5;
+			}
+			break;
+
+		case LUA_TTABLE:
+			lua_pushcfunction(L, &lua_string_json);
+			lua_pushvalue(L, i);
+			lua_pushinteger(L, kJsonUnicodes);
+			lua_pcall(L, 2, 1, 0);
+
+			if (!lua_isstring(L, -1))
+				return luaL_error(L, "string.merge #%d type is table cannot encode to a json string", i);
+
+			luaL_addvalue(&buf);
+			break;
+
+		case LUA_TCDATA:
+			lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFISizeof);
+			lua_pushvalue(L, i);
+			lua_pcall(L, 1, 1, 0);
+			len = lua_tointeger(L, -1);
+			lua_pop(L, 1);
+
+			s = (const char*)lua_topointer(L, i);
+			break;
+
+		case LUA_TLIGHTUSERDATA:
+		case LUA_TUSERDATA:
+			s = (const char*)lua_touserdata(L, i);
+			if (s == NULL)
+			{
+				s = "(null)";
+				len = 6;
+			}
+			else
+			{
+#if REEME_64
+				len = sprintf(fmtbuf, "0x%llx", s);
+#else
+				len = sprintf(fmtbuf, "0x%x", s);
+#endif
+				s = fmtbuf;
+			}
+			break;
+
+		default:
+			lua_pushvalue(L, n + 1);
+			lua_pushvalue(L, i);
+			lua_pcall(L, 1, 1, 0);
+			s = lua_tolstring(L, -1, &len);
+			needPop = true;
+
+			if (s == NULL)
+				return luaL_error(L, "string.merge #%d cannot convert to string with(tostring) call", i);
+			break;
+		}
+
+		int addBuf = len > 0 ? lua_string_addbuf(&buf, s, len) : 0;
+		if (needPop)
+		{
+			if (addBuf)
+				lua_remove(L, -addBuf - 1);
+			else
+				lua_pop(L, 1);
+		}
+	}
+
+	luaL_pushresult(&buf);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void luaext_string(lua_State *L)
 {
 	const luaL_Reg procs[] = {
@@ -2761,6 +2873,9 @@ static void luaext_string(lua_State *L)
 
 		// Json解码（dec时2~4倍性能于ngx所采用的cjson，enc时随table的复杂度1.5~4.5倍性能于cjson，不过这不是关键，关键是本json encode支持boxed 64bit integer以及cdata自动编码为base64等本库才有的扩展能力）
 		{ "json", &lua_string_json },
+
+		// 从任意参数组合出字符串
+		{ "merge", &lua_string_merge },
 
 		{ NULL, NULL }
 	};

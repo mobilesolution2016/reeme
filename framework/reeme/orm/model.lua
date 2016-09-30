@@ -405,12 +405,10 @@ queryMeta = {
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 
 				self.lastSql = sqls
-				if self.m.__debug then
-					if res then
-						print(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
-					else
-						print(sqls, ':error')
-					end
+				if res then
+					logger.d(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
+				else
+					logger.d(sqls, ':error')
 				end
 			end
 			
@@ -753,7 +751,7 @@ local modelMeta = {
 		end,
 		
 		--验证给定的长度是否超过了字段配置的限制
-		validlen = function(self, name, value, minlength)
+		validlen = function(self, name, value, minlength, utf8Enc)
 			local f = self.__fields[name]
 			if not f then
 				error(string.format("valid value length by field config failed, field name '%s' not exists", name))
@@ -766,11 +764,17 @@ local modelMeta = {
 			end
 			
 			local l = #value
-			if l <= f.maxlen and (not minlength or l >= minlength) then
-				return true
+			if l > f.maxlen then
+				return false
+			end			
+			if minlength then
+				if utf8Enc then
+					return utf8str.len(value) >= minlength
+				end
+				return l >= minlength
 			end
 			
-			return false
+			return true
 		end,
 
 		--验证给定的值是否是enum字段配置的许可值

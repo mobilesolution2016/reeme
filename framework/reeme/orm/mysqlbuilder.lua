@@ -817,7 +817,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				merges[2], fieldCfg, lastToken = builder.processTokenedString(self, alias, one.expr, allJoins)
 
 				if one.value then
-					assert(fieldCfg ~= nil, string.format("table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
+					assert(fieldCfg ~= nil, string.format("Field not exists! table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
 
 					merges[4] = buildSqlValue(self, fieldCfg, one.value)
 					if merges[4] then						

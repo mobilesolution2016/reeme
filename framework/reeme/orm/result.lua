@@ -217,6 +217,11 @@ resultMeta.__index = {
 	getModel = function(self)
 		return rawget(self, -10000)
 	end,
+	setModel = function(self, m)
+		assert(getmetatable(m) == getmetatable(self), "Result setModel function call #2 must be a model meta")
+		rawset(self, -10000, m)
+		self.__db = m.__db
+	end,
 	
 	clone = function(self, fieldnames, newvals)
 		local m = rawget(self, -10000)
