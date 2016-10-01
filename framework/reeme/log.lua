@@ -10,7 +10,7 @@ local kLogFault = 5
 local kLogCommandStart = 6
 
 local kCmdSetName = kLogCommandStart
-local kCmdCheck = kCmdSetName + 1
+local kCmdClear = kCmdSetName + 1
 
 ffi.cdef[[
 	typedef struct
@@ -30,7 +30,7 @@ local connect = function(reeme)
 	end
 	
 	s:settimeout(1000)
-	
+
 	local appname = ngx.var.APP_NAME
 	if appname and #appname > 0 then
 		pckhd.logType = kCmdSetName
@@ -48,7 +48,7 @@ local sendmsg = function(t, ...)
 
 	pckhd.logType = t
 	pckhd.msgLeng = #msg
-	
+
 	s:send(ffi.string(pckhd, 4))
 	if #msg > 0 then
 		s:send(msg)
@@ -74,6 +74,9 @@ local globalLogger = {
 	f = function(...)
 		sendmsg(kLogFault, ...)
 	end,
+	clear = function()
+		sendmsg(kCmdClear)
+	end,
 }
 local globalLoggerDummy = {
 	i = function()
@@ -83,10 +86,12 @@ local globalLoggerDummy = {
 	w = function()
 	end,
 	d = function()
-	end,
+			end,
 	v = function()
 	end,
 	f = function()
+	end,
+	clear = function()
 	end,
 }
 
@@ -107,14 +112,14 @@ return function(reeme, t)
 	elseif tp == 'table' then
 		if not s and connect(reeme) then
 			_G['logger'] = globalLogger
-		end		
+		end
 		
 	elseif not reeme then
 		if s then
 			s:close()
 			s = nil
 		end
-		
+
 		_G['logger'] = globalLoggerDummy
 	end
 	

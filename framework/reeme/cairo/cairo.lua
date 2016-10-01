@@ -16,7 +16,7 @@ local M = {C = C}
 
 local function pargs(func)
 	return function(...)
-		print(func, ...)
+		logger.e(func, ...)
 		return func(...)
 	end
 end

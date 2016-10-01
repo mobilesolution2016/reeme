@@ -413,7 +413,7 @@ local appMeta = {
 					controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, path:gsub('/', '.')))
 				end)
 
-				if controlNew then
+				if type(controlNew) == 'function' then
 					break
 				end
 				

@@ -543,7 +543,7 @@ local function buildSqlValue(self, cfg, v)
 				v = table.concat(v, ',')
 				
 			elseif not string.checknumeric(v) then
-				print(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, cfg.colname))
+				logger.e(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, cfg.colname))
 				v = nil
 			end
 			
@@ -556,7 +556,7 @@ local function buildSqlValue(self, cfg, v)
 			local reti, newv = string.checkinteger(v)
 			if not reti then
 				--否则就都是整数类型，检测值必须为整数
-				print(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, cfg.colname))
+				logger.e(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, cfg.colname))
 				v = nil
 			end
 			

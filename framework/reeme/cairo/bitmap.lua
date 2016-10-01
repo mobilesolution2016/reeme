@@ -746,7 +746,7 @@ local function dumpinfo()
 		return table.concat(t, ', ')
 	end
 	local format = '%-10s %-6s %-25s %-10s %s'
-	print(string.format(format, '!format', 'bpp', 'ctype', 'colortype',
+	logger.e(string.format(format, '!format', 'bpp', 'ctype', 'colortype',
 		'conversions'))
 	for s,t in glue.sortedpairs(formats) do
 		local ct = {}
@@ -754,15 +754,15 @@ local function dumpinfo()
 			ct[#ct+1] = d
 		end
 		table.sort(ct)
-		print(string.format(format, s, tostring(t.bpp), tostring(t.ctype),
+		logger.e(string.format(format, s, tostring(t.bpp), tostring(t.ctype),
 			t.colortype, table.concat(ct, ', ')))
 	end
 	local format = '%-12s %-10s %-6s  ->  %s'
-	print(string.format(format, '!colortype', 'channels', 'bpc',
+	logger.e(string.format(format, '!colortype', 'channels', 'bpc',
 		'conversions'))
 	for s,t in glue.sortedpairs(conv) do
 		local ct = colortypes[s]
-		print(string.format(format, s, ct.channels, tostring(ct.bpc),
+		logger.e(string.format(format, s, ct.channels, tostring(ct.bpc),
 			enumkeys(t)))
 	end
 end
