@@ -293,7 +293,10 @@ builder.SELECT = function(self, db)
 	end
 	
 	--where
-	local haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins)
+	local haveWheres = builder.buildWheres(self, sqls, 'WHERE (', alias, nil, allJoins)
+	if haveWheres then
+		sqls[#sqls + 1] = ')'
+	end
 	builder.buildWhereJoins(self, sqls, haveWheres, allJoins)
 	
 	--order by
@@ -770,7 +773,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 	end
 
 	if condValues and #condValues > 0 then
-		local ignoreNextCond = (condPre == 'WHERE' or condPre == nil) and true or false
+		local ignoreNextCond = true
 		local wheres, conds = {}, builder.conds
 		local fieldCfg, merges = nil, table.new(6, 0)
 		

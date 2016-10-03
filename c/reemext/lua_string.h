@@ -1569,11 +1569,8 @@ static const char templInitCode[] = {
 	"		if tp ~= 'string' then break end\n"
 	"	end\n"
 	"end\n"
-	"local function echo(v)\n"
-	"	local tp = type(v)\n"
-	"	if tp == 'table' then v = table.concat(v, '')\n"
-	"	elseif tp ~= 'string' then v = tostring(v) end\n"
-	"	__ret__[#__ret__ + 1] = v\n"
+	"local function echo(...)\n"
+	"	__ret__[#__ret__ + 1] = string.merge(...)\n"
 	"end\n"
 };
 
@@ -2743,6 +2740,12 @@ static int lua_string_merge(lua_State* L)
 		{
 		case LUA_TNUMBER:
 		case LUA_TSTRING:
+			if (n == 1)
+			{
+				lua_pushvalue(L, 1);
+				return 1;
+			}
+
 			s = lua_tolstring(L, i, &len);
 			break;
 
@@ -2800,6 +2803,11 @@ static int lua_string_merge(lua_State* L)
 			}
 			break;
 
+		case LUA_TNIL:
+			s = "nil";
+			len = 3;
+			break;
+
 		default:
 			lua_pushvalue(L, n + 1);
 			lua_pushvalue(L, i);
@@ -2815,7 +2823,7 @@ static int lua_string_merge(lua_State* L)
 		int addBuf = len > 0 ? lua_string_addbuf(&buf, s, len) : 0;
 		if (needPop)
 		{
-			if (addBuf)
+			if (addBuf && addBuf)
 				lua_remove(L, -addBuf - 1);
 			else
 				lua_pop(L, 1);

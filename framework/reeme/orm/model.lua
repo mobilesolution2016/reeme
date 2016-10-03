@@ -99,8 +99,7 @@ queryMeta = {
 			if not self.colSelects then
 				self.colSelects = table.new(0, 8)
 			end
-			self.colExcepts = nil
-			self.colCache = nil
+			self.colExcepts, self.colCache = nil, nil
 
 			local tp = type(names)
 			local fields = self.m.__fields
@@ -201,6 +200,7 @@ queryMeta = {
 			
 			return self
 		end,
+		
 		--清除掉所有的列和表达式
 		clearColumns = function(self, withJoins)
 			self.expressions, self.colSelects, self.colExcepts, self.colCache = nil, nil, nil, nil
