@@ -434,9 +434,9 @@ local appMeta = {
 				error(string.format('controller %s must return a function that has action functions', path))
 			end
 			
-			local c = controlNew(act)
-			local mth = c[act .. 'Action']
+			local c = controlNew(act)			
 			local cm = getmetatable(c)
+			local actionMethod = c[act .. 'Action']
 
 			local metacopy = { __index = { 
 				__reeme = c, 
@@ -467,16 +467,16 @@ local appMeta = {
 
 			rawset(c, "_lazyLoaders", { })
 			
-			return c, mth
+			return c, actionMethod
 		end,
 		
 		run = function(self)
 			local router = configs.router or require("reeme.router")
 			local path, act = router(ngx.var.uri)
-			local c, mth, r
+			local r, c, actionMethod
 
 			--载入控制器
-			c, mth, r = self:loadController(path, act)
+			c, actionMethod, r = self:loadController(path, act)
 			if r == true then
 				--halt it
 				return
@@ -485,31 +485,31 @@ local appMeta = {
 			local ok, err = xpcall(function()			
 				if self.preProc then
 					--执行动作前响应函数
-					r = self.preProc(self, c, path, act, mth)
+					r = self.preProc(self, c, path, act, actionMethod)
 					local tp = type(r)
 
 					if tp == 'table' then
 						if r.response then
-							mth = nil
+							actionMethod = nil
 							r = r.response
 						elseif r.controller then
-							c, mth = r.controller, r.method
+							c, actionMethod = r.controller, r.method
 						elseif r.method then
-							mth = r.method
+							actionMethod = r.method
 						end
 					elseif tp == 'string' then
-						mth = nil
+						actionMethod = nil
 						ngx.say(r)
 					end
 					
-				elseif not mth then
+				elseif not actionMethod then
 					--如果没有动作前响应函数又没有动作，那么就报错
 					error(string.format("the action %s of controller %s undefined", act, path))
 				end
 
 				--执行动作
-				if c and mth then
-					r = mth(c)
+				if c and actionMethod then
+					r = actionMethod(c)
 					if r == nil then
 						r = c.actionReturned
 					end

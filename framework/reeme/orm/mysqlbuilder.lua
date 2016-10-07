@@ -868,8 +868,9 @@ builder.buildWhereJoins = function(self, sqls, haveWheres, allJoins)
 	end
 
 	for i = 1, cc do
-		local q = self.joins[i].q
-		if builder.buildWheres(q, sqls, haveWheres and 'AND (' or 'WHERE', q._alias .. '.', nil, allJoins) then
+		local j = self.joins[i]
+		local q = j.q
+		if builder.buildWheres(q, sqls, haveWheres and (j.cond .. ' (') or 'WHERE', q._alias .. '.', nil, allJoins) then
 			if haveWheres then
 				sqls[#sqls + 1] = ')'
 			end

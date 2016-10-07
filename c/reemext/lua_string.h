@@ -449,12 +449,44 @@ struct StringReplacePos
 	size_t		fromLen, toLen;
 	const char	*from, *to;
 };
-struct ReplacePosGreater : public std::binary_function <StringReplacePos&, StringReplacePos&, bool>
+struct StringReplacePosGreater
 {
-	bool operator()(const StringReplacePos& a, const StringReplacePos& b) const
+	int32_t operator () (const StringReplacePos& a, const StringReplacePos& b) { return (ptrdiff_t)a.offset - (ptrdiff_t)b.offset; }
+};
+
+struct StringReplacePosAlloc
+{
+	StringReplacePosAlloc()
 	{
-		return a.offset < b.offset;
+		cc = 0;
+		upper = 80;
+		all = fixedBuf;
 	}
+	~StringReplacePosAlloc()
+	{
+		if (all != fixedBuf)
+			free(all);
+	}
+
+	StringReplacePos* alloc()
+	{
+		if (cc >= upper)
+		{
+			upper <<= 2;
+			StringReplacePos* n = (StringReplacePos*)malloc(sizeof(StringReplacePos) * upper);
+			if (cc)
+				memcpy(n, all, sizeof(StringReplacePos) * cc);
+			if (all != fixedBuf)
+				free(all);
+			all = n;
+		}
+
+		return &all[cc ++];
+	}
+
+	uint32_t			cc, upper;
+	StringReplacePos	fixedBuf[80];
+	StringReplacePos	*all;
 };
 
 // 各种对照模式的字符/字符串替换
@@ -464,9 +496,8 @@ static int lua_string_replace(lua_State* L)
 	if (top < 2)
 		return 0;
 
-	luaL_Buffer buf;
-	StringReplacePos newrep;
-	std::list<StringReplacePos> replacePoses;
+	luaL_Buffer buf;	
+	StringReplacePosAlloc posAlloc;
 	size_t srcLen = 0, fromLen = 0, toLen = 0, offset;
 	const char* src = luaL_checklstring(L, 1, &srcLen), *srcptr, *foundPos, *from, *to;
 
@@ -495,13 +526,14 @@ static int lua_string_replace(lua_State* L)
 
 				srcptr = src;
 				while((foundPos = fromLen == 1 ? strchr(srcptr, from[0]) : strstr(srcptr, from)) != 0)
-				{			
-					newrep.offset = foundPos - src;
-					newrep.fromLen = fromLen;
-					newrep.toLen = toLen;
-					newrep.from = from;
-					newrep.to = to;
-					replacePoses.push_back(newrep);
+				{
+					StringReplacePos* newrep = posAlloc.alloc();
+					newrep->offset = foundPos - src;
+					newrep->fromLen = fromLen;
+					newrep->toLen = toLen;
+					newrep->from = from;
+					newrep->to = to;
+
 					srcptr = foundPos + fromLen;
 				}
 			}
@@ -518,6 +550,7 @@ static int lua_string_replace(lua_State* L)
 				return luaL_error(L, "string.replace with two table which length not equal", 0);
 
 			i = 1;
+
 			do 
 			{
 				lua_rawgeti(L, 3, i ++);
@@ -526,14 +559,14 @@ static int lua_string_replace(lua_State* L)
 				offset = fromLen = 0;
 				while((offset = bms->find((const uint8_t*)src + fromLen, srcLen - fromLen)) != -1)
 				{
-					newrep.offset = offset + fromLen;
-					newrep.fromLen = bms->m_subLen;
-					newrep.toLen = toLen;
-					newrep.from = (const char*)(bms + 1);
-					newrep.to = to;
-					replacePoses.push_back(newrep);
+					StringReplacePos* newrep = posAlloc.alloc();
+					newrep->offset = offset + fromLen;
+					newrep->fromLen = bms->m_subLen;
+					newrep->toLen = toLen;
+					newrep->from = (const char*)(bms + 1);
+					newrep->to = to;
 
-					fromLen += offset + newrep.fromLen;
+					fromLen += offset + newrep->fromLen;
 				}
 
 			} while ((bms = bms->getNext()) != 0);
@@ -607,13 +640,14 @@ static int lua_string_replace(lua_State* L)
 
 			srcptr = src;
 			while((foundPos = fromLen == 1 ? strchr(srcptr, from[0]) : strstr(srcptr, from)) != 0)
-			{			
-				newrep.offset = foundPos - src;
-				newrep.fromLen = fromLen;
-				newrep.toLen = toLen;
-				newrep.from = from;
-				newrep.to = to;
-				replacePoses.push_back(newrep);
+			{
+				StringReplacePos* newrep = posAlloc.alloc();
+				newrep->offset = foundPos - src;
+				newrep->fromLen = fromLen;
+				newrep->toLen = toLen;
+				newrep->from = from;
+				newrep->to = to;
+
 				srcptr = foundPos + fromLen;
 			}
 
@@ -621,31 +655,30 @@ static int lua_string_replace(lua_State* L)
 		}
 	}
 
-	if (replacePoses.size())
+	if (posAlloc.cc)
 	{
 		// 排序之后按顺序替换
-		int i = 0;
 		offset = 0;
-		if (replacePoses.size())
+		uint32_t cc = posAlloc.cc;
+		StringReplacePos* allPoses = posAlloc.all;
+
+		tsort<StringReplacePos>(allPoses, cc, StringReplacePosGreater(), structswap<StringReplacePos>());
+		for(uint32_t i = 0; i < cc; ++ i)
 		{
-			replacePoses.sort(ReplacePosGreater());
-			for (std::list<StringReplacePos>::iterator ite = replacePoses.begin(), iend = replacePoses.end(); ite != iend; ++ ite)
-			{
-				StringReplacePos& rep = *ite;
-				assert(i == 0 || rep.offset >= offset);
+			StringReplacePos& rep = allPoses[i];
+			assert(i == 0 || rep.offset >= offset);
 
-				lua_string_addbuf(&buf, src + offset, rep.offset - offset);
-				lua_string_addbuf(&buf, rep.to, rep.toLen);
+			lua_string_addbuf(&buf, src + offset, rep.offset - offset);
+			lua_string_addbuf(&buf, rep.to, rep.toLen);
 
-				offset = rep.offset + rep.fromLen;
-				++ i;
-			}
-
-			if (offset < srcLen)
-				lua_string_addbuf(&buf, src + offset, srcLen - offset);
+			offset = rep.offset + rep.fromLen;
+			++ i;
 		}
 
-		if (i)
+		if (offset < srcLen)
+			lua_string_addbuf(&buf, src + offset, srcLen - offset);
+
+		if (cc)
 			luaL_pushresult(&buf);
 		else
 			lua_pushvalue(L, 1);
@@ -2309,8 +2342,6 @@ static int lua_string_bmfind(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-#define NODESIZE 8192 - sizeof(JsonMemNode)
-
 typedef TMemNode JsonMemNode;
 
 class JsonMemList : public TMemList
@@ -2428,6 +2459,7 @@ public:
 	}
 };
 
+#define JSON_MAX_DEEP_LEVELS	1024
 #define jsonConvValue()\
 	switch(lua_type(L, -1)) {\
 	case LUA_TTABLE:\
@@ -2487,6 +2519,9 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 	char buf[64];
 	int64_t ival;
 	const char* ptr;
+
+	if (funcsIdx[3] ++ >= JSON_MAX_DEEP_LEVELS)
+		return -1;
 
 	size_t arr = lua_objlen(L, tblIdx), cc = 0;
 	if (arr == 0)
@@ -2671,7 +2706,7 @@ static int lua_string_json(lua_State* L)
 		JsonMemList memList;
 		char fixedBuf[4096];
 
-		int32_t funcs[2] = { 0 };
+		int32_t funcs[4] = { 0 };
 		uint32_t flags = 0;
 
 		memList.L = L;
@@ -2709,6 +2744,10 @@ static int lua_string_json(lua_State* L)
 			}
 
 			return r;
+		}
+		else if (memList.size() >= 1)
+		{
+			memList.popFirst();
 		}
 	}
 
@@ -2763,15 +2802,17 @@ static int lua_string_merge(lua_State* L)
 			break;
 
 		case LUA_TTABLE:
+			luaL_prepbuffer(&buf);
+
 			lua_pushcfunction(L, &lua_string_json);
 			lua_pushvalue(L, i);
 			lua_pushinteger(L, kJsonUnicodes);
 			lua_pcall(L, 2, 1, 0);
 
 			if (!lua_isstring(L, -1))
-				return luaL_error(L, "string.merge #%d type is table cannot encode to a json string", i);
+				return luaL_error(L, "string.merge #%d type is table cannot encode to a json string or the table has a self-loop", i);
 
-			luaL_addvalue(&buf);
+			buf.lvl ++;
 			break;
 
 		case LUA_TCDATA:
@@ -2806,6 +2847,13 @@ static int lua_string_merge(lua_State* L)
 		case LUA_TNIL:
 			s = "nil";
 			len = 3;
+			break;
+
+		case LUA_TFUNCTION:
+			if (lua_pcall(L, 0, 0, 0))
+				return luaL_error(L, "string.merge #%d type is function but called failed", i);
+			if (lua_isstring(L, -1))
+				luaL_addvalue(&buf);
 			break;
 
 		default:

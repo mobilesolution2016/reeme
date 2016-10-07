@@ -1,5 +1,6 @@
 local s = nil
 local ffi = require('ffi')
+local cannotConnect = false
 
 local kLogDebug = 0
 local kLogVerbose = 1
@@ -23,13 +24,18 @@ ffi.cdef[[
 local pckhd = ffi.new('PckHeader')
 
 local connect = function(reeme)
-	s = ngx.socket.tcp()
-	local ok, err = s:connect(reeme('dslogger') or '127.0.0.1', 9880)
-	if not ok then
+	if cannotConnect then
 		return false
 	end
 	
-	s:settimeout(1000)
+	s = ngx.socket.tcp()
+	s:settimeout(100)
+	
+	local ok, err = s:connect(reeme('dslogger') or '127.0.0.1', 9880)
+	if not ok then
+		cannotConnect = true
+		return false
+	end	
 
 	local appname = ngx.var.APP_NAME
 	if appname and #appname > 0 then
@@ -77,6 +83,9 @@ local globalLogger = {
 	clear = function()
 		sendmsg(kCmdClear)
 	end,
+	close = function()
+		cannotConnect = true
+	end
 }
 local globalLoggerDummy = {
 	i = function()
@@ -92,6 +101,8 @@ local globalLoggerDummy = {
 	f = function()
 	end,
 	clear = function()
+	end,
+	close = function()
 	end,
 }
 

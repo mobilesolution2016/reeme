@@ -14,7 +14,7 @@ queryMeta = {
 				end
 			end
 			
-			self.limitStart, self.limitTotal = 0, 1
+			self.limitStart, self.limitTotal = 0, nil
 			return self
 		end,
 		
@@ -202,11 +202,37 @@ queryMeta = {
 		end,
 		
 		--清除掉所有的列和表达式
-		clearColumns = function(self, withJoins)
+		clearColumns = function(self, noJoins)
 			self.expressions, self.colSelects, self.colExcepts, self.colCache = nil, nil, nil, nil
-			if withJoins and self.joins then
+			if not noJoins and self.joins then
 				for i = 1, #self.joins do
-					self.joins[i]:clearColumns(self, withJoins)
+					self.joins[i]:clearColumns(self)
+				end
+			end
+			return self
+		end,
+		
+		--保存所有列和表达式同时清空，所以本函数只能执行一次，多次执行将会达不到保存的效果并且函数不会对多次调用这种不正确的情况进行阻止
+		saveColumns = function(self, noJoins)
+			self._expressions, self._colSelects, self._colExcepts = self.expressions, self.colSelects, self.colExcepts
+			self.expressions, self.colSelects, self.colExcepts, self.colCache = nil, {}, nil, nil
+			
+			if not noJoins and self.joins then
+				for i = 1, #self.joins do
+					self.joins[i].q:saveColumns(self)
+				end
+			end
+			return self
+		end,		
+		--恢复保存的列和表达式，必须和saveColumns成对调用，否则就会清空掉所有的列和表达式设置
+		restoreColumns = function(self, noJoins)
+			self.expressions, self.colSelects, self.colExcepts = self._expressions, self._colSelects, self._colExcepts
+			self._expressions, self._colSelects, self._colExcepts = nil, nil, nil
+			self.colCache = nil
+			
+			if not noJoins and self.joins then
+				for i = 1, #self.joins do
+					self.joins[i].q:restoreColumns(self)
 				end
 			end
 			return self
@@ -221,7 +247,7 @@ queryMeta = {
 		end,
 		
 		--两个Query进行联接
-		join = function(self, query, joinType)
+		addjoin = function(self, query, joinType, cond)
 			local validJoins = { inner = 1, left = 1, right = 1 }
 			local jt = joinType == nil and 'inner' or joinType:lower()
 			
@@ -231,18 +257,19 @@ queryMeta = {
 			end
 
 			local tbname = query.m.__name
-			local j = { q = query, type = jt, on = self.joinOn }
+			local j = { q = query, type = jt, on = self.joinOn, cond = cond or 'AND' }
 			
 			if not self.joins then
 				self.joins = { j }
 			else
 				table.insert(self.joins, j)
 			end
-			
+
 			return self
 		end,
-		leftjoin = function(self, query) return self:join(query, 'left') end,
-		rightjoin = function(self, query) return self:join(query, 'right') end,
+		join = function(self, query, cond) return self:addjoin(query, 'inner') end,
+		leftjoin = function(self, query, cond) return self:addjoin(query, 'left', cond or 'OR') end,
+		rightjoin = function(self, query, cond) return self:addjoin(query, 'right', cond or 'OR') end,
 		
 		--设置别名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
 		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消所有的别名
