@@ -10,8 +10,8 @@
 #include "crtopt.h"
 
 #include "lua.hpp"
-#include "re2/re2.h"
-#include "re2/regexp.h"
+//#include "re2/re2.h"
+//#include "re2/regexp.h"
 #include "zlib/zlib.h"
 
 #include "json.h"

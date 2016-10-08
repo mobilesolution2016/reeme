@@ -779,15 +779,17 @@ local modelMeta = {
 		
 		--验证给定的长度是否超过了字段配置的限制
 		validlen = function(self, name, value, minlength, utf8Enc)
+			if type(value) ~= 'string' then
+				if value == nil then
+					return false
+				end
+				
+				value = tostring(value)
+			end
+			
 			local f = self.__fields[name]
 			if not f then
 				error(string.format("valid value length by field config failed, field name '%s' not exists", name))
-			end
-			if type(value) ~= 'string' then
-				if value == nil then
-					error(string.format("valid value length by field config failed, field name '%s', value is nil", name))
-				end
-				value = tostring(value)
 			end
 			
 			local l = #value

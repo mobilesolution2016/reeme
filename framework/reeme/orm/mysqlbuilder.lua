@@ -700,9 +700,10 @@ builder.buildColumns = function(self, sqls, alias, returnCols)
 		end
 
 		cols = #fps > 0 and table.concat(fps, ',' .. alias) or '*'
+		
 	else
 		--кЫспап
-		cols = '*'
+		cols = express and '' or '*'
 	end	
 
 	if express then

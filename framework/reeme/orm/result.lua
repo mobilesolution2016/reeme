@@ -191,12 +191,16 @@ local pub = {
 }
 
 resultMeta.__index = {
+	--保存
 	save = function(self, db)
 		return execModelInstance(self, db or self.__db, 'UPDATE', true, false)
 	end,
+	--全部保存（包括主键在内）
 	fullSave = function(self, db)
 		return execModelInstance(self, db or self.__db, 'UPDATE', true, true)
 	end,
+	
+	--创建
 	create = function(self, db)
 		local r = execModelInstance(self, db or self.__db, 'INSERT', false, false)
 		if r then
@@ -207,22 +211,32 @@ resultMeta.__index = {
 		end
 		return r
 	end,
+	--指定自增长键创建
 	fullCreate = function(self, db)
 		return execModelInstance(self, db or self.__db, 'INSERT', false, true)
 	end,
+	
+	--删除，以主键为记录删除
 	delete = function(self, db)
 		return execModelInstance(self, db or self.__db, 'DELETE', true, false)
 	end,
 	
+	--获取所关联的模型
 	getModel = function(self)
 		return rawget(self, -10000)
 	end,
+	--设置所关联的模型
 	setModel = function(self, m)
 		assert(getmetatable(m) == getmetatable(self), "Result setModel function call #2 must be a model meta")
 		rawset(self, -10000, m)
 		self.__db = m.__db
 	end,
 	
+	--检查结果集的当前行是否是空行
+	checkEmpty = function(self)
+	end,
+	
+	--指定列(可选)和新值(可选)克隆
 	clone = function(self, fieldnames, newvals)
 		local m = rawget(self, -10000)
 		if m then

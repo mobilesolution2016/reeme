@@ -172,7 +172,7 @@ local mysql = {
 				for v,_ in pairs(self.transaction) do
 					v:query('ROLLBACK')
 				end
-				self.transaction = {}
+				self.transaction = table.new(0, 2)
 				self.transcount = 0
 			end
 			
@@ -200,7 +200,7 @@ local mysql = {
 			return false
 		end,
 		
-		--退出的时候清理所有，未提交的事务将被rollback
+		--退出的时候清理所有，未提交的事务将被rollback。之后也不能再进行begin/commit/rollback操作了
 		clearAll = function(self)
 			if self.transcount > 0 then
 				for v,_ in pairs(self.transaction) do
@@ -228,5 +228,5 @@ local mysql = {
 }
 
 return function(reeme)
-	return setmetatable({ R = reeme, transaction = {}, transcount = 0, caches = {} }, mysql)
+	return setmetatable({ R = reeme, transaction = table.new(0, 2), transcount = 0, caches = {} }, mysql)
 end

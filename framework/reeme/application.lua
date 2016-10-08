@@ -518,6 +518,11 @@ local appMeta = {
 					r = nil
 				end
 
+				--结束动作
+				if self.endProc then
+					self.endProc(self, c, path, act)
+				end
+				
 				--处理返回的结果
 				if r ~= nil then
 					local tp = type(r)
@@ -546,11 +551,6 @@ local appMeta = {
 							out(self, 'Denied Error Access!')
 						end
 					end
-				end
-
-				--结束动作
-				if self.endProc then
-					self.endProc(self, c, path, act)
 				end
 				
 			end, debug.traceback)		

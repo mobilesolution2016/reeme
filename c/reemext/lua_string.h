@@ -1236,7 +1236,7 @@ static int lua_string_checkstring(lua_State* L)
 		}
 		else if (t == LUA_TSTRING)
 		{
-			// 正则表达式进行匹配
+			// 正则表达式进行完整的匹配，如果没有包含google re2库的话，就调用ngx.re.match来完成功能
 #ifdef RE2_RE2_H_
 			if (!RE2::FullMatch(s, lua_tostring(L, n)))
 			{
@@ -1244,12 +1244,50 @@ static int lua_string_checkstring(lua_State* L)
 				break;
 			}
 #else
-			lua_getglobal(L, "string");
-			lua_getfield(L, "match");
+			size_t matchedl;
+
+			lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_ngx_re_match);
 			lua_pushvalue(L, 1);
-			lua_pushvalue(L, n);
-			lua_pcall(L, 2, 1, 0);
-			if (lua_isnil(L, -1))
+
+			const char* re = lua_tolstring(L, n, &matchedl);
+			const char* rer = re + matchedl - 1;
+
+			if (re[0] == '/')
+			{				
+				re ++;
+				while(rer > re)
+				{
+					if (rer[0] == '/')
+						break;
+					rer --;
+				}
+
+				if (rer > re)
+				{
+					lua_pushlstring(L, re, rer - re);
+					lua_pushstring(L, rer + 1);
+					lua_pcall(L, 3, 1, 0);
+					rer = NULL;
+				}
+			}
+
+			if (rer)
+			{
+				lua_pushvalue(L, n);
+				lua_pcall(L, 2, 1, 0);
+			}
+			
+			if (lua_istable(L, -1))
+			{
+				matchedl = 0;
+				lua_rawgeti(L, -1, 0);
+				if (!lua_tolstring(L, -1, &matchedl) || matchedl != len)
+				{
+					flags = 0;
+					break;
+				}
+			}
+			else
 			{
 				flags = 0;
 				break;
@@ -2147,9 +2185,9 @@ static int lua_string_parsetemplate(lua_State* L)
 	// 确认要用的多行字符串表示法没有在代码中被使用过，如果有用到了，则继续增加=号的数量
 	memset(parser.mlsBegin, 0, sizeof(parser.mlsBegin) * 2);
 
-	strcpy(parser.mlsBegin, "[===[");
-	strcpy(parser.mlsEnd, "]===]");
-	parser.mlsLength = 5;
+	strcpy(parser.mlsBegin, "[==[");
+	strcpy(parser.mlsEnd, "]==]");
+	parser.mlsLength = 4;
 
 	for(int i = 0; ; ++ i)
 	{
