@@ -2888,10 +2888,7 @@ static int lua_string_merge(lua_State* L)
 			break;
 
 		case LUA_TFUNCTION:
-			if (lua_pcall(L, 0, 0, 0))
-				return luaL_error(L, "string.merge #%d type is function but called failed", i);
-			if (lua_isstring(L, -1))
-				luaL_addvalue(&buf);
+			luaL_addlstring(&buf, "function()", 10);
 			break;
 
 		default:

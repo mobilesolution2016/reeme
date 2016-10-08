@@ -335,6 +335,20 @@ static int lua_table_new(lua_State* L)
 	return 1;
 }
 
+static int lua_table_clear(lua_State* L)
+{
+	lua_pushnil(L);
+	while (lua_next(L, 1))
+	{
+		lua_pushvalue(L, -2);
+		lua_pushnil(L);
+		lua_rawset(L, 1);
+		lua_pop(L, 1);
+	}
+
+	return 1;
+}
+
 //////////////////////////////////////////////////////////////////////////
 static int lua_table_in(lua_State* L)
 {
@@ -722,6 +736,7 @@ static void luaext_table(lua_State *L)
 
 	luaL_register(L, NULL, procs);
 
+	// check pack/unpack function
 	lua_pushliteral(L, "pack");
 	lua_rawget(L, -2);
 	int t = lua_isnil(L, -1);
@@ -738,6 +753,7 @@ static void luaext_table(lua_State *L)
 		lua_rawset(L, -3);
 	}
 
+	// check new function
 	lua_pushliteral(L, "new");
 	lua_rawget(L, -2);
 	t = lua_isnil(L, -1);
@@ -747,6 +763,19 @@ static void luaext_table(lua_State *L)
 	{
 		lua_pushliteral(L, "new");
 		lua_pushcfunction(L, &lua_table_new);
+		lua_rawset(L, -3);
+	}
+
+	// check clear function
+	lua_pushliteral(L, "clear");
+	lua_rawget(L, -2);
+	t = lua_isnil(L, -1);
+	lua_pop(L, 1);
+
+	if (t)
+	{
+		lua_pushliteral(L, "clear");
+		lua_pushcfunction(L, &lua_table_clear);
 		lua_rawset(L, -3);
 	}
 

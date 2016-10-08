@@ -125,7 +125,7 @@ static int lua_toboolean(lua_State* L)
 	return cc;
 }
 
-// 检测是否是userdata的NULL，如果是，则返回参数2或true(当没有参数2时)，或不是，直接返回false
+// 检测是否是userdata的NULL，如果是，则返回参数2或true，或不是，则返回参数3或自己
 static int lua_checknull(lua_State* L)
 {
 	int t = lua_type(L, 1);
@@ -138,10 +138,8 @@ static int lua_checknull(lua_State* L)
 		else
 			lua_pushboolean(L, 1);
 	}
-	else if (top >= 2)
-		lua_pushvalue(L, 1);
 	else
-		lua_pushboolean(L, 0);
+		lua_pushvalue(L, top >= 3 ? 3 : 1);
 	return 1;
 }
 
@@ -278,6 +276,11 @@ static void initCommonLib(lua_State* L)
 
 	lua_getglobal(L, "tostring");
 	lua_rawseti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
+
+	lua_getglobal(L, "ngx");
+	lua_getfield(L, -1, "re");
+	lua_getfield(L, -1, "match");
+	lua_rawseti(L, LUA_REGISTRYINDEX, kLuaRegVal_ngx_re_match);
 
 	lua_settop(L, top);
 }

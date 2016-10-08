@@ -527,24 +527,25 @@ local modelMeta = {
 			if not copyfrom then
 				return r
 			end
-			
+
 			--从copyfrom复制
 			local keys = nil
 			local names = self.__fieldsPlain
 			if fieldnames then
 				local tp = type(fieldnames)
-
-				keys = table.new(0, #names / 2)
+				
 				if tp == 'string' then
+					keys = table.new(0, #names / 2)
 					string.split(fieldnames, ',', string.SPLIT_ASKEY, keys)
 				elseif tp == 'table' then
+					keys = table.new(0, #fieldnames)
 					for i = 1, #fieldnames do
 						keys[fieldnames[i]] = true
 					end
 				else
 					return
 				end
-				
+
 				--default for add all unique key(s)
 				for k,v in pairs(self.__fieldIndices) do
 					if v.type == 1 or v.type == 2 then

@@ -241,7 +241,7 @@ resultMeta.__index = {
 		local m = rawget(self, -10000)
 		if m then
 			local r, vt = nil, type(newvals)
-			if vt == 'table' then
+			if vt == 'table' or not newvals then
 				r = m:new(self, fieldnames, newvals)
 			elseif vt == 'function' then
 				r = newvals(m:new(self, fieldnames))
