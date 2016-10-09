@@ -523,7 +523,7 @@ local function buildSqlValue(self, cfg, v)
 		if cfg.type == 1 then
 			--字段要求为字符串
 			if multiVals then
-				v = string.format("'%s'", table.concat(v, "','"))
+				v = string.format(" IN('%s')", table.concat(v, "','"))
 			else
 				v = tostring(v)
 				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
@@ -535,7 +535,7 @@ local function buildSqlValue(self, cfg, v)
 		elseif cfg.type == 4 then
 			--布尔型使用1或0来处理
 			if multiVals then
-				v = table.concat(v, ',')
+				v = string.format(' IN(%s)', table.concat(v, ','))
 			else
 				v = toboolean(v) and '1' or '0'
 			end
@@ -543,7 +543,7 @@ local function buildSqlValue(self, cfg, v)
 		elseif cfg.type == 3 then
 			--数值/浮点数类型，检测值必须为浮点数
 			if multiVals then
-				v = table.concat(v, ',')
+				v = string.format(' IN(%s)', table.concat(v, ','))
 				
 			elseif not string.checknumeric(v) then
 				logger.e(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, cfg.colname))
@@ -552,7 +552,7 @@ local function buildSqlValue(self, cfg, v)
 			
 		elseif multiVals then
 			--整数型，多值（就不对每一个值去做检查了）
-			v = table.concat(v, ',')
+			v = string.format(' IN(%s)', table.concat(v, ','))
 			
 		elseif quoteIt then
 			--这个字符串必须是整数型的值

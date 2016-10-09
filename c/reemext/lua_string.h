@@ -1753,7 +1753,7 @@ public:
 			}
 			else if (brackets)
 			{
-				if (ch == ')')
+				if (ch == ')' || ch == '}')
 					brackets --;
 			}
 			else if (ch == '\'' || ch == '"')
@@ -1769,7 +1769,7 @@ public:
 			}
 			else if (ch == '\\')
 				expSub = expEnd;
-			else if (ch == '(')
+			else if (ch == '(' || ch == '{')
 				brackets ++;
 			else if (ch == '\n')
 				expLines ++;

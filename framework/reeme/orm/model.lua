@@ -431,7 +431,6 @@ queryMeta = {
 				result = resultPub.init(result, self.m)
 				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
 
-				self.lastSql = sqls
 				if res then
 					logger.d(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
 				else
@@ -662,9 +661,9 @@ local modelMeta = {
 			
 			return q:columns(colnames):fetchAll()
 		end,
-		--和findFirst一样，但是仅查找第1行的指定的某1列，返回的将是一个所有行的这一列组成的一个新table(注意不是结果集实例)，并在没有结果集的时候并不会返回nil
+		--和findFirst一样，但是仅查找第1行的指定的某1列，返回的将是一个所有行的这一列组成的一个新table(是个1维数组，注意不是结果集实例)，并在没有结果集的时候并不会返回nil
 		findAllFirst = function(self, colname, name, val)
-			local q = self:query()			
+			local q = self:query()
 			q.limitTotal = nil
 
 			if name then q:where(name, val) end
