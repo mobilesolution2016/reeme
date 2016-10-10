@@ -2811,11 +2811,18 @@ static int lua_string_merge(lua_State* L)
 	{
 		size_t len = 0;
 		const char *s = 0;
-		bool needPop = false;
 
 		switch(lua_type(L, i))
 		{
 		case LUA_TNUMBER:
+			s = lua_tolstring(L, i, &len);
+			if (n == 1)
+			{
+				lua_pushlstring(L, s, len);
+				return 1;
+			}
+			break;
+
 		case LUA_TSTRING:
 			if (n == 1)
 			{
@@ -2836,6 +2843,12 @@ static int lua_string_merge(lua_State* L)
 			{
 				s = "false";
 				len = 5;
+			}
+
+			if (n == 1)
+			{
+				lua_pushlstring(L, s, len);
+				return 1;
 			}
 			break;
 
@@ -2880,37 +2893,36 @@ static int lua_string_merge(lua_State* L)
 #endif
 				s = fmtbuf;
 			}
+
+			if (n == 1)
+			{
+				lua_pushlstring(L, s, len);
+				return 1;
+			}
 			break;
 
 		case LUA_TNIL:
 			s = "nil";
 			len = 3;
-			break;
 
-		case LUA_TFUNCTION:
-			luaL_addlstring(&buf, "function()", 10);
+			if (n == 1)
+			{
+				lua_pushlstring(L, s, len);
+				return 1;
+			}
 			break;
 
 		default:
-			lua_pushvalue(L, n + 1);
-			lua_pushvalue(L, i);
+			lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
+			lua_pushvalue(L, n);
 			lua_pcall(L, 1, 1, 0);
-			s = lua_tolstring(L, -1, &len);
-			needPop = true;
-
-			if (s == NULL)
-				return luaL_error(L, "string.merge #%d cannot convert to string with(tostring) call", i);
+			luaL_addvalue(&buf);
+			len = 0;
 			break;
 		}
 
-		int addBuf = len > 0 ? lua_string_addbuf(&buf, s, len) : 0;
-		if (needPop)
-		{
-			if (addBuf && addBuf)
-				lua_remove(L, -addBuf - 1);
-			else
-				lua_pop(L, 1);
-		}
+		if (len > 0)
+			lua_string_addbuf(&buf, s, len);
 	}
 
 	luaL_pushresult(&buf);
