@@ -1623,6 +1623,19 @@ static int lua_string_fmt(lua_State* L)
 //////////////////////////////////////////////////////////////////////////
 #define TP_FIXED	16384
 
+struct StringIndex {
+	int				index;
+	const char		*val;
+	size_t			leng;
+
+	inline StringIndex() {}
+	inline StringIndex(int a, const char* b, size_t c)
+		: index(a), val(b), leng(c)
+	{
+	}
+};
+typedef MAP_CLASS_NAME<StringPtrKeyL, StringIndex> StringsPckMap;
+
 static const char templReturnCode[] = { "\nreturn __segcc__ > 0 and __segs__ or table.concat(__ret__, '')\nend" };
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
 static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
@@ -1648,18 +1661,19 @@ static const char templInitCode[] = {
 class TemplateParser
 {
 public:
-	std::string	buf, errorMsg;
-	size_t		offset, srcLen, wrote, mlsLength;
+	std::string			buf, errorMsg;
+	StringsPckMap	*pck;
+	size_t				offset, srcLen, wrote, mlsLength;
 	
-	uint32_t	expLines;
-	char		expQuoted;
-	const char	*expSub;
+	uint32_t			expLines;
+	char				expQuoted;
+	const char			*expSub;
 
-	const char	*src;
-	const char	*savedPos;
-	const char	*errorStart;
-	char		mlsBegin[32], mlsEnd[32];
-	bool		bracketOpened;
+	const char			*src;
+	const char			*savedPos;
+	const char			*errorStart;
+	char				mlsBegin[32], mlsEnd[32];
+	bool				bracketOpened;
 
 	enum KeywordEndType {
 		KEND_NONE,
@@ -1789,6 +1803,7 @@ public:
 	{
 		uint8_t ch;
 		size_t add;
+		StringPtrKeyL key;
 
 		if (offset)
 		{
@@ -1834,7 +1849,7 @@ public:
 				goto _lastcheck;
 			}
 
-			// 先关闭之前未输出的部分
+			// 先完成之前未输出的部分
 			add = pos - offset;
 			if (pos >= offset && append(add) != add)
 			{
@@ -1842,6 +1857,48 @@ public:
 				return true;
 			}
 
+			// 如果是字符串包的话直接替换
+			if (ch == '#')
+			{
+				const char* nameBegin = foundPos + 1;
+				while((uint8_t)nameBegin[0] <= 32)
+					nameBegin ++;
+
+				const char* nameEnd = nameBegin + 1;
+				while (nameEnd < src + srcLen)
+				{
+					if (nameEnd[0] == '}' || (uint8_t)nameEnd[0] <= 32)
+						break;
+					nameEnd ++;
+				}
+
+				if (pck)
+				{
+					// 字符串包
+					key.pString = nameBegin;
+					key.nLength = nameEnd - nameBegin;
+					key.nHashID = hashString<size_t>(nameBegin, key.nLength);
+
+					StringsPckMap::iterator ite = pck->find(key);
+					if (ite != pck->end())
+					{
+						StringIndex& stridx = ite->second;
+						buf.append(stridx.val, stridx.leng);
+					}
+				}
+
+				while(nameEnd[0] != '}')
+					nameEnd ++;
+
+				wrote = buf.size();
+
+				foundPos = nameEnd + 1;
+				offset = foundPos - src;
+
+				goto _lastcheck;
+			}
+
+			// 关闭输出，根据控制符的类型来进行处理
 			close();
 
 			if (ch == '=' || ch == ':')
@@ -1854,8 +1911,14 @@ public:
 				const char* varEnd = findExpEnd(varBegin, src + srcLen);				
 				if (!varEnd)
 					return false;
-				
-				if (ch == ':')
+
+				if (ch == '=')
+				{					
+					// 使用值
+					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+					buf.append(varBegin, varEnd - varBegin);
+				}
+				else
 				{
 					// 引用子模板
 					if (expSub)
@@ -1882,12 +1945,6 @@ public:
 					}
 
 					buf.append("\')", 2);					
-				}
-				else
-				{
-					// 使用值
-					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
-					buf.append(varBegin, varEnd - varBegin);
 				}
 
 				buf += '\n';
@@ -2161,6 +2218,7 @@ static void _init_TemplateParser(TemplateParser& parser, const char* src, size_t
 	parser.src = src;
 	parser.srcLen = srcLen;
 	parser.offset = 0;
+	parser.pck = 0;
 	parser.bracketOpened = false;
 	parser.wrote = sizeof(templInitCode) - 1;
 
@@ -2172,15 +2230,15 @@ static int lua_string_parsetemplate(lua_State* L)
 	luaL_checktype(L, 1, LUA_TTABLE);
 
 	size_t srcLen = 0;	
+	TemplateParser parser;
 	const char* src = luaL_checklstring(L, 2, &srcLen);
 	const char* chunkName = "__templ_tempr__";	
 
 	int hasEnv = lua_istable(L, 3);
-	if (lua_isstring(L, 4))
-		chunkName = lua_tostring(L, 3);
 
-	TemplateParser parser;	
 	_init_TemplateParser(parser, src, srcLen);
+	if (lua_isstring(L, 4))
+		chunkName = lua_tostring(L, 4);
 
 	// 确认要用的多行字符串表示法没有在代码中被使用过，如果有用到了，则继续增加=号的数量
 	memset(parser.mlsBegin, 0, sizeof(parser.mlsBegin) * 2);
@@ -2209,6 +2267,18 @@ static int lua_string_parsetemplate(lua_State* L)
 
 	if (hasEnv)
 	{
+		// env[0]可以是一个字符串包
+		int pops = 1;
+		lua_rawgeti(L, 3, 0);
+		if (lua_istable(L, -1))
+		{
+			lua_rawgeti(L, -1, 0);
+			parser.pck = (StringsPckMap*)lua_touserdata(L, -1);
+			pops = 2;
+		}
+		lua_pop(L, pops);
+
+		// 载入解析后的代码
 		int r = lua_load(L, &lua_tpl_loader, &parser, chunkName);
 		if (parser.errorMsg.length())
 		{
@@ -2281,6 +2351,206 @@ static int lua_string_parsetemplate(lua_State* L)
 		luaL_pushresult(&buf);
 	}
 
+
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
+static int stringLangPckGC(lua_State* L)
+{
+	StringsPckMap* n = (StringsPckMap*)lua_touserdata(L, 1);
+	if (n)
+		n->~StringsPckMap();
+	return 0;
+}
+static int stringLangRecurTable(lua_State* L, StringsPckMap* pck, int src, int tbl, int index, std::string& strPrefix)
+{
+	StringPtrKeyL key;
+	StringIndex stridx;
+	std::string strKeyname;
+
+	lua_pushnil(L);
+
+	const char* keys;
+	int top = lua_gettop(L);
+	size_t keylen, leng = strPrefix.length();
+
+	while(lua_next(L, src))
+	{
+		if (lua_istable(L, -1))
+		{			
+			keys = lua_tolstring(L, -2, &keylen);
+
+			if (leng)
+				strPrefix += '.';
+			strPrefix.append(keys, keylen);
+
+			index = stringLangRecurTable(L, pck, top + 1, tbl, index, strPrefix);
+			strPrefix.erase(leng);
+		}
+		else
+		{
+			lua_rawseti(L, tbl, -index);
+
+			if (strPrefix.length())
+			{
+				keys = lua_tolstring(L, -1, &keylen);
+
+				strKeyname = strPrefix;
+				strKeyname += '.';
+				strKeyname.append(keys, keylen);
+				lua_pushlstring(L, strKeyname.c_str(), strKeyname.length());
+			}
+			else
+			{
+				lua_pushvalue(L, -1);
+			}
+
+			lua_rawseti(L, tbl, index);
+			lua_rawgeti(L, tbl, index);
+
+			key.pString = lua_tolstring(L, -1, &key.nLength);
+			key.nHashID = hashString<size_t>(key.pString, key.nLength);
+
+			lua_rawgeti(L, tbl, -index);
+
+			stridx.index = -index;
+			stridx.val = lua_tolstring(L, -1, &stridx.leng);
+
+			pck->insert(StringsPckMap::value_type(key, stridx));
+			index ++;
+		}
+
+		lua_settop(L, top);
+	}
+
+	return index;
+}
+static int stringLangFind(lua_State* L)
+{
+	StringPtrKeyL key;
+	key.pString = luaL_checklstring(L, 2, &key.nLength);
+	key.nHashID = hashString<size_t>(key.pString, key.nLength);
+
+	lua_rawgeti(L, 1, 0);
+	StringsPckMap* pck = (StringsPckMap*)lua_touserdata(L, -1);
+
+	StringsPckMap::iterator ite = pck->find(key);
+	if (ite == pck->end())
+		return 0;
+
+	lua_rawgeti(L, 1, ite->second.index);
+	return 1;
+}
+static int lua_string_makestrpackage(lua_State* L)
+{
+	StringPtrKeyL key;
+	StringIndex stridx;
+	std::string strPrefix;
+	StringsPckMap* pck = 0;
+	int top = lua_gettop(L), tbl, index = 2;
+
+	if (top < 2)
+		return luaL_error(L, "string.makestrpackage must be called with at least two parameter");
+
+	tbl = lua_type(L, 1);
+	if (tbl == LUA_TTABLE)
+	{
+		tbl = 1;
+		lua_rawgeti(L, 1, 1);
+		index = lua_tointeger(L, -1);
+		if (index >= 2)
+		{
+			lua_rawgeti(L, 1, 0);
+			pck = (StringsPckMap*)lua_touserdata(L, -1);
+		}
+		else
+			index = 2;
+
+		lua_pushvalue(L, 1);
+	}
+	else if (tbl != LUA_TNIL)
+		return luaL_error(L, "string.makestrpackage #1 not a nil or table", 0);
+	else
+		tbl = 0;
+
+	if (!pck)
+	{
+		if (!tbl)
+		{
+			tbl = top + 1;
+			lua_newtable(L);
+		}
+
+		pck = (StringsPckMap*)lua_newuserdata(L, sizeof(StringsPckMap));
+		new (pck) StringsPckMap();
+
+		if (luaL_newmetatable(L, "_LANG_PACK_FOR_PRASETEMPLATE"))
+		{
+			// 这个meta的作用是释放map
+			lua_pushliteral(L, "__gc");
+			lua_pushcfunction(L, &stringLangPckGC);
+			lua_rawset(L, -3);
+		}
+		lua_setmetatable(L, -2);
+
+		// 将map存于返回table的0号位置
+		lua_rawseti(L, tbl, 0);
+
+		if (luaL_newmetatable(L, "_LANG_PACK_SIM_CALL"))
+		{
+			// 这个meta的作用是让返回的table可以像函数一样调用以查找key对应的值
+			lua_pushliteral(L, "__call");
+			lua_pushcfunction(L, &stringLangFind);
+			lua_rawset(L, -3);
+		}
+		lua_setmetatable(L, tbl);
+	}
+
+	// 处理每一个参数的值	
+	for (int n = 2; n <= top; ++ n)
+	{
+		int t = lua_type(L, n);
+		if (t == LUA_TSTRING)
+		{
+			if (!lua_isstring(L, n + 1))
+				return luaL_error(L, "string.makestrpackage #%d expect a string got not string", n + 1);			
+
+			lua_pushvalue(L, n);
+			lua_rawseti(L, tbl, index);
+
+			lua_pushvalue(L, n + 1);
+			lua_rawseti(L, tbl, -index);
+
+			lua_rawgeti(L, tbl, index);
+
+			key.pString = lua_tolstring(L, -1, &key.nLength);
+			key.nHashID = hashString<size_t>(key.pString, key.nLength);
+
+			lua_rawgeti(L, tbl, -index);
+			
+			stridx.index = -index;
+			stridx.val = lua_tolstring(L, -1, &stridx.leng);
+
+			pck->insert(StringsPckMap::value_type(key, stridx));
+			index ++;
+
+			lua_pop(L, 2);
+		}
+		else if (t == LUA_TTABLE)
+		{
+			strPrefix.clear();
+			index = stringLangRecurTable(L, pck, n, tbl, index, strPrefix);
+		}
+		else
+		{
+			return luaL_error(L, "string.makestrpackage #%d not a string or table", n);
+		}
+	}
+
+	// 当前的索引值存于1号位置。所以key=>value对值是从2开始存储的
+	lua_pushinteger(L, index);
+	lua_rawseti(L, tbl, 1);
 
 	return 1;
 }
@@ -2966,8 +3236,11 @@ static void luaext_string(lua_State *L)
 
 		// 字符串格式化，大部分时候和string.format可以直接替换使用，执行性能上综合比string.format稍微慢了一点，但关键是支持boxed int64类型，格式化为字符串和数字均可(string.format不支持)
 		{ "fmt", &lua_string_fmt },
+
 		// 模板解析，使用{% sentense } {= value } {: sub_template }三种语法，比简单的Lua版的template有更强的容错和适应能力，如忘了写then/do的时候可以自动补上（前提是别连写，如{% while true do if xxx }就会无法纠正）
 		{ "parseTemplate", &lua_string_parsetemplate },
+		// 为模板解析生成语言字符串包
+		{ "makestrpackage", &lua_string_makestrpackage },
 
 		// 编译Boyer-Moore子字符串用于查找
 		{ "bmcompile", &lua_string_bmcompile },

@@ -510,8 +510,8 @@ local appMeta = {
 				--执行动作
 				if c and actionMethod then
 					r = actionMethod(c)
-					if r == nil then
-						r = c.actionReturned
+					if r == nil or r == false then
+						r = c.__actionReturned
 					end
 				elseif self.missmatchProc then
 					self.missmatchProc(self, path, act)

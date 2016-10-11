@@ -83,11 +83,11 @@ queryMeta = {
 		end,
 		--where/on中增加一个右括号
 		rb = function(self)
-			if not self.brackets or self.brackets < 1 then
+			if not self.brackets or self.brackets < 1 then			
 				error("error for add ')' without paired '('")
 			end
 			self.brackets = self.brackets - 1
-			
+
 			if self.setOns then
 				return self.builder.processOn(self, 1, ')')
 			end
@@ -206,7 +206,7 @@ queryMeta = {
 			self.expressions, self.colSelects, self.colExcepts, self.colCache = nil, nil, nil, nil
 			if not noJoins and self.joins then
 				for i = 1, #self.joins do
-					self.joins[i]:clearColumns(self)
+					self.joins[i].q:clearColumns(self)
 				end
 			end
 			return self
@@ -412,7 +412,7 @@ queryMeta = {
 				return nil
 			end
 			
-			if self.brackets then
+			if self.brackets and self.brackets > 0 then
 				--关闭括号
 				repeat
 					self:rb()

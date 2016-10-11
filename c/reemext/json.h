@@ -88,7 +88,7 @@ struct initJsonEscapeChars
 		string_fmt_valid_fmt[' '] = 0x80;		// 正数时留空，负数时用-填充
 
 		// 所有的模板控制符
-		string_template_ctls['%'] = string_template_ctls[':'] = string_template_ctls['='] = string_template_ctls['?'] = string_template_ctls['-'] = 1;
+		string_template_ctls['%'] = string_template_ctls[':'] = string_template_ctls['='] = string_template_ctls['?'] = string_template_ctls['-'] = string_template_ctls['#'] = 1;
 	}
 } _g_initJsonEscapeChars;
 

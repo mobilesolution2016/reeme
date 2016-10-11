@@ -227,7 +227,7 @@ resultMeta.__index = {
 	end,
 	--设置所关联的模型
 	setModel = function(self, m)
-		assert(getmetatable(m) == getmetatable(self), "Result setModel function call #2 must be a model meta")
+		assert(getmetatable(m) == getmetatable(rawget(self, -10000)), "Result setModel function call #2 must be a model meta")
 		rawset(self, -10000, m)
 		self.__db = m.__db
 	end,
