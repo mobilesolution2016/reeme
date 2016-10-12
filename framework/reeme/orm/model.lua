@@ -45,6 +45,31 @@ queryMeta = {
 			return self
 		end,
 		
+		--一共有多少个where条件了
+		countWheres = function(self)
+			return self.condValues and #self.condValues or 0
+		end,
+		
+		--两个条件的位置交换
+		swapWhere = function(self, a, b)
+			if self.condValues and a ~= b then
+				local cc = #self.condValues
+				if b == 0 then
+					--将a指定位置的条件放到最前面
+					a = table.remove(self.condValues, a)
+					table.insert(self.condValues, a, 1)
+				elseif b <= 0 then
+					--将a指定位置的条件放到b位置
+					a = table.remove(self.condValues, a)
+					table.insert(self.condValues, a, -b)
+				else
+					--两个位置交换
+					self.condValues[a], self.condValues[b] = self.condValues[b], self.condValues[a]
+				end
+			end
+			return self
+		end,
+		
 		--设置join on条件
 		on = function(self, name, val)
 			self.setOns, self.setWheres = true, false
@@ -69,6 +94,31 @@ queryMeta = {
 		clearOns = function(self)
 			self.onValues = nil
 			self.setOns, self.setWheres = true, false
+			return self
+		end,
+
+		--一共有多少个on条件了
+		countOns = function(self)
+			return self.onValues and #self.onValues or 0
+		end,
+		--两个条件的位置交换
+		swapOn = function(self, a, b)
+			if self.onValues and a ~= b then
+				local cc = #self.onValues
+				if b == 0 then
+					--将a指定位置的条件放到最前面
+					a = table.remove(self.onValues, a)
+					table.insert(self.onValues, a, 1)
+				elseif b <= 0 then
+					--将a指定位置的条件放到b位置
+					a = table.remove(self.onValues, a)
+					table.insert(self.onValues, a, -b)
+				else
+					--两个位置交换
+					self.onValues[a], self.onValues[b] = self.onValues[b], self.onValues[a]
+				end
+			end
+
 			return self
 		end,
 		
@@ -798,7 +848,7 @@ local modelMeta = {
 			end			
 			if minlength then
 				if utf8Enc then
-					return utf8str.len(value) >= minlength
+					return u8string.len(value) >= minlength
 				end
 				return l >= minlength
 			end

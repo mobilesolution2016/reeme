@@ -69,5 +69,5 @@ local globals = getglobals(io.stdin)
 table.sort(globals, function(a,b) return a.linenum < b.linenum end)
 for i,v in ipairs(globals) do
    local found = rindex(whitelist, v.name)
-   print(v.linenum, v.name, v.isset and 'set' or 'get', found and 'defined' or 'undefined')
+   logger.e(v.linenum, v.name, v.isset and 'set' or 'get', found and 'defined' or 'undefined')
 end

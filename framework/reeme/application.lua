@@ -513,14 +513,17 @@ local appMeta = {
 					if r == nil or r == false then
 						r = c.__actionReturned
 					end
+
 				elseif self.missmatchProc then
-					self.missmatchProc(self, path, act)
-					r = nil
+					r = self.missmatchProc(self, path, act)
 				end
 
 				--结束动作
 				if self.endProc then
-					self.endProc(self, c, path, act)
+					local newr = self.endProc(self, c, path, act, r)
+					if newr ~= nil then
+						r = newr
+					end
 				end
 				
 				--处理返回的结果
