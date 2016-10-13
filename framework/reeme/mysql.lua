@@ -49,7 +49,7 @@ local mysql = {
 			end
 
 			--然后去缓存中寻找已经产生过的
-			local cacheId = name .. tostring(db)
+			local cacheId = srcname .. tostring(db)
 			local m = self.caches[cacheId]
 			
 			if m then

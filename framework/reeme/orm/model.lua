@@ -2,6 +2,32 @@ local queryMeta = nil
 local resultPub = require('reeme.orm.result')
 local allConds = { ['AND'] = 2, ['OR'] = 3, ['XOR'] = 4, ['NOT'] = 5, ['and'] = 2, ['or'] = 3, ['xor'] = 4, ['not'] = 5 }
 
+local makeWhereByPrimaryCol = function(self, val)
+	for k,v in pairs(self.__fieldIndices) do
+		if v.type == 1 then
+			local tp, field = type(val), self.__fields[k]
+				
+			if tp == 'cdata' then
+				local newv 
+				val, newv = string.checkinteger(val)
+				if newv and field.type >= 2 then
+					return string.merge(field.colname, '=', newv)
+				end
+
+			elseif field.type == 1 then
+				return string.merge(field.colname, '=', ngx.quote_sql_str(tostring(val)))
+
+			elseif string.checkinteger(val) then
+				return string.merge(field.colname, '=', val)
+			end
+			
+			return nil
+		end
+	end
+	
+	return false
+end
+
 --query的原型类
 queryMeta = {
 	__index = {
@@ -40,7 +66,7 @@ queryMeta = {
 			return self.builder.processWhere(self, 5, name, val)
 		end,
 		clearWheres = function(self)
-			self.condValues, self.condString = nil, nil
+			self.condValues = nil
 			self.setWheres, self.setOns = true, false
 			return self
 		end,
@@ -175,7 +201,7 @@ queryMeta = {
 								self:alias(n, nto)
 							end
 						else
-							error('model columns function set a not exists field:' .. n)
+							error(string.format('model columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
 						end
 					end
 				end
@@ -291,7 +317,7 @@ queryMeta = {
 		--直接设置where条件语句
 		conditions = function(self, conds)
 			if type(conds) == 'string' then
-				self.condString = conds
+				self.__where = conds
 				self.condValues = nil
 			end
 		end,
@@ -372,6 +398,49 @@ queryMeta = {
 				--全部取消
 				self.userAlias = nil
 				self.aliasAB, self.aliasBA = nil, nil
+			end
+			
+			return self
+		end,
+		
+		--值绑定。不带参数调用为清空所有已经绑定的值，1个参数调用为按顺序（从1开始）绑定值，2个参数中第1个参数表示绑定的值的位置，第2个参数为值
+		--值需要自己处理好，如字符串，就需要带上''。如果没有把握，可以使用model的value函数对值进行自动的处理
+		bind = function(self, a, b)
+			local bvals = self.bindvals
+			
+			if b then
+				if not bvals then
+					bvals = table.new(4, 0)
+					self.bindvals = bvals
+				end
+				
+				assert(type(a) == 'number')
+				bvals[a] = tostring(b)
+
+			elseif a then
+				if not bvals then
+					bvals = table.new(4, 0)
+					self.bindvals = bvals
+				end
+
+				bvals[#bvals + 1] = a
+
+			else
+				self.bindvals = nil
+			end
+			
+			return self
+		end,
+		
+		--按照字段绑定值。本函数和bind功能是一样的，但是不支持清空已经绑定的值，且会自动的根据字段处理输入的值。所以参数colname是值对应的字段名称
+		bindfield = function(self, colname, a, b)
+			local v = self.m:value(colname, b or a)
+			if v ~= nil then
+				if b then
+					self:bind(a, v)
+				else
+					self:bind(v)
+				end
 			end
 			
 			return self
@@ -624,7 +693,7 @@ local modelMeta = {
 			return r
 		end,
 		
-		--将一个数组型的table包装成一个结果集
+		--将一个数组型的table包装成一个结果集，其返回值类型和new函数得到的是一样的
 		wrap = function(self, result)
 			if type(result) ~= 'table' or #result < 1 then
 				return nil
@@ -636,7 +705,7 @@ local modelMeta = {
 
 		--建立一个查询器
 		query = function(self, op)
-			local q = { m = self, R = self.__reeme, op = op ~= nil and string.upper(op) or 'SELECT', builder = self.__builder }
+			local q = { m = self, R = self.__reeme, op = op ~= nil and string.upper(op) or 'SELECT', builder = self.__builder, lastBindpos = 0 }
 			local alias = self.__fieldAlias
 			if alias then
 				q.aliasAB = alias.ab
@@ -645,6 +714,10 @@ local modelMeta = {
 
 			return setmetatable(q, queryMeta)
 		end,		
+		--建立一个执行表达式的查询器而忽略其它行或列
+		expression = function(self, expr)
+			return self:query():expr(expr):columns()
+		end,
 		
 		--按条件查找并返回所有的结果（其实不指定limit也是默认只是前50条而非真的全部），注意本函数返回为结果集实例而非结果行数组
 		find = function(self, p1, p2, p3, p4)
@@ -673,10 +746,22 @@ local modelMeta = {
 
 			return q:exec()
 		end,
+		--和find一样但是仅查找第1行，并且将自动利用主键。如果未定义主键，函数将直接报错
+		findBy = function(self, val)
+			assert(val ~= nil, 'call model.findBy with nil value')
 
-		--建立一个执行表达式的查询器而忽略其它行或列
-		expression = function(self, expr)
-			return self:query():expr(expr):columns()
+			local where = makeWhereByPrimaryCol(self, val)
+			if where then
+				local q = self:query()
+				q.__where = where
+				return q:limit(1):exec()
+			end
+
+			if where == false then
+				error('The must a primary key declared when call model.deleteBy')
+			else
+				error('call model.deleteBy with error value type')
+			end
 		end,
 		
 		--和find一样，只不过返回的是结果行而非结果集实例，并且在没有任何结果的时候也不会返回Nil而是返回一个空table
@@ -719,7 +804,7 @@ local modelMeta = {
 			if name then q:where(name, val) end
 			return q:fetchAllFirst(colname)
 		end,
-		
+				
 		--和find一样但是仅查找第1行，其实就是find加上limit(1)
 		findFirst = function(self, name, val)
 			local q = self:query()
@@ -745,40 +830,30 @@ local modelMeta = {
 			q.__where = where
 			return q
 		end,
-		--建立一个delete查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键，那么直接报错
+		--建立一个delete查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键或给出的值类型不对，直接报错
 		deleteBy = function(self, val)
 			assert(val ~= nil, 'call model.deleteBy with nil value')
-
-			for k,v in pairs(self.__fieldIndices) do
-				if v.type == 1 then
-					local q = self:query('DELETE')
-					local tp, field = type(val), self.__fields[k]
-					
-					if tp == 'table' then
-						assert(#val >= 1)
-						q.__where = table.concat({field.colname, val[1]}, ' ')
-						
-					elseif tp == 'cdata' then
-						local newv 
-						val, newv = string.checkinteger(val)
-						if newv then
-							q.__where = string.format('%s=%s', newv)
-						end
-					else
-						q.__where = string.format('%s=%s', tostring(val))
-					end
-					
-					q = q:limit(1):exec()
-					if q and q.rows == 1 then
-						return true
-					end
-					
-					return false
-				end
-			end
 			
-			error('the must a primary key declared first when call model.deleteBy')
+			local where = makeWhereByPrimaryCol(self, val)
+			if where then
+				local q = self:query('DELETE'):limit(1)
+				q.__where = where
+				q = q:exec()
+				
+				if q and q.rows == 1 then
+					return true
+				end	
+			end
+
+			if where == false then
+				error('The must a primary key declared when call model.deleteBy')
+			else
+				error('call model.deleteBy with error value type')
+			end
+
+			return false
 		end,
+		
 		--建立一个update查询器，必须给出要更新的值的集合。条件可以直接给出一个语句或不给，也可以用where/xxxWhere来给出
 		update = function(self, vals, where)
 			assert(type(vals) == 'table' or type(vals) == 'string')
@@ -787,6 +862,46 @@ local modelMeta = {
 			q.keyvals = vals
 			q.__where = where
 			return q
+		end,
+		--建立一个update查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键或给出的值类型不对，直接报错
+		updateBy = function(self, vals, val)
+			assert(val ~= nil, 'call model.updateBy with nil value')
+			
+			local where = makeWhereByPrimaryCol(self, val)
+			if where then
+				local q = self:query('UPDATE'):limit(1)
+				q.__where = where
+				q.keyvals = vals
+				q = q:exec()
+				
+				if q and q.rows == 1 then
+					return true
+				end	
+			end
+
+			if where == false then
+				error('The must a primary key declared when call model.updateBy')
+			else
+				error('call model.updateBy with error value type')
+			end
+
+			return false
+		end,
+		
+		--按照字段的名称对值进行包装
+		value = function(self, colname, value)
+			local v = nil
+			local b = self.builder
+			local cfg = self.__fields[colname]
+			
+			if cfg then
+				local fullop = b.fullop
+				b.fullop = true
+				v = b.wrapValue(cfg, value)
+				b.fullop = fullop
+			end
+			
+			return v
 		end,
 		
 		--按名称字段配置

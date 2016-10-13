@@ -510,7 +510,7 @@ local appMeta = {
 				--执行动作
 				if c and actionMethod then
 					r = actionMethod(c)
-					if r == nil or r == false then
+					if r == nil or r == false and c.__actionReturned then
 						r = c.__actionReturned
 					end
 
