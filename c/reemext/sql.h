@@ -38,6 +38,18 @@ static int lua_sql_expression_parse(lua_State* L)
 				prevpos = i;
 				kToken = TString;
 			}
+			else if (ch == '?')
+			{
+				prevpos = i;
+				while(sql[i + 1] == 3)
+					i ++;
+
+				lua_pushlstring(L, sql + prevpos, i - prevpos + 1);
+				lua_rawseti(L, r1, ++ cc);
+
+				lua_pushinteger(L, prevpos + 1);
+				lua_rawseti(L, r2, cc);
+			}
 			else if (ch == '*')
 			{
 				prevpos = i;

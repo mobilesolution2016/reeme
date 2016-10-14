@@ -313,8 +313,6 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 
 		if string.byte(lastToken, 1) == 63 then
 			--?�滻λ
-			assert(self.bindvals ~= nil, '? appeared in sql string, but bind values not setup')
-			
 			local bindpos
 			
 			if #lastToken == 1 then
@@ -326,8 +324,15 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 				bindpos = tonumber(string.sub(lastToken, 1))
 				self.lastBindpos = math.max(bindpos, self.lastBindpos)
 			end
-			
-			newone = self.bindvals[bindpos]
+
+			for i = 1, #allJoins do
+				local vals = allJoins[i].bindvals
+				if vals then
+					newone = tostring(vals[bindpos])
+					break
+				end
+			end
+
 			assert(newone ~= nil)
 			
 		else

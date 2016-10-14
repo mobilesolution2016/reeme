@@ -405,6 +405,7 @@ queryMeta = {
 		
 		--值绑定。不带参数调用为清空所有已经绑定的值，1个参数调用为按顺序（从1开始）绑定值，2个参数中第1个参数表示绑定的值的位置，第2个参数为值
 		--值需要自己处理好，如字符串，就需要带上''。如果没有把握，可以使用model的value函数对值进行自动的处理
+		--只能在一个model上执行bind函数，不要join的每一个model都分别的bind，会导致出问题
 		bind = function(self, a, b)
 			local bvals = self.bindvals
 			
@@ -428,21 +429,29 @@ queryMeta = {
 			else
 				self.bindvals = nil
 			end
-			
+
 			return self
 		end,
 		
 		--按照字段绑定值。本函数和bind功能是一样的，但是不支持清空已经绑定的值，且会自动的根据字段处理输入的值。所以参数colname是值对应的字段名称
 		bindfield = function(self, colname, a, b)
 			local v = self.m:value(colname, b or a)
+			if v == nil and self.aliasAB then
+				local n = self.aliasBA[colname]
+				if n then
+					v = self.m:value(, b or a)
+				end
+			end
 			if v ~= nil then
 				if b then
 					self:bind(a, v)
 				else
 					self:bind(v)
 				end
+			else
+				error("bindfield call with colname '%s' not exists", colname)
 			end
-			
+
 			return self
 		end,
 		
