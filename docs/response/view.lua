@@ -87,7 +87,16 @@ $(function() {
 </body>
 --]]
 --segment 上面就是使用这段模板的代码，query \ name_query_subtemplate表示引用名为name_query_subtemplate的这个模板，引用之后的名字为query。下面的query.css、query.init等就是将子模板中的
----各段代码引入来使用。query.html还给出了参数，参数中是一个由key=>value组成的table，这个table将被按照key是源字符串，value是目标字符串的对照关系替换掉模板代码解析完之后的字符串。
+---各段代码引入来使用。query.html还给出了参数，参数中是一个由key=>value组成的table，这个table将被按照key是源字符串，value是目标字符串的对照关系替换掉模板代码解析完之后的字符串。需要十
+---分注意的是，段模板和普通模板都是子模板，但如果使用{:name}来使用一个分段的模板的话，解析模板时是一定会出错的。因为模板解析后的结果必须是字符串，而段模板解析后的结果一个table，是完全
+---不同的值。因此，对段模板必须使用{:alias_name \ template_name}这样的方式来加载！而返过来将一个普通的子模板使用段模板的方式加载却是可以的。如下面的代码：
+--[[
+<!--引入了一个名为body_top的子模板，并将其赋于变量newname-->
+{:t \ body_top}
+
+<!--现在可以在模板代码的任何部分放置上面引用的子模板t-->
+{=t}
+--]]
 
 --segment 最后，再回头说一下模板内缓存。
 

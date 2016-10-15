@@ -1,6 +1,4 @@
-local s = nil
 local ffi = require('ffi')
-local cannotConnect = false
 
 local kLogDebug = 0
 local kLogVerbose = 1
@@ -21,28 +19,36 @@ ffi.cdef[[
 	} PckHeader;
 ]]
 
+local lastAddr = nil
+local cannotConnect = false
 local pckhd = ffi.new('PckHeader')
+local globalLogger, globalLoggerDummy = 0, 0
 
-local connect = function(reeme)
-	if cannotConnect then
-		return false
+local initConnect = function(reeme)
+	local addr = '127.0.0.1'
+	if reeme and getmetatable(reeme) then
+		addr = reeme('dslogger') or addr		
 	end
+	lastAddr = addr
+
+	local s = ngx.socket.tcp()	
+	s:settimeout(200)
 	
-	s = ngx.socket.tcp()
-	s:settimeout(100)
-	
-	local ok, err = s:connect(reeme('dslogger') or '127.0.0.1', 9880)
+	local ok, err = s:connect(addr, 9880)
 	if not ok then
+		_G['logger'] = globalLoggerDummy
 		cannotConnect = true
 		return false
-	end	
+	end		
 
 	local appname = ngx.var.APP_NAME
 	if appname and #appname > 0 then
 		pckhd.logType = kCmdSetName
 		pckhd.msgLeng = #appname
+		
 		s:send(ffi.string(pckhd, 4))
 		s:send(appname)
+		s:setkeepalive(7200000)
 	end
 	
 	return true
@@ -55,13 +61,31 @@ local sendmsg = function(t, ...)
 	pckhd.logType = t
 	pckhd.msgLeng = #msg
 
-	s:send(ffi.string(pckhd, 4))
+	local s = ngx.socket.tcp()	
+	s:settimeout(200)
+	
+	local ok, err = s:connect(lastAddr, 9880)
+	if err then
+		_G['logger'] = globalLoggerDummy
+		cannotConnect = true
+		return
+	end
+
+	ok, err = s:send(ffi.string(pckhd, 4))
+	if err then
+		_G['logger'] = globalLoggerDummy
+		cannotConnect = true
+		return
+	end
+	
 	if #msg > 0 then
 		s:send(msg)
 	end
+	
+	s:setkeepalive(7200000)
 end
 
-local globalLogger = {
+globalLogger = {
 	i = function(...)
 		sendmsg(kLogInfo, ...)
 	end,
@@ -84,10 +108,10 @@ local globalLogger = {
 		sendmsg(kCmdClear)
 	end,
 	close = function()
-		cannotConnect = true
+		_G['logger'] = globalLoggerDummy
 	end
 }
-local globalLoggerDummy = {
+globalLoggerDummy = {
 	i = function()
 	end,
 	e = function()
@@ -109,7 +133,7 @@ local globalLoggerDummy = {
 _G['logger'] = globalLoggerDummy
 
 setmetatable(globalLogger, { __call = function(self, ...)
-	if s then sendmsg(kLogInfo, ...) end
+	sendmsg(kLogInfo, ...)
 end})
 
 setmetatable(globalLoggerDummy, { __call = function()
@@ -118,19 +142,19 @@ end})
 return function(reeme, t)
 	local tp = type(reeme)
 	if tp == 'string' then
-		if s then sendmsg(t or kLogInfo, reeme) end
+		if not cannotConnect then
+			sendmsg(t or kLogInfo, reeme)
+		end
 	
 	elseif tp == 'table' then
-		if not s and connect(reeme) then
-			_G['logger'] = globalLogger
+		if initConnect then
+			if initConnect(reeme) then
+				_G['logger'] = globalLogger
+			end
+			initConnect = nil
 		end
 		
 	elseif not reeme then
-		if s then
-			s:close()
-			s = nil
-		end
-
 		_G['logger'] = globalLoggerDummy
 	end
 	

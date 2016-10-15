@@ -439,7 +439,7 @@ queryMeta = {
 			if v == nil and self.aliasAB then
 				local n = self.aliasBA[colname]
 				if n then
-					v = self.m:value(, b or a)
+					v = self.m:value(colname, b or a)
 				end
 			end
 			if v ~= nil then

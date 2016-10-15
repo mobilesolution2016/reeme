@@ -1639,9 +1639,9 @@ typedef MAP_CLASS_NAME<StringPtrKeyL, StringIndex> StringsPckMap;
 static const char templReturnCode[] = { "\nreturn __segcc__ > 0 and __segs__ or table.concat(__ret__, '')\nend" };
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
 static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
-static const char templErrTipCode[] = { ", the full template parsed code: <br/><br/>\r\n\r\n" };
+static const char templErrTipCode[] = { ", the full template parsed result: <br/><br/>\r\n\r\n" };
 static const char templSegDecl[] = { "__ret__, __segcc__, __segs__['" };
-static const char templSegAdd[] = { "'] = table.new(0, 32), __segcc__ + 1, table.concat(__ret__, '')\n" };
+static const char templSegAdd[] = { "'] = table.new(32, 0), __segcc__ + 1, table.concat(__ret__, '')\n" };
 static const char templInitCode[] = { 
 	"return function(self, __env__)\n"
 	"local __ret__, __segs__, __segcc__ = table.new(32, 0), table.new(0, 4), 0\n"
@@ -1673,7 +1673,7 @@ public:
 	const char			*savedPos;
 	const char			*errorStart;
 	char				mlsBegin[32], mlsEnd[32];
-	bool				bracketOpened;
+	bool				bracketOpened, hasSegments;
 
 	enum KeywordEndType {
 		KEND_NONE,
@@ -2131,6 +2131,7 @@ public:
 
 						foundPos = segnameEnd + 1;
 						offset = foundPos - src;
+						hasSegments = true;
 
 						open();
 						goto _lastcheck;
@@ -2219,6 +2220,7 @@ static void _init_TemplateParser(TemplateParser& parser, const char* src, size_t
 	parser.srcLen = srcLen;
 	parser.offset = 0;
 	parser.pck = 0;
+	parser.hasSegments = false;
 	parser.bracketOpened = false;
 	parser.wrote = sizeof(templInitCode) - 1;
 
@@ -2234,7 +2236,7 @@ static int lua_string_parsetemplate(lua_State* L)
 	const char* src = luaL_checklstring(L, 2, &srcLen);
 	const char* chunkName = "__templ_tempr__";	
 
-	int hasEnv = lua_istable(L, 3);
+	int envType = lua_type(L, 3);
 
 	_init_TemplateParser(parser, src, srcLen);
 	if (lua_isstring(L, 4))
@@ -2265,18 +2267,21 @@ static int lua_string_parsetemplate(lua_State* L)
 		parser.mlsLength ++;
 	}
 
-	if (hasEnv)
+	if (envType >= LUA_TNIL)
 	{
 		// env[0]可以是一个字符串包
-		int pops = 1;
-		lua_rawgeti(L, 3, 0);
-		if (lua_istable(L, -1))
+		if (envType == LUA_TTABLE)
 		{
-			lua_rawgeti(L, -1, 0);
-			parser.pck = (StringsPckMap*)lua_touserdata(L, -1);
-			pops = 2;
+			int pops = 1;
+			lua_rawgeti(L, 3, 0);
+			if (lua_istable(L, -1))
+			{
+				lua_rawgeti(L, -1, 0);
+				parser.pck = (StringsPckMap*)lua_touserdata(L, -1);
+				pops = 2;
+			}
+			lua_pop(L, pops);
 		}
-		lua_pop(L, pops);
 
 		// 载入解析后的代码
 		int r = lua_load(L, &lua_tpl_loader, &parser, chunkName);
@@ -2321,15 +2326,22 @@ static int lua_string_parsetemplate(lua_State* L)
 			if (r == 0)
 			{
 				assert(lua_isfunction(L, -1));
+				if (envType == LUA_TTABLE)
+				{
+					int top = lua_gettop(L);
 
-				int top = lua_gettop(L);
+					lua_pushvalue(L, 3);
+					lua_setfenv(L, top);
 
-				lua_pushvalue(L, 3);
-				lua_setfenv(L, top);
-
-				lua_pushvalue(L, 1);
-				lua_pushvalue(L, 3);
-				lua_pcall(L, 2, 1, 0);
+					lua_pushvalue(L, 1);
+					lua_pushvalue(L, 3);
+					lua_pcall(L, 2, 1, 0);
+				}
+				else
+				{
+					lua_pushboolean(L, parser.hasSegments ? 1 : 0);
+					return 2;
+				}
 			}
 		}
 	}

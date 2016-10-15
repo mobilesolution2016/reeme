@@ -215,81 +215,12 @@ end
 local getAppConfigs = function()
 	return configs
 end
-	
---print is use writes argument values into the nginx error.log file with the ngx.NOTICE log level
-local copybasees = {
-	statusCode = {
-		HTTP_CONTINUE = ngx.HTTP_CONTINUE, --100
-		HTTP_SWITCHING_PROTOCOLS = ngx.HTTP_SWITCHING_PROTOCOLS, --101
-		HTTP_OK = ngx.HTTP_OK, --200
-		HTTP_CREATED = ngx.HTTP_CREATED, --201
-		HTTP_ACCEPTED = ngx.HTTP_ACCEPTED, --202
-		HTTP_NO_CONTENT = ngx.HTTP_NO_CONTENT, --204
-		HTTP_PARTIAL_CONTENT = ngx.HTTP_PARTIAL_CONTENT, --206
-		HTTP_SPECIAL_RESPONSE = ngx.HTTP_SPECIAL_RESPONSE, --300
-		HTTP_MOVED_PERMANENTLY = ngx.HTTP_MOVED_PERMANENTLY, --301
-		HTTP_MOVED_TEMPORARILY = ngx.HTTP_MOVED_TEMPORARILY, --302
-		HTTP_SEE_OTHER = ngx.HTTP_SEE_OTHER, --303
-		HTTP_NOT_MODIFIED = ngx.HTTP_NOT_MODIFIED, --304
-		HTTP_TEMPORARY_REDIRECT = ngx.HTTP_TEMPORARY_REDIRECT, --307
-		HTTP_BAD_REQUEST = ngx.HTTP_BAD_REQUEST, --400
-		HTTP_UNAUTHORIZED = ngx.HTTP_UNAUTHORIZED, --401
-		HTTP_PAYMENT_REQUIRED = ngx.HTTP_PAYMENT_REQUIRED, --402
-		HTTP_FORBIDDEN = ngx.HTTP_FORBIDDEN, --403
-		HTTP_NOT_FOUND = ngx.HTTP_NOT_FOUND, --404
-		HTTP_NOT_ALLOWED = ngx.HTTP_NOT_ALLOWED, --405
-		HTTP_NOT_ACCEPTABLE = ngx.HTTP_NOT_ACCEPTABLE, --406
-		HTTP_REQUEST_TIMEOUT = ngx.HTTP_REQUEST_TIMEOUT, --408
-		HTTP_CONFLICT = ngx.HTTP_CONFLICT, --409
-		HTTP_GONE = ngx.HTTP_GONE, --410
-		HTTP_UPGRADE_REQUIRED = ngx.HTTP_UPGRADE_REQUIRED, --426
-		HTTP_TOO_MANY_REQUESTS = ngx.HTTP_TOO_MANY_REQUESTS, --429
-		HTTP_CLOSE = ngx.HTTP_CLOSE, --444
-		HTTP_ILLEGAL = ngx.HTTP_ILLEGAL, --451
-		HTTP_INTERNAL_SERVER_ERROR = ngx.HTTP_INTERNAL_SERVER_ERROR, --500
-		HTTP_METHOD_NOT_IMPLEMENTED = ngx.HTTP_METHOD_NOT_IMPLEMENTED, --501
-		HTTP_BAD_GATEWAY = ngx.HTTP_BAD_GATEWAY, --502
-		HTTP_GATEWAY_TIMEOUT = ngx.HTTP_GATEWAY_TIMEOUT, --504
-		HTTP_VERSION_NOT_SUPPORTED = ngx.HTTP_SERVICE_UNAVAILABLE, --505
-		HTTP_INSUFFICIENT_STORAGE = ngx.HTTP_INSUFFICIENT_STORAGE, --507
-	},
-	
-	method = {
-		HTTP_GET = ngx.HTTP_GET,
-		HTTP_HEAD = ngx.HTTP_HEAD,
-		HTTP_PUT = ngx.HTTP_PUT,
-		HTTP_POST = ngx.HTTP_POST,
-		HTTP_DELETE = ngx.HTTP_DELETE,
-		HTTP_OPTIONS = ngx.HTTP_OPTIONS,
-		HTTP_MKCOL = ngx.HTTP_MKCOL,
-		HTTP_COPY = ngx.HTTP_COPY,
-		HTTP_MOVE = ngx.HTTP_MOVE,
-		HTTP_PROPFIND = ngx.HTTP_PROPFIND,
-		HTTP_PROPPATCH = ngx.HTTP_PROPPATCH,
-		HTTP_LOCK = ngx.HTTP_LOCK,
-		HTTP_UNLOCK = ngx.HTTP_UNLOCK,
-		HTTP_PATCH = ngx.HTTP_PATCH,
-		HTTP_TRACE = ngx.HTTP_TRACE,
-	},
-	
-	logLevel = {
-		STDERR = ngx.STDERR,
-		EMERG = ngx.EMERG,
-		ALERT = ngx.ALERT,
-		CRIT = ngx.CRIT,
-		ERR = ngx.ERR,
-		WARN = ngx.WARN,
-		NOTICE = ngx.NOTICE,
-		INFO = ngx.INFO,
-		DEBUG = ngx.DEBUG,
-	},
-}
 
 local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, ffi_reflect = require('reeme.ffi_reflect') }
 local application = {
 	__index = function(self, key)
 		local reeme = self.__reeme
-		local f = self.__bases[key] or self.__users[key]
+		local f = self.__users[key] or self.__controler[key] or self.__bases[key]
 		if f then
 			rawset(reeme, key, f)
 			return f
@@ -378,17 +309,23 @@ local appMeta = {
 		end,
 		
 		--添加用户级自定义变量
-		addUsers = function(self, vals)
+		addUsers = function(self, n, v)
 			local u = self.users
-			for k,v in pairs(vals) do
-				u[k] = v
+			if type(n) == 'table' then
+				for k,v in pairs(n) do
+					u[k] = v
+				end
+			else
+				u[n] = v
 			end
 			return self
 		end,
 		
 		--设置所有控制器公共的父级
 		setControllerBase = function(self, tbl)
-			self.controllerBase = tbl
+			if type(tbl) == 'table' then
+				self.controllerBase = tbl
+			end
 			return self
 		end,
 		
@@ -412,11 +349,12 @@ local appMeta = {
 				local _, errmsg = pcall(function()
 					controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, path:gsub('/', '.')))
 				end)
-
-				if type(controlNew) == 'function' then
+				
+				if controlNew then
+					assert(type(controlNew) == 'function', string.format('Controller <%s> must return a function that can be create controller instance', path))
 					break
 				end
-				
+
 				--失败，则判断是否有errProc，如果有就执行
 				if self.errProc then
 					--这个函数可以返回新的path和act用于去加载。如果没有返回，那么就停止加载了
@@ -429,41 +367,25 @@ local appMeta = {
 					return nil, nil, true
 				end
 			end
-			
-			if type(controlNew) ~= 'function' then
-				error(string.format('controller %s must return a function that has action functions', path))
-			end
-			
-			local c = controlNew(act)			
+
+			local c = controlNew(act)
 			local cm = getmetatable(c)
 			local actionMethod = c[act .. 'Action']
 
-			local metacopy = { __index = { 
-				__reeme = c, 
-				__bases = self.controllerBase or {}, 
-				__users = self.users or {},
-				
-				statusCode = copybasees.statusCode,
-				method = copybasees.method,
-				logLevel = copybasees.logLevel,
-				getConfigs = getAppConfigs,
-				
-				currentControllerName = path,
-				currentRequestAction = act
-			} }
-			setmetatable(metacopy.__index, application)
-
-			if cm then
-				if type(cm.__index) == 'function' then
-					error(string.format("the __index of controller[%s]'s metatable must be a table", path))
-				end
-				
-				cm.__call = lazyLoaderProc
-				setmetatable(cm.__index, metacopy)
-			else
-				metacopy.__call = lazyLoaderProc
-				setmetatable(c, metacopy)
-			end
+			local meta = {
+				__index = {
+					__reeme = c,
+					__users = self.users,
+					__controler = getmetatable(c) or {},
+					__bases = self.controllerBase,
+					currentControllerName = path,
+					currentRequestAction = act,
+					getConfigs = getAppConfigs,
+				},
+				__call = lazyLoaderProc
+			}
+			setmetatable(meta.__index, application)
+			setmetatable(c, meta)
 
 			rawset(c, "_lazyLoaders", { })
 			
@@ -473,7 +395,7 @@ local appMeta = {
 		run = function(self)
 			local router = configs.router or require("reeme.router")
 			local path, act = router(ngx.var.uri)
-			local r, c, actionMethod
+			local r, c, actionMethod, metaidx
 
 			--载入控制器
 			c, actionMethod, r = self:loadController(path, act)
@@ -481,8 +403,8 @@ local appMeta = {
 				--halt it
 				return
 			end
-			
-			local ok, err = xpcall(function()			
+
+			local ok, err = xpcall(function()
 				if self.preProc then
 					--执行动作前响应函数
 					r = self.preProc(self, c, path, act, actionMethod)
@@ -501,12 +423,14 @@ local appMeta = {
 						actionMethod = nil
 						ngx.say(r)
 					end
-					
+
 				elseif not actionMethod then
 					--如果没有动作前响应函数又没有动作，那么就报错
 					error(string.format("the action %s of controller %s undefined", act, path))
 				end
-
+if act == 'topframe' then
+	print(tostring(self.users), ',', tostring(c.__users))
+end
 				--执行动作
 				if c and actionMethod then
 					r = actionMethod(c)
@@ -588,5 +512,5 @@ local appMeta = {
 }
 
 return function()
-	return setmetatable({ users = { } }, appMeta)
+	return setmetatable({ users = { }, controllerBase = { } }, appMeta)
 end
