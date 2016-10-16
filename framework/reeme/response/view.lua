@@ -6,7 +6,7 @@ local globalSectionCaches = nil
 --tpl为文件名，如果以/开头则表示绝对路径（绝对路径将被直接使用不会做任何修改），否则将会被加上views路径以及默认的view文件扩展名后再做为路径被使用
 local function getTemplatePathname(reeme, tpl)
 	if tpl:byte(1) ~= 47 then
-		local cfgs = reeme:getConfigs()
+		local cfgs = reeme.thisApp.configs
 		local dirs = cfgs.dirs
 		
 		return string.format("%s/%s/%s/%s%s", ngx.var.APP_ROOT, dirs.appBaseDir, dirs.viewsDir, tpl:replace('.', '/'), cfgs.viewFileExt)
@@ -49,11 +49,13 @@ local function convertSubSegName(segs)
 			segs[n] = setmetatable({ v }, subNameCallMeta)
 		end
 	end
+	
+	return segs
 end
 
 --载入子模板并解析后返回最终的HTML代码
 local function loadSubtemplate(self, env, name, envForSub)
-	local t, r
+	local t, r, ok, err
 	local restore = nil
 	local reeme = self.__reeme
 	
@@ -82,7 +84,15 @@ local function loadSubtemplate(self, env, name, envForSub)
 				r = r()
 			end
 
-			r = setfenv(r, env)(self, env)
+			ok, err = pcall(function() r = setfenv(r, env)(self, env) end)
+			if not ok then
+				--运行模板函数时出错，报错
+				t = loadTemplateFile(reeme, nil, pathname)
+				
+				rawset(env, '__sub_err_msg', err)
+				rawset(env, '__sub_err_fullcode', t and string.parseTemplate(self, t) or string.format('subtemplate "%s" its source file losted'))
+				error(err)
+			end
 		end
 	end
 
@@ -92,20 +102,30 @@ local function loadSubtemplate(self, env, name, envForSub)
 		if not t then
 			return string.format('subtemplate("%s") load failed', name)
 		end
-		r = string.parseTemplate(self, t, true)
 
-		--如果r是函数，那么说明模板解析过程没有出错
-		if type(r) == 'function' then			
+		r, err = string.parseTemplate(self, t, true)
+		if type(err) == 'string' then
+			error(string.format('Error when parsing subtemplate: %s <br/><br/>%s', name, err))
+		end		
+
+		assert(type(r) == 'function')
+
+		local forCachedFunc = r
+		ok, err = pcall(function() r = setfenv(r, env)(self, env) end)
+		if ok then
+			--运行模板函数正常，于是可以保存到全局缓存
 			if globalTplCaches then
-				globalTplCaches:set(reeme, pathname, r, 'loaded')
+				globalTplCaches:set(reeme, pathname, forCachedFunc, 'loaded')
 			end
-
-			r = setfenv(r, env)(self, env)
+			
 			if type(r) == 'table' then
 				convertSubSegName(r)
 			end
 		else
-			error(r)
+			--运行模板函数出错，报错
+			rawset(env, '__sub_err_msg', err)
+			rawset(env, '__sub_err_fullcode', string.parseTemplate(self, t))
+			error(err)
 		end
 	end
 
@@ -170,36 +190,51 @@ end
 --从源文件载入模板代码时所采用的渲染方式
 local sourceRenderMethods = {
 	debug = function(self, source, env)
-		local r = string.parseTemplate(self, source)
-		rawset(self, 'finalHTML', r)
-		return self
+		local r, err = string.parseTemplate(self, source)
+		rawset(self, 'finalHTML', type(err) == 'string' and err or r)
 	end,
 	overwrite = function(self, source, env)
-		local r = string.parseTemplate(self, source, env)
-		rawset(self, 'finalHTML', r)
-		return self
+		local r, err = string.parseTemplate(self, source, env)
+		rawset(self, 'finalHTML', type(err) == 'string' and err or r)
 	end,
 	append = function(self, source, env)
-		local r = string.parseTemplate(self, source, env)
-		rawset(self, 'finalHTML', table.concat({ rawget(self, 'finalHTML'), r }, ''))
-		return self
+		local r, err = string.parseTemplate(self, source, env)
+		rawset(self, 'finalHTML', table.concat({ rawget(self, 'finalHTML'), type(err) == 'string' and err or r }, ''))
 	end,
 }
 
 --从Cache中载入模板时所采用的渲染方式
+local function reportRunError(self, err)
+	local t = loadTemplateFile(self.__reeme, nil, self.tplPathname)
+	local matchs = ngx.re.match(err, '\\[string "([^"]+)"\\]:([\\d]+):')
+	local r = {
+		matchs and string.format('[string "%s"]:%d:%s', matchs[1], tonumber(matchs[2]) + 2, matchs[3]) or err,
+		t and string.parseTemplate(self, t) or string.format('template "%s" its source file losted')
+	}
+
+	rawset(self, 'finalHTML', table.concat(r, '<br/><br/>\r\n\r\n'))
+end
+
 local parsedRenderMethods = {
 	debug = function(self, source, env)	
-		return source
 	end,
 	overwrite = function(self, source, env)
-		local r = setfenv(source, env)(self, env)
-		rawset(self, 'finalHTML', r)
-		return self
+		local ok, err = pcall(function() 
+			local r = setfenv(source, env)(self, env)
+			rawset(self, 'finalHTML', r)
+		end)
+		if not ok then
+			reportRunError(self, err)
+		end
 	end,
 	append = function(self, source, env)
-		local r = setfenv(source, env)(self, env)
-		rawset(self, 'finalHTML', table.concat({ rawget(self, 'finalHTML'), r }, ''))
-		return self
+		local ok, err = pcall(function() 
+			local r = setfenv(source, env)(self, env)
+			rawset(self, 'finalHTML', table.concat({ rawget(self, 'finalHTML'), r }, ''))
+		end)
+		if not ok then
+			reportRunError(self, err)
+		end
 	end,
 }
 
@@ -218,7 +253,7 @@ viewMeta.__index = {
 		return rawget(self, 'sourceCode')
 	end,
 	
-	--启用模板分段缓存
+	--启用模板内缓存
 	enableCache = function(self, cachesTable)
 		if type(cachesTable) ~= 'table' then
 			error('enable template cache must pass a table for cache working')
@@ -227,7 +262,7 @@ viewMeta.__index = {
 		rawset(self, 'caches', cachesTable)
 		return self
 	end,
-	--关闭模板分段缓存
+	--关闭模板内缓存
 	disableCache = function(self)
 		rawset(self, 'caches', nil)
 		rawset(self, 'cacheiden', nil)
@@ -236,19 +271,14 @@ viewMeta.__index = {
 	
 	--参数2为所有的模板参数，参数3为nil表示重新渲染并且清除掉上一次的结果，否则将会累加在上一次的结果之后（如果本参数不是true而是string，那么将会做为join字符串放在累加的字符串中间）
 	render = function(self, env, method)
-		--如果没有source那么就无法渲染
-		local gblCaches = globalTplCaches
-		local methods = sourceRenderMethods
-		local src = rawget(self, 'sourceCode')
+		local gblCaches
+		local methods = parsedRenderMethods
+		local src = rawget(self, 'parsedTempl')
 		
 		if not src then
-			--没有源代码，那么判断是否是一个解析过的(缓存的)模板
-			gblCaches = nil
-			methods = parsedRenderMethods
-			src = rawget(self, 'parsedTempl')
-			if not src then
-				error('render view with no source code')
-			end
+			gblCaches = globalTplCaches
+			methods = sourceRenderMethods
+			src = rawget(self, 'sourceCode')
 		end
 
 		--构造vals，切换meta
@@ -275,7 +305,7 @@ viewMeta.__index = {
 			local r, segs = string.parseTemplate(self, src, true)
 			if type(r) == 'function' then
 				--入口模板不可以出现分段，分段只能用于子模板
-				if segs then
+				if segs == true then
 					error(string.format("render view '%s' failed: segments only can be used with subtemplate", self.tplPathname))
 				end
 
@@ -289,7 +319,7 @@ viewMeta.__index = {
 		end
 
 		--按方法执行
-		r = methods[method or 'overwrite'](self, src, env)
+		methods[method or 'overwrite'](self, src, env)
 		
 		--结束时的检测
 		if vals.__cachesecs__ and #vals.__cachesecs__ > 0 then
@@ -302,7 +332,7 @@ viewMeta.__index = {
 		end
 		meta, vals = nil, nil
 		
-		return r
+		return self
 	end,
 	
 	--获取render之后的内容

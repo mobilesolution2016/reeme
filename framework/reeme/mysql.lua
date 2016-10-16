@@ -62,7 +62,7 @@ local mysql = {
 			m = models[idxName]
 			if not m then
 				--模型还未存在，现在就加载
-				local cfgs = reeme:getConfigs()
+				local cfgs = reeme.thisApp.configs
 				local modelsDir = cfgs.dirs.modelsDir
 
 				if modelsDir:byte(1) == 47 then

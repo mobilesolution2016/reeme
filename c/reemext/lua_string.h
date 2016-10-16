@@ -1639,7 +1639,7 @@ typedef MAP_CLASS_NAME<StringPtrKeyL, StringIndex> StringsPckMap;
 static const char templReturnCode[] = { "\nreturn __segcc__ > 0 and __segs__ or table.concat(__ret__, '')\nend" };
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
 static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
-static const char templErrTipCode[] = { ", the full template parsed result: <br/><br/>\r\n\r\n" };
+static const char templErrTipCode[] = { "the full template parsed result: <br/><br/>\r\n\r\n" };
 static const char templSegDecl[] = { "__ret__, __segcc__, __segs__['" };
 static const char templSegAdd[] = { "'] = table.new(32, 0), __segcc__ + 1, table.concat(__ret__, '')\n" };
 static const char templInitCode[] = { 
@@ -2227,6 +2227,26 @@ static void _init_TemplateParser(TemplateParser& parser, const char* src, size_t
 	parser.buf.reserve(TP_FIXED);
 	parser.buf.append(templInitCode, parser.wrote);
 }
+static bool _replaceErrLine(luaL_Buffer* buf, const char* err, size_t len)
+{
+	if (strncmp(err, "[string ", 8))
+		return false;
+
+	const char* linepos = strstr(err, "]:");
+	if (!linepos)
+		return false;
+
+	char* pszContinue, lineBuf[32];
+	lua_string_addbuf(buf, err, linepos - err + 2);
+	long line = strtol(linepos + 2, &pszContinue, 10);
+
+	size_t lineLeng = sprintf(lineBuf, "%u", line + 2);
+	lua_string_addbuf(buf, lineBuf, lineLeng);
+
+	lua_string_addbuf(buf, pszContinue, len - (pszContinue - err));
+
+	return true;
+}
 static int lua_string_parsetemplate(lua_State* L)
 {
 	luaL_checktype(L, 1, LUA_TTABLE);
@@ -2293,57 +2313,103 @@ static int lua_string_parsetemplate(lua_State* L)
 			size_t left = std::min(srcLen - (parser.errorStart - parser.src), (size_t)60);
 			msg.append(parser.errorStart, left);
 
+			lua_pushlstring(L, "", 0);
 			lua_pushlstring(L, msg.c_str(), msg.length());
 		}
 		else if (r)
 		{
 			// 出错，将错误信息组合起来
-			size_t len = 0;
+_run_error:			
 			luaL_Buffer buf;
 			TemplateParser fullcode;
-			const char* err = lua_tolstring(L, -1, &len);
+			size_t len = 0, templateLen = 0;
+			const char* templateCode = NULL, *err = NULL;
 
-			_init_TemplateParser(fullcode, src, srcLen);					
-			
 			luaL_buffinit(L, &buf);
-			lua_string_addbuf(&buf, err, len);
+			_init_TemplateParser(fullcode, src, srcLen);
+
+			if (envType == LUA_TTABLE)
+			{
+				// 可能是子模板报出的错误
+				lua_pushliteral(L, "__sub_err_msg");
+				lua_rawget(L, 3);
+				err = lua_tolstring(L, -1, &len);
+				if (err)
+				{
+					lua_pushliteral(L, "__sub_err_fullcode");
+					lua_rawget(L, 3);
+					templateCode = lua_tolstring(L, -1, &templateLen);
+				}
+				else
+				{
+					lua_pop(L, 1);
+				}
+			}
+
+			if (!err)
+				err = lua_tolstring(L, -1, &len);
+			
+			if (len)
+			{
+				if (!_replaceErrLine(&buf, err, len))
+					lua_string_addbuf(&buf, err, len);
+				lua_string_addbuf(&buf, ", ", 2);
+			}
+
 			lua_string_addbuf(&buf, templErrTipCode, sizeof(templErrTipCode) - 1);
 
-			for (;;)
+			if (templateCode)
+			{ 
+				lua_string_addbuf(&buf, templateCode, templateLen);
+			}
+			else
 			{
-				const char* ss = lua_tpl_loader(L, &fullcode, &len);
-				if (!ss || len == 0)
-					break;
+				for (;;)
+				{
+					const char* ss = lua_tpl_loader(L, &fullcode, &len);
+					if (!ss || len == 0)
+						break;
 
-				lua_string_addbuf(&buf, ss, len);
+					lua_string_addbuf(&buf, ss, len);
+				}
 			}
 
 			luaL_pushresult(&buf);
+			lua_pushlstring(L, "", 0);			
+			lua_pushvalue(L, -2);
 		}
 		else if (lua_isfunction(L, -1))
 		{
 			r = lua_pcall(L, 0, 1, 0);
-			if (r == 0)
+			if (r)
+				goto _run_error;
+
+			assert(lua_isfunction(L, -1));
+			if (envType == LUA_TTABLE)
 			{
-				assert(lua_isfunction(L, -1));
-				if (envType == LUA_TTABLE)
-				{
-					int top = lua_gettop(L);
+				int top = lua_gettop(L);
 
-					lua_pushvalue(L, 3);
-					lua_setfenv(L, top);
+				lua_pushvalue(L, 3);
+				lua_setfenv(L, top);
 
-					lua_pushvalue(L, 1);
-					lua_pushvalue(L, 3);
-					lua_pcall(L, 2, 1, 0);
-				}
-				else
-				{
-					lua_pushboolean(L, parser.hasSegments ? 1 : 0);
-					return 2;
-				}
+				lua_pushvalue(L, 1);
+				lua_pushvalue(L, 3);
+				if (lua_pcall(L, 2, 1, 0))
+					goto _run_error;
+
+				lua_pushnil(L);
+			}
+			else
+			{
+				lua_pushboolean(L, parser.hasSegments ? 1 : 0);
 			}
 		}
+		else
+		{
+			assert(0 && "not possible");
+		}
+
+		return 2;
 	}
 	else
 	{

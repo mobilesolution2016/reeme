@@ -192,10 +192,9 @@ _G.int64, _G.uint64, _G.ffi = setmetatable(int64, { __call = function(self, a, b
 							  ffi
 
 -----------------------------------------------------------------------------------------------------------------------
---初始化全局变量logger，但不会真正产生连接，除非在外部通过self(reeme).log否则log客户端不会真的完成初始化
+--初始化全局变量logger，但不会真正产生连接，除非在外部第一次操作log
 require('reeme.log')
 
-local configs = nil
 local defConfigs = {
 	dirs = {
 		appBaseDir = 'app',
@@ -212,48 +211,8 @@ function error(e)
 	error_old({ msg = e })
 end
 
-local getAppConfigs = function()
-	return configs
-end
-
-local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, ffi_reflect = require('reeme.ffi_reflect') }
-local application = {
-	__index = function(self, key)
-		local reeme = self.__reeme
-		local f = self.__users[key] or self.__controler[key] or self.__bases[key]
-		if f then
-			rawset(reeme, key, f)
-			return f
-		end
-
-		f = loadables[key]
-		if f == 1 then
-			f = require('reeme.' .. key)
-			
-			local ft = type(f)
-			if ft == 'function' then
-				local r = f(reeme)
-
-				rawset(reeme, key, r)
-				loadables[key] = f
-				
-				return r
-			end
-			if ft == 'table' then
-				rawset(reeme, key, f)
-				return f
-			end
-
-		elseif f then
-			local r = type(f) == 'function' and f(reeme) or f
-			rawset(reeme, key, r)
-			return r
-		end		
-	end,
-}
-
-local function lazyLoaderProc(self, key, ...)
-	local lazyLoader = configs[key]
+local function doLazyLoader(self, key, ...)
+	local lazyLoader = self.thisApp.configs[key]
 	local tp = type(lazyLoader)
 	if tp == "table" then
 		local fget = lazyLoader.get
@@ -265,7 +224,7 @@ local function lazyLoaderProc(self, key, ...)
 					params = { ... },
 					r = r
 				}
-				rawget(self, "_lazyLoaders")[ffree] = loader
+				self.thisApp.lazyModules[ffree] = loader
 			end
 			return r
 		end
@@ -274,6 +233,83 @@ local function lazyLoaderProc(self, key, ...)
 		return lazyLoader(self, ...)
 	end
 end
+
+local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, ffi_reflect = require('reeme.ffi_reflect') }
+local ctlMeta = {
+	__index = function(self, key)
+		local f = rawget(rawget(self, -10000), key) or 
+				  rawget(self, -10001)[key] or 
+				  rawget(self, -10002)[key]
+		if f then
+			rawset(self, key, f)
+			return f
+		end
+
+		f = loadables[key]
+		if f == 1 then
+			f = require('reeme.' .. key)
+			
+			local ft = type(f)
+			if ft == 'function' then
+				local r = f(self)
+
+				rawset(self, key, r)
+				loadables[key] = f
+				
+				return r
+			end
+			if ft == 'table' then
+				rawset(self, key, f)
+				return f
+			end
+
+		elseif f then
+			local r = type(f) == 'function' and f(self) or f
+			rawset(self, key, r)
+			return r
+		end
+	end,
+
+	__call = doLazyLoader
+}
+
+local ctlMeta2 = {
+	__index = function(self, key)
+		local f = rawget(rawget(self, -10000), key) or 
+				  rawget(self, -10001)(self, key) or 
+				  rawget(self, -10002)[key]
+		if f then
+			rawset(self, key, f)
+			return f
+		end
+
+		f = loadables[key]
+		if f == 1 then
+			f = require('reeme.' .. key)
+			
+			local ft = type(f)
+			if ft == 'function' then
+				local r = f(self)
+
+				rawset(self, key, r)
+				loadables[key] = f
+				
+				return r
+			end
+			if ft == 'table' then
+				rawset(self, key, f)
+				return f
+			end
+
+		elseif f then
+			local r = type(f) == 'function' and f(self) or f
+			rawset(self, key, r)
+			return r
+		end
+	end,
+
+	__call = doLazyLoader
+}
 
 -----------------------------------------------------------------------------------------------------------------------
 local responseView = require('reeme.response.view')
@@ -290,25 +326,26 @@ end
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
-			if not configs then
-				configs = defConfigs
-				table.extend(configs, cfgs)
-			end
+			self.configs = table.extend(table.new(0, 8), defConfigs, cfgs)
 			return self
 		end,
+
+		config = function(self, name)
+			return name and self.configs[name] or self.configs
+		end,
 		
-		--响应某个方法
+		--设置响应方法
 		on = function(self, name, func)
 			local valids = { pre = 1, err = 1, denied = 1, missmatch = 1, tblfmt = 1, output = 1, ['end'] = 1 }
 			if type(func) == 'function' and valids[name] then
 				self[name .. 'Proc'] = func
 			else
-				error('Error for application.on function call')
+				error('Error for application.on function call with invalid name: ' .. name)
 			end
 			return self
 		end,
 		
-		--添加用户级自定义变量
+		--添加控制器外部用户变量
 		addUsers = function(self, n, v)
 			local u = self.users
 			if type(n) == 'table' then
@@ -329,19 +366,9 @@ local appMeta = {
 			return self
 		end,
 		
-		--启用全局模板缓存
-		setTemplateCache = function(self, cacheObj)
-			if cacheObj.get and (cacheObj.writeFunction or cacheObj.writeCode) then				
-				responseView('templatecache', cacheObj)
-			else
-				error('Error for application.setTemplateCache call, cache object invalid')
-			end
-			return self
-		end,
-		
 		--加载控制器，返回控制器实例和要执行的动作函数
 		loadController = function(self, path, act)
-			local dirs = configs.dirs
+			local dirs = self.configs.dirs
 			local controlNew = nil
 
 			while true do
@@ -368,34 +395,32 @@ local appMeta = {
 				end
 			end
 
+			--初始化
 			local c = controlNew(act)
-			local cm = getmetatable(c)
-			local actionMethod = c[act .. 'Action']
-
-			local meta = {
-				__index = {
-					__reeme = c,
-					__users = self.users,
-					__controler = getmetatable(c) or {},
-					__bases = self.controllerBase,
-					currentControllerName = path,
-					currentRequestAction = act,
-					getConfigs = getAppConfigs,
-				},
-				__call = lazyLoaderProc
-			}
-			setmetatable(meta.__index, application)
-			setmetatable(c, meta)
-
-			rawset(c, "_lazyLoaders", { })
+			local cmeta = getmetatable(c)
 			
-			return c, actionMethod
+			cmeta = cmeta and cmeta.__index or nil
+			if type(cmeta) == 'function' then
+				setmetatable(c, ctlMeta2)
+				rawset(c, -10001, cmeta)
+				
+			else
+				setmetatable(c, ctlMeta)
+				rawset(c, -10001, cmeta or {})
+			end
+			
+			rawset(c, -10000, self.users)
+			rawset(c, -10002, self.controllerBase)
+
+			rawset(c, 'thisApp', self)			
+
+			return c, c[act .. 'Action']
 		end,
-		
+
 		run = function(self)
-			local router = configs.router or require("reeme.router")
+			local router = self.configs.router or require("reeme.router")
 			local path, act = router(ngx.var.uri)
-			local r, c, actionMethod, metaidx
+			local r, c, actionMethod
 
 			--载入控制器
 			c, actionMethod, r = self:loadController(path, act)
@@ -404,6 +429,9 @@ local appMeta = {
 				return
 			end
 
+			self.currentControllerName = path
+			self.currentRequestAction = act
+					
 			local ok, err = xpcall(function()
 				if self.preProc then
 					--执行动作前响应函数
@@ -419,18 +447,18 @@ local appMeta = {
 						elseif r.method then
 							actionMethod = r.method
 						end
+						
 					elseif tp == 'string' then
 						actionMethod = nil
 						ngx.say(r)
 					end
-
-				elseif not actionMethod then
-					--如果没有动作前响应函数又没有动作，那么就报错
-					error(string.format("the action %s of controller %s undefined", act, path))
 				end
-if act == 'topframe' then
-	print(tostring(self.users), ',', tostring(c.__users))
-end
+				
+				if actionMethod and type(actionMethod) ~= 'function' then
+					--如果没有动作前响应函数又没有动作，那么就报错
+					error(string.format('the action "%s" of controller "%s" undefined or it is not a function', act, path))
+				end
+
 				--执行动作
 				if c and actionMethod then
 					r = actionMethod(c)
@@ -484,7 +512,7 @@ end
 			
 			--清理
 			if c then
-				local lazyLoaders = rawget(c, "_lazyLoaders")
+				local lazyLoaders = self.lazyModules
 				for ffree, loader in pairs(lazyLoaders) do
 					ffree(c, loader.r, loader.params)
 				end
@@ -512,5 +540,5 @@ end
 }
 
 return function()
-	return setmetatable({ users = { }, controllerBase = { } }, appMeta)
+	return setmetatable({ users = { }, controllerBase = { }, lazyModules = table.new(0, 4), currentControllerName = '', currentRequestAction = '', configs = defConfigs }, appMeta)
 end
