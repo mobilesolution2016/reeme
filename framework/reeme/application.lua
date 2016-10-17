@@ -275,9 +275,18 @@ local ctlMeta = {
 
 local ctlMeta2 = {
 	__index = function(self, key)
-		local f = rawget(rawget(self, -10000), key) or 
-				  rawget(self, -10001)(self, key) or 
-				  rawget(self, -10002)[key]
+		local f = rawget(rawget(self, -10000), key)
+		if f then
+			rawset(self, key, f)
+			return f
+		end
+		
+		f = rawget(self, -10001)(self, key)
+		if f then
+			return f
+		end
+		
+		f = rawget(self, -10002)[key]
 		if f then
 			rawset(self, key, f)
 			return f
@@ -399,17 +408,22 @@ local appMeta = {
 			local c = controlNew(act)
 			local cmeta = getmetatable(c)
 			
+			if not cmeta then
+				--直接使用c为meta table，在此创建一个controller实例
+				cmeta = c
+				c = table.new(0, 40)
+			end
+
 			cmeta = cmeta and cmeta.__index or nil
 			if type(cmeta) == 'function' then
 				setmetatable(c, ctlMeta2)
-				rawset(c, -10001, cmeta)
-				
 			else
+				assert(type(cmeta) == 'table', 'The returned value for creator function of controller only can be function|table')				
 				setmetatable(c, ctlMeta)
-				rawset(c, -10001, cmeta or {})
 			end
 			
 			rawset(c, -10000, self.users)
+			rawset(c, -10001, cmeta)
 			rawset(c, -10002, self.controllerBase)
 
 			rawset(c, 'thisApp', self)			

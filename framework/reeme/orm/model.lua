@@ -434,7 +434,7 @@ queryMeta = {
 		end,
 		
 		--按照字段绑定值。本函数和bind功能是一样的，但是不支持清空已经绑定的值，且会自动的根据字段处理输入的值。所以参数colname是值对应的字段名称
-		bindfield = function(self, colname, a, b)
+		bindname = function(self, colname, a, b)
 			local v = self.m:value(colname, b or a)
 			if v == nil and self.aliasAB then
 				local n = self.aliasBA[colname]
@@ -449,7 +449,7 @@ queryMeta = {
 					self:bind(v)
 				end
 			else
-				error("bindfield call with colname '%s' not exists", colname)
+				error("model.bindname call with colname '%s' not exists", colname)
 			end
 
 			return self

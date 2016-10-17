@@ -21,9 +21,11 @@ builder.conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }
 builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN' }
 
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
-local function buildSqlValue(self, cfg, v)
+--第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定
+local function buildSqlValue(self, cfg, v)	
 	local tp = type(v)
-	local model = self.m
+	local suggCon = '='
+	local model = self.m	
 	local op = allOps[self.op]
 	local quoteIt, multiVals = false, false
 
@@ -41,7 +43,7 @@ local function buildSqlValue(self, cfg, v)
 		
 	elseif v == ngx.null then
 		--NULL值直接设置
-		v = 'NULL'
+		v, suggCon = 'NULL', ' IS '
 		
 	elseif tp == 'table' then	
 		--table类型则根据meta来进行判断是什么table
@@ -50,17 +52,25 @@ local function buildSqlValue(self, cfg, v)
 		if mt == datetimeMeta then
 			--日期时间
 			v = ngx.quote_sql_str(tostring(v))
+			
 		elseif mt == queryMeta then	
 			--子查询
-			error('Cannot support sub-query in key=>value(s) set')
-			
-		elseif #v == 1 then
+			v.limitStart, v.limitTotal = nil, nil
+			local subsql = builder.SELECT(v, v.m, self.db)
+			if subsql then				
+				v = table.concat({ '(', subsql, ')' }, '')
+			else
+				v = '(error build sql for sub-query)'
+			end
+
+		elseif #v == 1 then		
 			v = v[1]
 			tp = type(v)
+			quoteIt = true
 			
 		elseif #v > 1 then
 			--表达式或多值			
-			multiVals = true
+			multiVals, suggCon = true, ''
 		else
 			return nil
 		end
@@ -130,7 +140,7 @@ local function buildSqlValue(self, cfg, v)
 		end
 	end
 	
-	return v
+	return v, suggCon
 end
 
 builder.wrapValue = buildSqlValue
@@ -151,57 +161,23 @@ builder.parseWhere = function(self, condType, name, value)
 		return { expr = value, c = condType }
 	end
 	
-	name = name:trim()
+	name = name:trim()	
 	
-	local keyname, puredkeyname, findpos = nil, false, 1
-	while true do
-		--找到第一个不是mysql函数的名字时停止
-		keyname, findpos = _findToken(name, findpos)
-		if not keyname then
-			keyname = nil
-			break
-		end
-		if not mysqlwords[keyname] then
-			break
-		end
+	local purekn = false
+	local r = ngx.re.match(name, '^[\\w-]+(.[\\w-]+)?$', 'o')
+	if r and (r[1] or not mysqlwords[r[0]]) then
+		purekn = true
 	end
 
-	if keyname and #keyname == #name then
-		--key没有多余的符号，只是一个纯粹的列名
-		puredkeyname = true		
-	end
-	
-	local tv = type(value)
-	if tv == 'table' then
+	if type(value) == 'table' then
 		local mt = getmetatable(value)
 		if mt == queryMeta then
 			--子查询
-			return { puredkeyname = puredkeyname, n = name, sub = value, c = condType }
+			return { purekn = purekn, n = name, sub = value, c = condType }
 		end
-		
-		if mt == datetimeMeta then
-			--日期类型
-			value = tostring(value)
-			return { expr = puredkeyname and string.format('%s=%s', name, value) or value, c = condType }
-		end
-		
-		--{value}这种表达式
-		if puredkeyname and #value == 1 then
-			return { expr = string.format('%s=%s', name, value[1]), c = condType }
-		end
-
-		--多值的话直接保存，后面再处理
-		return { expr = name, value = value, c = condType }
-
-	elseif value == ngx.null then
-		--设置为null值
-		return { expr = puredkeyname and string.format('%s IS NULL', name) or (name .. 'NULL'), c = condType }
 	end
 
-	if type(name) == 'string' then
-		--key=value
-		return { puredkeyname = puredkeyname, expr = name, value = value, c = condType }
-	end
+	return { purekn = purekn, expr = name, value = value, c = condType }
 end
 
 --处理where函数带来的条件
@@ -295,11 +271,17 @@ builder.processOn = function(self, condType, k, v)
 end
 
 --解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
-builder.processTokenedString = function(self, alias, expr, allJoins)
-	local tokens, poses = _parseExpression(expr)
-	if not tokens or not poses then
-		return expr
-	end	
+builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
+	local tokens, poses
+	if purekn then
+		tokens = { expr }
+		poses = { 1 }
+	else
+		tokens, poses = _parseExpression(expr)
+		if not tokens or not poses then
+			return expr
+		end	
+	end
 	
 	--逐个token的循环进行处理
 	local sql, adjust = expr, 0
@@ -314,7 +296,7 @@ builder.processTokenedString = function(self, alias, expr, allJoins)
 		if string.byte(lastToken, 1) == 63 then
 			--?替换位
 			local bindpos
-			
+
 			if #lastToken == 1 then
 				--没有指定位置的替换位
 				bindpos = self.lastBindpos + 1
@@ -496,7 +478,7 @@ builder.UPDATE = function(self, db)
 	if not builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins) then
 		if type(self.__where) == 'string' then
 			sqls[#sqls + 1] = 'WHERE'
-			sqls[#sqls + 1] = builder.processTokenedString(self, alias, self.__where, allJoins)
+			sqls[#sqls + 1] = builder.processTokenedString(self, alias, self.__where, false, allJoins)
 		else
 			--find primary key
 			local haveWheres = false
@@ -570,7 +552,7 @@ builder.DELETE = function(self)
 	if not builder.buildWheres(self, sqls, 'WHERE', '', nil, allJoins) then
 		if type(self.__where) == 'string' then
 			sqls[#sqls + 1] = 'WHERE'
-			sqls[#sqls + 1] = builder.processTokenedString(self, '', self.__where, allJoins)
+			sqls[#sqls + 1] = builder.processTokenedString(self, '', self.__where, false, allJoins)
 		else
 			--find primary or unique
 			local haveWheres = false
@@ -765,7 +747,7 @@ builder.buildKeyValuesSet = function(self, sqls, alias)
 	local fieldCfgs = self.colSelects == nil and model.__fields or self.colSelects
 
 	for name,v in pairs(vals) do
-		if string.countchars(name, '0123456789') == #name then
+		if type(name) == 'number' or string.countchars(name, '0123456789') == #name then
 			keyvals[#keyvals + 1] = v
 		else
 			name = colAlias[name] or name
@@ -830,11 +812,11 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				local subq = one.sub
 				subq.limitStart, subq.limitTotal = nil, nil
 				
-				local expr = builder.processTokenedString(self, alias, one.n, allJoins)				
+				local expr = builder.processTokenedString(self, alias, one.n, false, allJoins)
 				local subsql = builder.SELECT(subq, subq.m, self.db)
 				
 				if subsql then
-					if one.puredkeyname then
+					if one.purekn then
 						rsql = string.format('%s%s IN(%s)', conds[onecond], expr, subsql)
 					else
 						rsql = string.format('%s%s(%s)', conds[onecond], expr, subsql)
@@ -850,26 +832,22 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				rsql = one.expr
 			else
 				--按照表达式进行解析
-				local lastToken
-				
+				local lastToken, suggCon
+
 				merges[1] = conds[onecond]
-				merges[2], fieldCfg, lastToken = builder.processTokenedString(self, alias, one.expr, allJoins)
+				merges[2], fieldCfg, lastToken = builder.processTokenedString(self, alias, one.expr, one.purekn, allJoins)
 
 				if one.value then
 					assert(fieldCfg ~= nil, string.format("Field not exists! table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
 
-					merges[4] = buildSqlValue(self, fieldCfg, one.value)
+					merges[4], suggCon = buildSqlValue(self, fieldCfg, one.value)
 					if merges[4] then						
 						if mysqlwords[lastToken] == 1 then
 							--最后一个token是函数的调用，因此自动的加上括号（此种情况下是不会写有括号的，如果写括号的肯定就是完整表达式，代码是不会运行到这里的）
-							merges[3] = '('
-							merges[5] = ')'
-						elseif one.puredkeyname and type(one.value) ~= 'table' then
-							--一个纯字段名，后面又没有使用原始值，因此加上一个等于号
-							merges[3] = '='
-							merges[5] = ''
+							merges[3], merges[5] = '(', ')'
 						else
-							merges[3], merges[5] = '', nil
+							--如果expr是一个纯字段名，那就要加上建议的连接符号
+							merges[3], merges[5] = one.purekn and suggCon or '', nil
 						end
 
 						rsql = table.concat(merges, '')

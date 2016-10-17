@@ -3,7 +3,7 @@
 	set函数的最后一个参数tp是表明v是个什么类型的值，可能出现的字符串值如下：
 	'loaded' 表示这个v已经是一个经过了loadstring加载过后的函数，该函数只要给出self和env调用就可以完成模板的解析
 	'parsed' 表示这个v是一个刚刚经过了parseTemplate翻译后的字符串，也就是Lua代码，需要使用loadstring函数来进行加载后才能使用
-	
+
 	而get函数返回为双值，第二个值用于描述第一个是什么类型的值，除了可以是上面的两种值之外还可以是下面的：
 	'b-code' 表示返回值是一个string.dump出来的字符串，直接使用loadstring就可以加载，会得到一个函数，和set时传入的函数一样
 	
@@ -22,6 +22,9 @@
 		本模式下，是否开启线程内函数级缓存是没有区别的
 			不使用缓存 = 0.267s
 			使用缓存   = 0.023s
+			
+	上面的结果将会随着模板的复杂程度而逐渐拉开更大的差距（测试所使用的模板为25KB左右），如果模板的内容比较复杂，尤其是需要解析
+	的内容比较多（比如还含有语言包且大量被使用）的话，那差距还会进一步加大。所以使用模板缓存在产品期是非常有必要的。
 ]]
 
 local cacheFuncs = table.new(0, 128)
@@ -30,14 +33,15 @@ return function(sharedName)
 	local setfunc = require('reeme.response.view')
 	
 	if sharedName then
+		local caches = ngx.shared[sharedName]
+		
 		setfunc('templatecache', {
 			get = function(self, reeme, name)
 				local r = cacheFuncs[name]
 				if r then
 					return r, 'loaded'
 				end
-
-				local caches = ngx.shared[sharedName]
+				
 				if caches then
 					r = caches:get(name)
 					if r then
@@ -54,7 +58,6 @@ return function(sharedName)
 			end,
 
 			set = function(self, reeme, name, v, tp)
-				local caches = ngx.shared[sharedName]
 				if tp == 'loaded' then
 					local r = { 'b-code', string.dump(v) }
 					caches:set(name, table.concat(r, ''))

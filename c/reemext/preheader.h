@@ -40,8 +40,26 @@
 #	define TCHAR char
 
 #   include <sys/time.h>
+#   include <sys/types.h>
+#   include <sys/socket.h>
+#   include <sys/ioctl.h>
+#   include <sys/uio.h>
+#   include <arpa/inet.h>
+#   include <netinet/in.h>
+#   include <netinet/ip.h>
+#   include <netinet/udp.h>
 #	include <unordered_map>
 #	include <unordered_set>
+#   include <unistd.h>
+#   include <netdb.h>
+
+#   define SOCKET int
+#   define SD_BOTH 2
+#   define SOCKET_ERROR 0
+#   define INVALID_SOCKET (int)(~0)
+#   define closesocket close
+#   define SOCKADDR struct sockaddr
+#   define SOCKADDR_IN struct sockaddr_in
 
 #	define MAP_CLASS_NAME std::unordered_map
 #	define SET_CLASS_NAME std::unordered_set
