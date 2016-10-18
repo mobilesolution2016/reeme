@@ -890,11 +890,11 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 					merges[4], suggCon = buildSqlValue(self, fieldCfg, one.value)
 
 					if merges[4] then
-						if suggConn == nil then
+						merges[3] = ''
+						if suggCon == nil then
 							--解析表达式
-							merges[3], merges[4] = one.purekn and '=' or '', builder.processTokenedString(self, alias, merges[4], false, allJoins)
-						else
-							merges[3] = ''
+							merges[4] = builder.processTokenedString(self, alias, merges[4], false, allJoins)				
+							suggCon = '='
 						end
 
 						if mysqlwords[lastToken] --[[and string.byte(one.expr, #one.expr) ~= 40 ]]then
