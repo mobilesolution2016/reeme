@@ -101,7 +101,7 @@ static int connectToDeamon(lua_State* L, void* processHandle, const char* host, 
 
 	if (processHandle)
 	{
-		// �ȵȴ�100ms���ң��ȴ��������ɳ�ʼ���������ظ����������˳������ೢ��5��
+		// 先等待100ms左右，等待进程完成初始化，或是重复的启动而退出，最多尝试5次
 		for(int i = 0; i < 5; ++ i)
 		{
 #ifdef _WINDOWS
@@ -134,22 +134,22 @@ static int lua_start_deamon(lua_State* L)
 {
 	if (gDeamonSock != INVALID_SOCKET)
 	{
-		// �Ѿ�������
+		// 已经连上了
 		lua_pushboolean(L, 1);
 		return 1;
 	}
 
-	// taskdeamonִ���ļ���·��
+	// taskdeamon执行文件的路径
 	size_t len = 0, pathLen = 0;
 	const char* deamonPath = lua_isstring(L, 1) ? luaL_checklstring(L, 1, &pathLen) : 0;
 	const char* args = 0, *host = "127.0.0.1";
 	unsigned short port = 5918;
 
-	// ��������
+	// 启动参数
 	int t = lua_type(L, 2), v = 0;
 	if (t == LUA_TTABLE)
 	{
-		// �����Ǹ�table��������Ϊjson�ַ���
+		// 如果是个table，则编码为json字符串
 		lua_getglobal(L, "require");
 		lua_pushliteral(L, "cjson.safe");
 		lua_pcall(L, 1, 1, 0);
@@ -166,7 +166,7 @@ static int lua_start_deamon(lua_State* L)
 	}
 	else if (t == LUA_TSTRING)
 	{
-		// �����Ǹ�json�ַ�����������Ϊtable����Ϊ��Ҫ���л�ȡ����
+		// 如果是个json字符串，则解码为table，因为需要从中获取参数
 		lua_getglobal(L, "string");
 		lua_getfield(L, -1, "json");
 		lua_pushvalue(L, 2);
@@ -177,7 +177,7 @@ static int lua_start_deamon(lua_State* L)
 	}
 	else if (t == LUA_TNIL)
 	{
-		// ����Ϊnil����ȫ��ʹ��Ĭ�ϲ���
+		// 允许为nil，以全部使用默认参数
 		t = LUA_TSTRING;
 		args = "{}";
 		len = 2;
@@ -187,7 +187,7 @@ static int lua_start_deamon(lua_State* L)
 
 	if (v)
 	{
-		// ��ȡ��Ҫ����
+		// 获取必要参数
 		lua_getfield(L, v, "listen");
 		if (lua_istable(L, -1))
 		{
@@ -206,7 +206,7 @@ static int lua_start_deamon(lua_State* L)
 	gDeamongStarting = true;
 
 #ifdef _WINDOWS
-	// ��Windows��ʹ��shellexecute������taskdeamon.exe
+	// 在Windows上使用shellexecute来启动taskdeamon.exe
 	std::wstring strExe, strCmd;
 
 	int cchPath = MultiByteToWideChar(CP_UTF8, 0, deamonPath, pathLen, 0, 0);
@@ -215,7 +215,7 @@ static int lua_start_deamon(lua_State* L)
 	strExe.resize(cchPath);
 	strCmd.resize(cchCmd + 5);
 
-	// �����ǲ���2�������ַ����Ļ������п�����һ���ļ���
+	// 如果是参数2输入是字符串的话，则有可能是一个文件名
 	if (t == LUA_TSTRING && GetFileAttributesA(args))
 		strCmd = L"file:";
 	else
@@ -227,7 +227,7 @@ static int lua_start_deamon(lua_State* L)
 
 	if (pathLen == 0)
 	{
-		// û��ָ��·������ô���õ�ǰģ�����ڵ�·�����൱��Ĭ��taskdeamon.exe��reemext.dll����ͬһ��Ŀ¼�µ�
+		// 没有指定路径，那么就用当前模块所在的路径，相当于默认taskdeamon.exe和reemext.dll是在同一个目录下的
 		wchar_t szThisModule[512] = { 0 };
 		DWORD cchModule = GetModuleFileNameW(GetModuleHandle(L"reemext"), szThisModule, 512);
 
@@ -318,7 +318,7 @@ static int lua_request_deamon(lua_State* L)
 	int r = 0;
 	if (posts && len)
 	{
-		// �ȷ�ͷ
+		// 先发头
 		PckHeader hd;
 		hd.bodyLeng = len;
 		hd.crc32 = CRC32Check(posts, len);
@@ -328,7 +328,7 @@ static int lua_request_deamon(lua_State* L)
 
 		if (send(gDeamonSock, (const char*)&hd, sizeof(hd), 0) == SOCKET_ERROR)
 		{
-			// ���ӿ��ܶ��ˣ���������
+			// 连接可能断了，于是重连
 			socketClose();
 
 			if (!socketConnect())
@@ -354,17 +354,17 @@ REEME_API int luaopen_reemext(lua_State* L)
 {
 	initCommonLib(L);
 
-	// ��������չ����ע��Ϊmeta table���ṩmeta table���Һ���
+	// 将部分扩展函数注册为meta table并提供meta table查找函数
 	static luaL_Reg cExtProcs[] = {
 		{ "sql_expression_parse", &lua_sql_expression_parse },
 		{ "start_deamon", &lua_start_deamon },
 		{ "connect_deamon", &lua_connect_deamon },
 		{ "request_deamon", &lua_request_deamon },
 
-		// ��ָ����λ�ÿ�ʼȡһ����
+		// 从指定的位置开始取一个词
 		{ "find_token", lua_sql_findtoken },
 
-		// ��boxed int64ֱ��ת��void*�ͣ��Ա�֤��ͬcdata int64��ֵΨһ
+		// 将boxed int64直接转成void*型，以保证不同cdata int64的值唯一
 		{ "int64ltud", &lua_uint64_tolightuserdata },
 
 		{ NULL, NULL }

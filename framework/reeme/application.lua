@@ -1,14 +1,10 @@
---一些扩展函数
-local ffi = require('ffi')
-local reemext = ffi.load('reemext')
-local int64Buf = ffi.new('char[?]', 32)
-local cExtLib = findmetatable('REEME_C_EXTLIB')
-
+--crt functions & ffi.load modify
+local ffi, reemext = require('ffi'), nil
 local ffiload = ffi.load
+
 local newffiload = function(name)
-	local paths = string.split(package.cpath, ';')
-	for i = 1, #paths do
-		local h = string.replace(paths[i], '?', name)
+	for path in string.gmatch(package.cpath, '([^;]+)') do
+		local h = string.gsub(path, '?', name)
 		if ffi.C.access(h, 0) == 0 then
 			h = ffiload(h)
 			if h then
@@ -24,10 +20,10 @@ if ffi.abi('win') then
 		int strcasecmp(const char*, const char*) __asm__("_stricmp");
 		int strncmp(const char*, const char*, size_t);
 		int strncasecmp(const char*, const char*, size_t) __asm__("_strnicmp");
-		
+
 		int access(const char *, int) __asm__("_access");
 	]]
-	
+
 	ffi.load = function(name)
 		local h
 		local ok = pcall(function()
@@ -44,26 +40,31 @@ else
 		int strcasecmp(const char*, const char*);
 		int strncmp(const char*, const char*, size_t);
 		int strncasecmp(const char*, const char*, size_t);
-		
+
 		int access(const char *, int);
 	]]
-	
+
 	ffi.load = function(name)
 		local h
 		local ok = pcall(function()
 			h = ffiload(name)
 		end)
 		if not h and string.byte(name, 1) ~= 47 then
-			return newffiload(name)
+			return newffiload('lib' .. name)
 		end
 		return h
 	end
 end
 
+--reemext c module
+local reemext = ffi.load('reemext') or error('Load reemext c module failed')
+require('libreemext.so')
+local cExtLib = findmetatable('REEME_C_EXTLIB')
+
 ffi.cdef[[
 	int strcspn(const char*, const char*);
 	int strspn(const char*, const char*);
-	
+
 	int64_t str2int64(const char* str);
 	uint64_t str2uint64(const char* str);
 	uint32_t cdataisint64(const char* str, size_t len);
@@ -76,6 +77,7 @@ ffi.cdef[[
 	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);
 ]]
 
+--lua standard library extends
 _G.table.unique = function(tbl)
 	local cc = #tbl
 	local s, r = table.new(0, cc), table.new(cc, 0)
@@ -123,12 +125,13 @@ strlib.cmp = function(a, b, c, d)
 			return true
 		end
 	end
-	
+
 	return false
 end
 strlib.spn = ffi.C.strspn
 strlib.cspn = ffi.C.strcspn
 
+local int64Buf = ffi.new('char[?]', 32)
 local int64construct = function(a, b)
 	local t = type(a)
 	if t == 'string' then a = reemext.str2int64(a)
@@ -237,8 +240,8 @@ end
 local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, ffi_reflect = require('reeme.ffi_reflect') }
 local ctlMeta = {
 	__index = function(self, key)
-		local f = rawget(rawget(self, -10000), key) or 
-				  rawget(self, -10001)[key] or 
+		local f = rawget(rawget(self, -10000), key) or
+				  rawget(self, -10001)[key] or
 				  rawget(self, -10002)[key]
 		if f then
 			rawset(self, key, f)
@@ -248,14 +251,14 @@ local ctlMeta = {
 		f = loadables[key]
 		if f == 1 then
 			f = require('reeme.' .. key)
-			
+
 			local ft = type(f)
 			if ft == 'function' then
 				local r = f(self)
 
 				rawset(self, key, r)
 				loadables[key] = f
-				
+
 				return r
 			end
 			if ft == 'table' then
@@ -280,12 +283,12 @@ local ctlMeta2 = {
 			rawset(self, key, f)
 			return f
 		end
-		
+
 		f = rawget(self, -10001)(self, key)
 		if f then
 			return f
 		end
-		
+
 		f = rawget(self, -10002)[key]
 		if f then
 			rawset(self, key, f)
@@ -295,14 +298,14 @@ local ctlMeta2 = {
 		f = loadables[key]
 		if f == 1 then
 			f = require('reeme.' .. key)
-			
+
 			local ft = type(f)
 			if ft == 'function' then
 				local r = f(self)
 
 				rawset(self, key, r)
 				loadables[key] = f
-				
+
 				return r
 			end
 			if ft == 'table' then
@@ -342,7 +345,7 @@ local appMeta = {
 		config = function(self, name)
 			return name and self.configs[name] or self.configs
 		end,
-		
+
 		--设置响应方法
 		on = function(self, name, func)
 			local valids = { pre = 1, err = 1, denied = 1, missmatch = 1, tblfmt = 1, output = 1, ['end'] = 1 }
@@ -353,7 +356,7 @@ local appMeta = {
 			end
 			return self
 		end,
-		
+
 		--添加控制器外部用户变量
 		addUsers = function(self, n, v)
 			local u = self.users
@@ -366,7 +369,7 @@ local appMeta = {
 			end
 			return self
 		end,
-		
+
 		--设置所有控制器公共的父级
 		setControllerBase = function(self, tbl)
 			if type(tbl) == 'table' then
@@ -374,7 +377,7 @@ local appMeta = {
 			end
 			return self
 		end,
-		
+
 		--加载控制器，返回控制器实例和要执行的动作函数
 		loadController = function(self, path, act)
 			local dirs = self.configs.dirs
@@ -385,7 +388,7 @@ local appMeta = {
 				local _, errmsg = pcall(function()
 					controlNew = require(string.format('%s.%s.%s', dirs.appBaseDir, dirs.controllersDir, path:gsub('/', '.')))
 				end)
-				
+
 				if controlNew then
 					assert(type(controlNew) == 'function', string.format('Controller <%s> must return a function that can be create controller instance', path))
 					break
@@ -407,7 +410,7 @@ local appMeta = {
 			--初始化
 			local c = controlNew(act)
 			local cmeta = getmetatable(c)
-			
+
 			if not cmeta then
 				--直接使用c为meta table，在此创建一个controller实例
 				cmeta = c
@@ -418,15 +421,15 @@ local appMeta = {
 			if type(cmeta) == 'function' then
 				setmetatable(c, ctlMeta2)
 			else
-				assert(type(cmeta) == 'table', 'The returned value for creator function of controller only can be function|table')				
+				assert(type(cmeta) == 'table', 'The returned value for creator function of controller only can be function|table')
 				setmetatable(c, ctlMeta)
 			end
-			
+
 			rawset(c, -10000, self.users)
 			rawset(c, -10001, cmeta)
 			rawset(c, -10002, self.controllerBase)
 
-			rawset(c, 'thisApp', self)			
+			rawset(c, 'thisApp', self)
 
 			return c, c[act .. 'Action']
 		end,
@@ -445,7 +448,7 @@ local appMeta = {
 
 			self.currentControllerName = path
 			self.currentRequestAction = act
-					
+
 			local ok, err = xpcall(function()
 				if self.preProc then
 					--执行动作前响应函数
@@ -461,13 +464,13 @@ local appMeta = {
 						elseif r.method then
 							actionMethod = r.method
 						end
-						
+
 					elseif tp == 'string' then
 						actionMethod = nil
 						ngx.say(r)
 					end
 				end
-				
+
 				if actionMethod and type(actionMethod) ~= 'function' then
 					--如果没有动作前响应函数又没有动作，那么就报错
 					error(string.format('the action "%s" of controller "%s" undefined or it is not a function', act, path))
@@ -491,7 +494,7 @@ local appMeta = {
 						r = newr
 					end
 				end
-				
+
 				--处理返回的结果
 				if r ~= nil then
 					local tp = type(r)
@@ -505,9 +508,9 @@ local appMeta = {
 						else
 							o = (self.tblfmtProc or defTblfmt)(self, r)
 						end
-						
+
 						out(self, o)
-						
+
 					elseif tp == 'string' then
 						--字符串直接输出
 						out(self, r)
@@ -521,9 +524,9 @@ local appMeta = {
 						end
 					end
 				end
-				
-			end, debug.traceback)		
-			
+
+			end, debug.traceback)
+
 			--清理
 			if c then
 				local lazyLoaders = self.lazyModules
@@ -534,10 +537,10 @@ local appMeta = {
 			c = nil
 
 			if not ok then
-				local msg = type(err) == 'table' and err.msg or err				
+				local msg = type(err) == 'table' and err.msg or err
 				local out = self.outputProc or outputRedirect
 				local msgtp = type(msg)
-				
+
 				if msgtp == "string" then
 					out(self, msg)
 				elseif msgtp == "table" then

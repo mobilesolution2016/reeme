@@ -46,28 +46,22 @@ queryMeta = {
 		
 		--设置条件
 		where = function(self, name, val)
-			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 1, name, val)
 		end,
 		andWhere = function(self, name, val)
-			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 2, name, val)
 		end,
 		orWhere = function(self, name, val)
-			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 3, name, val)
 		end,
 		xorWhere = function(self, name, val)
-			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 4, name, val)
 		end,
 		notWhere = function(self, name, val)
-			self.setWheres, self.setOns = true, false
 			return self.builder.processWhere(self, 5, name, val)
 		end,
 		clearWheres = function(self)
 			self.condValues = nil
-			self.setWheres, self.setOns = true, false
 			return self
 		end,
 		
@@ -98,28 +92,22 @@ queryMeta = {
 		
 		--设置join on条件
 		on = function(self, name, val)
-			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 1, name, val)
 		end,
 		andOn = function(self, name, val)
-			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 2, name, val)
 		end,
 		orOn = function(self, name, val)
-			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 3, name, val)
 		end,
 		xorOn = function(self, name, val)
-			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 4, name, val)
 		end,
 		notOn = function(self, name, val)
-			self.setOns, self.setWheres = true, false
 			return self.builder.processOn(self, 5, name, val)
 		end,
 		clearOns = function(self)
 			self.onValues = nil
-			self.setOns, self.setWheres = true, false
 			return self
 		end,
 
@@ -151,10 +139,6 @@ queryMeta = {
 		--where/on中增加一个左括号
 		lb = function(self, cond)
 			self.brackets = self.brackets and (self.brackets + 1) or 1
-
-			if self.setOns then
-				return self.builder.processOn(self, allConds[cond] or 2, '(')
-			end
 			return self.builder.processWhere(self, allConds[cond] or 2, '(')
 		end,
 		--where/on中增加一个右括号
@@ -163,10 +147,6 @@ queryMeta = {
 				error("error for add ')' without paired '('")
 			end
 			self.brackets = self.brackets - 1
-
-			if self.setOns then
-				return self.builder.processOn(self, 1, ')')
-			end
 			return self.builder.processWhere(self, 1, ')')
 		end,
 		

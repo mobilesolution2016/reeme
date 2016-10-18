@@ -232,7 +232,7 @@ builder.processOn = function(self, condType, k, v)
 				self.onValues = { where }
 			else
 				self.onValues[#self.onValues + 1] = where
-			end			
+			end
 		else
 			error(string.format("process on(%s) function call failed: illegal value or confilict with declaration of model fields", name))
 		end
@@ -415,14 +415,18 @@ builder.SELECT = function(self, db)
 	--joins conditions	
 	if #alias > 0 then
 		builder.buildJoinsConds(self, sqls, false, allJoins)
-	end
 	
-	--where
-	local haveWheres = builder.buildWheres(self, sqls, 'WHERE (', alias, nil, allJoins)
-	if haveWheres then
-		sqls[#sqls + 1] = ')'
+		--where
+		local haveWheres = builder.buildWheres(self, sqls, 'WHERE (', alias, nil, allJoins)
+		if haveWheres then
+			sqls[#sqls + 1] = ')'
+		end
+		builder.buildWhereJoins(self, sqls, haveWheres, allJoins)
+	else
+		--where
+		local haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins)
+		builder.buildWhereJoins(self, sqls, haveWheres, allJoins)
 	end
-	builder.buildWhereJoins(self, sqls, haveWheres, allJoins)
 	
 	--order by
 	builder.buildOrder(self, sqls, alias)
@@ -868,7 +872,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 			sqls[#sqls + 1] = condPre
 		end
 		sqls[#sqls + 1] = table.concat(wheres, ' ')
-		
+
 		return true
 	end
 	
@@ -883,10 +887,16 @@ builder.buildWhereJoins = function(self, sqls, haveWheres, allJoins)
 
 	for i = 1, cc do
 		local j = self.joins[i]
-		local q = j.q
-		if builder.buildWheres(q, sqls, haveWheres and (j.cond .. ' (') or 'WHERE', q._alias .. '.', nil, allJoins) then
+		local q, prefix, postfix = j.q, 'WHERE', ''
+		
+		if haveWheres then
+			prefix = j.cond .. ' ('
+			postfix = ')'
+		end
+
+		if builder.buildWheres(q, sqls, prefix, q._alias .. '.', nil, allJoins) then
 			if haveWheres then
-				sqls[#sqls + 1] = ')'
+				sqls[#sqls + 1] = postfix
 			end
 			haveWheres = true
 		end
@@ -949,7 +959,7 @@ builder.buildJoinsConds = function(self, sqls, haveOns, allJoins)
 		sqls[#sqls + 1] = q.m.__name
 		sqls[#sqls + 1] = q._alias
 		sqls[#sqls + 1] = 'ON('
-		
+
 		local pos = #sqls
 		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q._alias .. '.', q.onValues, allJoins) then
 			if join.type == 'inner' then
@@ -982,7 +992,7 @@ end
 
 builder.buildLimits = function(self, sqls, ignoreStart)
 	if self.limitTotal and self.limitTotal > 0 then
-		if ignoreStart or self.limitStart == 0 then
+		if ignoreStart or self.limitStart <= 0 then
 			sqls[#sqls + 1] = string.format('LIMIT %u', self.limitTotal)
 		else
 			sqls[#sqls + 1] = string.format('LIMIT %u,%u', self.limitStart, self.limitTotal)
