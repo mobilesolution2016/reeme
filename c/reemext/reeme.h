@@ -58,7 +58,7 @@ static inline int32_t dtoi(double val)
 	return u.i32;
 }
 
-// å†…å­˜æ± 
+// ÄÚ´æ³Ø
 template <typename T, size_t BlockSize = 4096> class TMemoryPool
 {
 public:
@@ -234,7 +234,7 @@ template <class T1, class T2> bool operator != (const TMemoryPool<T1>&, const TM
 }
 
 //////////////////////////////////////////////////////////////////////////
-// æŒ‡é’ˆå­—ç¬¦ä¸²Key
+// Ö¸Õë×Ö·û´®Key
 struct StringPtrKey
 {
 	const char*		pString;
@@ -686,7 +686,7 @@ public:
 
 		if (len > 0)
 		{
-			// å‰©ä¸‹çš„ç›´æ¥ä¸€æ¬¡åˆ†é…å¤Ÿ
+			// Ê£ÏÂµÄÖ±½ÓÒ»´Î·ÖÅä¹»
 			n = newNode(std::max(TMEMNODESIZE, len));
 			ptr = (char*)(n + 1);
 
@@ -699,7 +699,7 @@ public:
 		char* ptr;
 		TMemNode* n = (TMemNode*)m_pLastNode;
 
-		// æœ€åä¸€ä¸ªèŠ‚ç‚¹å‰©ä¸‹çš„ç©ºé—´ä¸å¤Ÿéœ€è¦ä¿ç•™çš„è¯ï¼Œå°±ç›´æ¥åˆ†é…ä¸€ä¸ªå…¨æ–°çš„è‡³å°‘æœ‰lenè¿™ä¹ˆå¤§çš„
+		// ×îºóÒ»¸ö½ÚµãÊ£ÏÂµÄ¿Õ¼ä²»¹»ĞèÒª±£ÁôµÄ»°£¬¾ÍÖ±½Ó·ÖÅäÒ»¸öÈ«ĞÂµÄÖÁÉÙÓĞlenÕâÃ´´óµÄ
 		if (n->used + len < n->total)
 		{
 			ptr = (char*)(n + 1);
@@ -741,7 +741,7 @@ public:
 } ;
 
 //////////////////////////////////////////////////////////////////////////
-//è‡ªåŠ¨å¤„ç†å¯¹é½çš„å†…å­˜å—è¯»å†™å™¨
+//×Ô¶¯´¦Àí¶ÔÆëµÄÄÚ´æ¿é¶ÁĞ´Æ÷
 template <typename AlignCheck> class MemoryBlockRW
 {
 public:
@@ -761,7 +761,7 @@ public:
 		: pMemory((char*)mem), pMemoryBegin((char*)mem), nTotal(size)
 	{}
 
-	//!å†™å…¥
+	//!Ğ´Èë
 	template <typename T> void writeval(const T& val)
 	{
 		AlignCheck chk;
@@ -785,7 +785,7 @@ public:
 			memcpy(pMemoryBegin + pos, &val, sizeof(T));
 	}
 
-	//!å†™å…¥ä»»æ„å­—èŠ‚æ•°
+	//!Ğ´ÈëÈÎÒâ×Ö½ÚÊı
 	inline void write(const void* src, size_t n)
 	{
 		assert(pMemory - pMemoryBegin + n <= nTotal);
@@ -797,7 +797,7 @@ public:
 		assert(pos + n <= nTotal);
 		memcpy(pMemoryBegin + pos, src, n);
 	}
-	//!å¡«å……0å­—èŠ‚
+	//!Ìî³ä0×Ö½Ú
 	inline void fillzero(size_t n)
 	{
 		if (n)
@@ -808,7 +808,7 @@ public:
 		}
 	}
 
-	//!è¯»å‡º
+	//!¶Á³ö
 	template <typename T> void readval(T& val)
 	{
 		AlignCheck chk;
@@ -844,7 +844,7 @@ public:
 		return v;
 	}
 
-	//!è¯»å‡ºåšç”Ÿæ„å­—èŠ‚æ•°
+	//!¶Á³ö×öÉúÒâ×Ö½ÚÊı
 	inline void read(void* dst, size_t n)
 	{
 		assert(pMemory - pMemoryBegin + n <= nTotal);
@@ -857,7 +857,7 @@ public:
 		memcpy(dst, pMemoryBegin + pos, n);
 	}
 
-	//!è·å–å½“å‰ä½ç½®
+	//!»ñÈ¡µ±Ç°Î»ÖÃ
 	inline char* get() { return pMemory; }
 	inline operator void* () { return pMemory; }
 	inline operator char* () { return pMemory; }
@@ -866,10 +866,10 @@ public:
 	inline operator const char* () { return pMemory; }
 	inline operator const unsigned char* () { return pMemory; }
 
-	//!è·å–å·²å†™å…¥çš„å­—èŠ‚æ•°
+	//!»ñÈ¡ÒÑĞ´ÈëµÄ×Ö½ÚÊı
 	inline size_t size() const { return pMemory - pMemoryBegin; }
 
-	//!ç§»åŠ¨ä½ç½®
+	//!ÒÆ¶¯Î»ÖÃ
 	inline void move(size_t n) { pMemory += n; }
 
 public:

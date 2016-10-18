@@ -2045,12 +2045,12 @@ public:
 				if (add == 0)
 				{
 					// ½áÊø
-					buf.append("cachesection(false, __ret__, __cachesecs__)\nend");
+					buf.append("cachesection(self, false, __ret__, __cachesecs__)\nend");
 				}
 				else
 				{
 					// ¿ªÊ¼
-					buf.append("if cachesection(true, __ret__, __cachesecs__");
+					buf.append("if cachesection(self, true, __ret__, __cachesecs__");
 					if (add)
 					{
 						buf += ',';

@@ -140,7 +140,7 @@ local function loadSubtemplate(self, env, name, envForSub)
 end
 
 --使用模板内缓存
-local function setCachesection(isBegin, rets, caches, ...)	
+local function setCachesection(viewself, isBegin, rets, caches, ...)	
 	if not caches then
 		--cache没有，于是永远返回true，表示模板缓存或读取缓存失败
 		return true
@@ -149,12 +149,12 @@ local function setCachesection(isBegin, rets, caches, ...)
 	local cc = #caches
 	if isBegin then
 		--创建
-		local conds = { ... }
+		local conds = { viewself.tplName, ... }
 		if #conds == 0 then
 			error('template cache beginned with no condition(s)')
 		end
 
-		conds = table.concat(conds, ',')
+		conds = table.concat(conds, '')
 		local cached = caches[conds]
 		if cached then
 			--条件相同的缓存数据存在，于是返回false表示不需要继续解析接下来到cache end之间的代码
@@ -253,22 +253,6 @@ viewMeta.__index = {
 		return rawget(self, 'sourceCode')
 	end,
 	
-	--启用模板内缓存
-	enableCache = function(self, cachesTable)
-		if type(cachesTable) ~= 'table' then
-			error('enable template cache must pass a table for cache working')
-		end
-		
-		rawset(self, 'caches', cachesTable)
-		return self
-	end,
-	--关闭模板内缓存
-	disableCache = function(self)
-		rawset(self, 'caches', nil)
-		rawset(self, 'cacheiden', nil)
-		return self
-	end,
-	
 	--参数2为所有的模板参数，参数3为nil表示重新渲染并且清除掉上一次的结果，否则将会累加在上一次的结果之后（如果本参数不是true而是string，那么将会做为join字符串放在累加的字符串中间）
 	render = function(self, env, method)
 		local gblCaches
@@ -287,7 +271,7 @@ viewMeta.__index = {
 			reeme = self.__reeme,
 			subtemplate = loadSubtemplate,
 			cachesection = setCachesection,
-			__cachesecs__ = rawget(self, 'caches') or globalSectionCaches,
+			__cachesecs__ = globalSectionCaches,
 		}
 		local meta = { __index = vals, __newindex = vals }
 		setmetatable(vals, { __index = _G })
@@ -415,14 +399,14 @@ return function(r, tpl)
 					t = t()
 				end
 
-				return setmetatable({ __reeme = r, parsedTempl = t, tplPathname = pathname }, viewMeta)
+				return setmetatable({ __reeme = r, parsedTempl = t, tplPathname = pathname, tplName = tpl }, viewMeta)
 			end
 		end
 
 		--从源文件中载入
 		local t = loadTemplateFile(r, nil, pathname)
 		if t then
-			return setmetatable({ __reeme = r, sourceCode = t, tplPathname = pathname }, viewMeta)
+			return setmetatable({ __reeme = r, sourceCode = t, tplPathname = pathname, tplName = tpl }, viewMeta)
 		end
 	end
 

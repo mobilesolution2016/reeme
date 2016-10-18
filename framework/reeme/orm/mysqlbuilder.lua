@@ -1,6 +1,6 @@
 --表达式分解为token函数
 local cExtLib = findmetatable('REEME_C_EXTLIB')
-local _parseExpression, _findToken = cExtLib.sql_expression_parse, cExtLib.find_token
+local _parseExpression, _findToken = cExtLib.sql_token_parse, cExtLib.find_token
 
 --date/datetime类型的原型
 local datetimeMeta = getmetatable(require('reeme.orm.datetime')())

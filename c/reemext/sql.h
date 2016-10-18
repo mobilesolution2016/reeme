@@ -1,4 +1,4 @@
-static int lua_sql_expression_parse(lua_State* L)
+static int lua_sql_token_parse(lua_State* L)
 {
 	enum TokenChecker {
 		TNone,
