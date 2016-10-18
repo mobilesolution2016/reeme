@@ -14,7 +14,7 @@ local newffiload = function(name)
 	end
 end
 
-if ffi.abi('win') then
+if ffi.os == 'Windows' then
 	ffi.cdef [[
 		int strcmp(const char*, const char*);
 		int strcasecmp(const char*, const char*) __asm__("_stricmp");
@@ -58,7 +58,8 @@ end
 
 --reemext c module
 local reemext = ffi.load('reemext') or error('Load reemext c module failed')
-require('libreemext')
+
+require('reemext')
 local cExtLib = findmetatable('REEME_C_EXTLIB')
 
 ffi.cdef[[
