@@ -58,7 +58,7 @@ end
 
 --reemext c module
 local reemext = ffi.load('reemext') or error('Load reemext c module failed')
-require('libreemext.so')
+require('libreemext')
 local cExtLib = findmetatable('REEME_C_EXTLIB')
 
 ffi.cdef[[

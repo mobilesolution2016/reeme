@@ -350,7 +350,11 @@ static int lua_request_deamon(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+#ifdef _WINDOWS
 REEME_API int luaopen_reemext(lua_State* L)
+#else
+REEME_API int luaopen_libreemext(lua_State* L)
+#endif
 {
 	initCommonLib(L);
 
