@@ -2,11 +2,15 @@
 local cExtLib = findmetatable('REEME_C_EXTLIB')
 local _parseExpression, _findToken = cExtLib.sql_token_parse, cExtLib.find_token
 
+local mysqlwords = require('reeme.orm.mysqlwords')
+
 --date/datetime类型的原型
 local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
+--原始表达式的原型
+local rawsqlMeta = require('reeme.orm.rawsql')(mysqlwords)
+
 local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
-local mysqlwords = require('reeme.orm.mysqlwords')
 local reemext = ffi.load('reemext')
 local allOps = { SELECT = 1, UPDATE = 2, INSERT = 3, DELETE = 4 }
 
@@ -21,7 +25,7 @@ builder.conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }
 builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN' }
 
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
---第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定
+--第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定。若返回为nil表示值为原值表达式
 local function buildSqlValue(self, cfg, v)	
 	local tp = type(v)
 	local suggCon = '='
@@ -33,6 +37,44 @@ local function buildSqlValue(self, cfg, v)
 	if cfg.ai and op == 3 and (not self.fullop or not string.checkinteger(v)) then
 		return nil
 	end
+	
+	local tblval = function(tv)
+		local mt = getmetatable(tv)
+		if mt == datetimeMeta then
+			--日期时间
+			return ngx.quote_sql_str(tostring(tv)), 'string', false
+		end	
+		if mt == rawsqlMeta then
+			--原值表达式
+			assert(type(tv[0]) == 'string')
+			suggCon = nil
+			return tv[0], 'string', false
+		end
+		if mt == queryMeta then	
+			--子查询
+			tv.limitStart, tv.limitTotal = nil, nil
+			local subsql = builder.SELECT(tv, tv.m, self.db)
+			if subsql then
+				return table.concat({ '(', subsql, ')' }, ''), 'string', false
+			else
+				return '(error build sql for sub-query)', 'string', false
+			end
+		end
+		if #v == 1 then
+			--仅有一个值的table
+			tv = tv[1]
+			local tvp = type(tv)
+			if tvp == 'table' then
+				return tblval(tv)
+			end
+			return tv, tvp, true
+		end
+		if #v > 1 then
+			--多值的table
+			multiVals, suggCon = true, ''
+			return tv, '', false
+		end
+	end
 
 	if v == nil then
 		--值为nil又不是UPDATE操作，且字段没有默认值又不可以为NULL，则根据字段类型给一个默认值，防止SQL出错
@@ -40,40 +82,13 @@ local function buildSqlValue(self, cfg, v)
 			v = cfg.type == 1 and "''" or '0'
 			tp = 'string'
 		end
-		
+
 	elseif v == ngx.null then
 		--NULL值直接设置
 		v, suggCon = 'NULL', ' IS '
 		
-	elseif tp == 'table' then	
-		--table类型则根据meta来进行判断是什么table
-		local mt = getmetatable(v)
-
-		if mt == datetimeMeta then
-			--日期时间
-			v = ngx.quote_sql_str(tostring(v))
-			
-		elseif mt == queryMeta then	
-			--子查询
-			v.limitStart, v.limitTotal = nil, nil
-			local subsql = builder.SELECT(v, v.m, self.db)
-			if subsql then				
-				v = table.concat({ '(', subsql, ')' }, '')
-			else
-				v = '(error build sql for sub-query)'
-			end
-
-		elseif #v == 1 then		
-			v = v[1]
-			tp = type(v)
-			quoteIt = true
-			
-		elseif #v > 1 then
-			--表达式或多值			
-			multiVals, suggCon = true, ''
-		else
-			return nil
-		end
+	elseif tp == 'table' then
+		v, tp, quoteIt = tblval(v)
 		
 	elseif tp == 'cdata' then
 		--cdata类型，检测是否是boxed int64
@@ -94,11 +109,23 @@ local function buildSqlValue(self, cfg, v)
 		if cfg.type == 1 then
 			--字段要求为字符串
 			if multiVals then
-				v = string.format(" IN('%s')", table.concat(v, "','"))
+				local quoted = table.new(#v, 0)
+				for i = 1, #v do
+					local a, b, c = tblval(v[i])
+					assert(a and #b > 0)
+					
+					if c and (string.byte(a, 1) ~= 39 or string.byte(a, #a) ~= 39) then
+						quoted[i] = ngx.quote_sql_str(a)
+					else
+						quoted[i] = a
+					end
+				end
+
+				v = string.format(" IN(%s)", table.concat(quoted, ','))
+				quoted = nil
 			else
 				v = tostring(v)
 				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
-					--没有引用，那么增加引用
 					v = ngx.quote_sql_str(v)
 				end
 			end
@@ -156,15 +183,16 @@ builder.parseWhere = function(self, condType, name, value)
 		--name就是整个表达式
 		return { expr = name, c = condType }
 	end
-	if name == nil and value then
-		--value就是整个表达式
+	if name == nil then
+		--value是整个表达式
 		return { expr = value, c = condType }
 	end
-	
+
 	name = name:trim()	
-	
+
 	local purekn = false
-	local r = ngx.re.match(name, '^[\\w-]+(.[\\w-]+)?$', 'o')
+	local r = ngx.re.match(name, '^[\\w-]+$|^[\\w-]+([.]{1}[\\w-]+)$', 'o')
+
 	if r and (r[1] or not mysqlwords[r[0]]) then
 		purekn = true
 	end
@@ -276,20 +304,22 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 	if purekn then
 		tokens = { expr }
 		poses = { 1 }
+		
+	elseif mysqlwords[expr] then
+		return expr
+		
 	else
 		tokens, poses = _parseExpression(expr)
-		if not tokens or not poses then
-			return expr
-		end	
+		assert(tokens ~= nil)
 	end
-	
+
 	--逐个token的循环进行处理
 	local sql, adjust = expr, 0
 	local fields, aliasab = self.m.__fields, self.aliasAB
 	local selfname = self.userAlias or self.m.__name
 	local lastField, lastToken
 
-	for i=1, #tokens do
+	for i = 1, #tokens do
 		local newone		
 		lastToken = tokens[i]
 
@@ -342,16 +372,19 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 
 			elseif not mysqlwords[a] then
 				--查找是否字段名。先在自己身上查找，没有找到再去所联的表中查找
-				lastField = self:getField(a)
-				if lastField then				
+				local field = self:getField(a)
+				if field then
+					lastField = field
 					if self._alias then
 						newone = self._alias .. '.' .. a
 					end
 				else
+					local m
 					for i = 1, #allJoins do
-						local m = allJoins[i]
-						lastField = m ~= self and m:getField(a) or nil
-						if lastField then
+						m = allJoins[i]
+						field = m ~= self and m:getField(a) or nil
+						if field then
+							lastField = field
 							if m._alias then
 								newone = m._alias .. '.' .. a
 							end
@@ -361,7 +394,7 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 				end
 			end
 		end
-		
+
 		if newone then
 			--替换掉最终的表达式
 			sql = sql:subreplace(newone, poses[i] + adjust, #lastToken)
@@ -474,7 +507,7 @@ builder.UPDATE = function(self, db)
 	end
 	
 	--all values
-	if builder.buildKeyValuesSet(self, sqls, alias) > 0 then
+	if builder.buildKeyValuesSet(self, sqls, alias, allJoins) > 0 then
 		table.insert(sqls, #sqls, 'SET')
 	end
 	
@@ -527,9 +560,13 @@ builder.INSERT = function(self, db)
 	
 	sqls[#sqls + 1] = 'INSERT INTO'
 	sqls[#sqls + 1] = model.__name
+
+	local allJoins = {}
+	allJoins[self.m.__name] = self
+	allJoins[1] = self
 	
 	--all values
-	if builder.buildKeyValuesSet(self, sqls, '') > 0 then
+	if builder.buildKeyValuesSet(self, sqls, '', allJoins) > 0 then
 		table.insert(sqls, #sqls, 'SET')
 	else
 		sqls[#sqls + 1] = '() VALUES()'
@@ -734,7 +771,7 @@ builder.buildColumns = function(self, sqls, alias, returnCols)
 	return cols
 end
 
-builder.buildKeyValuesSet = function(self, sqls, alias)
+builder.buildKeyValuesSet = function(self, sqls, alias, allJoins)
 	local model = self.m
 	local fieldCfgs = model.__fields
 	local vals, keyvals = self.keyvals, table.new(0, 8)
@@ -758,12 +795,18 @@ builder.buildKeyValuesSet = function(self, sqls, alias)
 
 			local cfg = fieldCfgs[name]
 			if cfg then
-				v = buildSqlValue(self, cfg, v)
+				local suggConn
+				v, suggConn = buildSqlValue(self, cfg, v)
 				if v then
+					if suggConn == nil then
+						v = builder.processTokenedString(self, alias, v, false, allJoins)
+						suggConn = '='
+					end
+
 					if alias and #alias > 0 then
-						keyvals[#keyvals + 1] = string.format("%s%s=%s", alias, name, v)
+						keyvals[#keyvals + 1] = table.concat({ alias, name, suggConn, v }, '')
 					else
-						keyvals[#keyvals + 1] = string.format("%s=%s", name, v)
+						keyvals[#keyvals + 1] = table.concat({ name, suggConn, v }, '')
 					end
 				end
 			end
@@ -797,7 +840,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 	if condValues and #condValues > 0 then
 		local ignoreNextCond = true
 		local wheres, conds = {}, builder.conds
-		local fieldCfg, merges = nil, table.new(6, 0)
+		local fieldCfg, merges = nil, table.new(4, 0)
 		
 		for i = 1, #condValues do
 			local one, rsql = condValues[i], nil
@@ -845,13 +888,21 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 					assert(fieldCfg ~= nil, string.format("Field not exists! table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
 
 					merges[4], suggCon = buildSqlValue(self, fieldCfg, one.value)
-					if merges[4] then						
-						if mysqlwords[lastToken] == 1 then
-							--最后一个token是函数的调用，因此自动的加上括号（此种情况下是不会写有括号的，如果写括号的肯定就是完整表达式，代码是不会运行到这里的）
-							merges[3], merges[5] = '(', ')'
+
+					if merges[4] then
+						if suggConn == nil then
+							--解析表达式
+							merges[3], merges[4] = one.purekn and '=' or '', builder.processTokenedString(self, alias, merges[4], false, allJoins)
+						else
+							merges[3] = ''
+						end
+
+						if mysqlwords[lastToken] --[[and string.byte(one.expr, #one.expr) ~= 40 ]]then
+							--最后一个符号为函数调用，那么就自动的为其加上括号。这种情况只有name和val分开写的时候才会运行到这里来，正因为分开写了，所以括号只能在这里自动的加
+							merges[3], merges[4] = merges[3] .. '(', merges[4] .. ')'
 						else
 							--如果expr是一个纯字段名，那就要加上建议的连接符号
-							merges[3], merges[5] = one.purekn and suggCon or '', nil
+							merges[3] = one.purekn and suggCon or ''
 						end
 
 						rsql = table.concat(merges, '')
@@ -860,7 +911,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 						rsql = one.expr .. '#ERR#'
 					end
 				else
-					merges[3], merges[4], merges[5] = nil, nil, nil
+					merges[3], merges[4] = nil, nil
 					rsql = table.concat(merges, '')
 				end
 			end

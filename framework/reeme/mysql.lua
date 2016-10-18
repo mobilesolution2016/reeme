@@ -2,6 +2,7 @@ local models = {}
 local modelmeta = require('reeme.orm.model')
 local builder = require('reeme.orm.mysqlbuilder')
 local parseFields = require('reeme.orm.common').parseFields
+local rawsqlMeta = require('reeme.orm.rawsql')()
 
 local mysql = {
 	__index = {
@@ -127,6 +128,13 @@ local mysql = {
 				end
 				return r
 			end
+		end,
+
+		--包装SQL语句用于设置值
+		sqlval = function(self, sql)
+			local r = {}
+			r[0] = sql
+			return setmetatable(r, rawsqlMeta)
 		end,
 		
 		--事务
