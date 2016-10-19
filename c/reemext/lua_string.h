@@ -1799,6 +1799,8 @@ return KEND_NONE;
 						errorMsg = "')' error paired";
 						return 0;
 					}
+
+					errorStart.pop_back();
 					brackets --;
 					break;
 
@@ -1812,6 +1814,7 @@ return KEND_NONE;
 						return 0;
 					}
 
+					errorStart.pop_back();
 					bbrackets --;
 					break;
 
