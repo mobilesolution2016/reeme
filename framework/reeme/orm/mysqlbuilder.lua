@@ -800,13 +800,12 @@ builder.buildKeyValuesSet = function(self, sqls, alias, allJoins)
 				if v then
 					if suggConn == nil then
 						v = builder.processTokenedString(self, alias, v, false, allJoins)
-						suggConn = '='
 					end
 
 					if alias and #alias > 0 then
-						keyvals[#keyvals + 1] = table.concat({ alias, name, suggConn, v }, '')
+						keyvals[#keyvals + 1] = table.concat({ alias, name, '=', v }, '')
 					else
-						keyvals[#keyvals + 1] = table.concat({ name, suggConn, v }, '')
+						keyvals[#keyvals + 1] = table.concat({ name, '=', v }, '')
 					end
 				end
 			end

@@ -69,6 +69,13 @@ queryMeta = {
 		countWheres = function(self)
 			return self.condValues and #self.condValues or 0
 		end,
+		removeWhere = function(self, pos)
+			if self.condValues then
+				assert(pos >= 1 and pos <= #self.condValues, string.format('model.removeWhere(%d) failed with position not exists', pos))
+				table.remove(self.condValues, pos)
+			end
+			return self
+		end,
 		
 		--两个条件的位置交换
 		swapWhere = function(self, a, b)

@@ -1621,7 +1621,8 @@ static int lua_string_fmt(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
-#define TP_FIXED	16384
+#define TP_FIXED		16384
+#define ERR_START_MAX	128
 
 struct StringIndex {
 	int				index;
@@ -1661,8 +1662,10 @@ static const char templInitCode[] = {
 class TemplateParser
 {
 public:
+	typedef std::list<const char*> ErorrStarts;
+
 	std::string			buf, errorMsg;
-	StringsPckMap	*pck;
+	StringsPckMap		*pck;
 	size_t				offset, srcLen, wrote, mlsLength;
 	
 	uint32_t			expLines;
@@ -1671,7 +1674,8 @@ public:
 
 	const char			*src;
 	const char			*savedPos;
-	const char			*errorStart;
+	ErorrStarts			errorStart;
+
 	char				mlsBegin[32], mlsEnd[32];
 	bool				bracketOpened, hasSegments;
 
@@ -1701,28 +1705,28 @@ public:
 		else if (a == *(uint64_t*)cmps[2] || a == *(uint64_t*)cmps[3])
 			r = KEND_DO;
 
-		if (r != KEND_NONE)
-		{
-			const char* revFind = expEnd - 1;
-			while (revFind > exp)
-			{
-				if ((uint8_t)revFind[0] <= 32 || revFind[0] == '}')
-					revFind --;
-				else
-					break;
-			}
+if (r != KEND_NONE)
+{
+	const char* revFind = expEnd - 1;
+	while (revFind > exp)
+	{
+		if ((uint8_t)revFind[0] <= 32 || revFind[0] == '}')
+			revFind --;
+		else
+			break;
+	}
 
-			if (strncmp(revFind - 3, " end", 3))
-			{
-				revFind -= revLeng[r];
-				if (r == KEND_THEN && strncmp(revFind, " then", 5))
-					return KEND_THEN;
-				if (r == KEND_DO && strncmp(revFind, " do", 3))
-					return KEND_DO;
-			}
-		}
+	if (strncmp(revFind - 3, " end", 3))
+	{
+		revFind -= revLeng[r];
+		if (r == KEND_THEN && strncmp(revFind, " then", 5))
+			return KEND_THEN;
+		if (r == KEND_DO && strncmp(revFind, " do", 3))
+			return KEND_DO;
+	}
+}
 
-		return KEND_NONE;
+return KEND_NONE;
 	}
 
 	size_t append(size_t s)
@@ -1746,12 +1750,13 @@ public:
 
 	const char* findExpEnd(const char* expStart, const char* totalEnd)
 	{
-		int brackets = 0;
+		int brackets = 0, bbrackets = 1;
 		const char* expEnd = expStart;
 
 		expSub = 0;
 		expLines = 0;
 		expQuoted = 0;
+		errorStart.clear();
 
 		while (expEnd < totalEnd)
 		{
@@ -1765,35 +1770,62 @@ public:
 				else if (ch == expQuoted)
 					expQuoted = 0;
 			}
-			else if (brackets)
+			else
 			{
-				if (ch == ')' || ch == '}')
-					brackets --;
-			}
-			else if (ch == '\'' || ch == '"')
-			{
-				if (expQuoted)
+				switch (ch)
 				{
-					errorStart = expStart;
-					errorMsg = "not closed string";
-					expEnd = 0;
+				case '\'':
+				case '"':
+					expQuoted = ch;
+					break;
+
+				case '\\':
+					expSub = expEnd;
+					break;
+
+				case '(':
+					errorStart.push_back(expEnd);
+					brackets ++;
+					break;
+
+				case '{':
+					errorStart.push_back(expEnd);
+					bbrackets ++;
+					break;
+
+				case ')':
+					if (brackets == 0 || errorStart.size() == 0 || errorStart.back()[0] != '(')
+					{
+						errorMsg = "')' error paired";
+						return 0;
+					}
+					brackets --;
+					break;
+
+				case '}':
+					if (bbrackets == 1)
+						goto _end;
+
+					if (errorStart.size() ==  0 || errorStart.back()[0] != '{')
+					{
+						errorMsg = "')' error paired";
+						return 0;
+					}
+
+					bbrackets --;
+					break;
+
+				case '\n':
+					expLines ++;
 					break;
 				}
-				expQuoted = ch;
 			}
-			else if (ch == '\\')
-				expSub = expEnd;
-			else if (ch == '(' || ch == '{')
-				brackets ++;
-			else if (ch == '\n')
-				expLines ++;
-			else if (ch == '}')
-				break;
 
 			expEnd ++;
 		}
 
-		if (expEnd >= totalEnd)
+_end:
+		if (expEnd >= totalEnd || brackets)
 			return 0;
 
 		return expEnd;
@@ -2215,7 +2247,6 @@ static const char *lua_tpl_loader(lua_State *L, void *ud, size_t *size)
 static void _init_TemplateParser(TemplateParser& parser, const char* src, size_t srcLen)
 {
 	parser.savedPos = 0;
-	parser.errorStart = 0;
 	parser.src = src;
 	parser.srcLen = srcLen;
 	parser.offset = 0;
@@ -2307,11 +2338,14 @@ static int lua_string_parsetemplate(lua_State* L)
 		int r = lua_load(L, &lua_tpl_loader, &parser, chunkName);
 		if (parser.errorMsg.length())
 		{
+			assert(parser.errorStart.size() > 0);
+
 			std::string& msg = parser.errorMsg;
 			msg += " start at : ";
 		
-			size_t left = std::min(srcLen - (parser.errorStart - parser.src), (size_t)60);
-			msg.append(parser.errorStart, left);
+			const char* errs = parser.errorStart.back();
+			size_t left = std::min(srcLen - (errs - parser.src), (size_t)60);
+			msg.append(errs, left);
 
 			lua_pushlstring(L, "", 0);
 			lua_pushlstring(L, msg.c_str(), msg.length());
