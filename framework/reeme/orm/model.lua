@@ -330,9 +330,9 @@ queryMeta = {
 
 			return self
 		end,
-		join = function(self, query, cond) return self:addjoin(query, 'inner') end,
-		leftjoin = function(self, query, cond) return self:addjoin(query, 'left', cond or 'OR') end,
-		rightjoin = function(self, query, cond) return self:addjoin(query, 'right', cond or 'OR') end,
+		join = function(self, query, cond) return self:addjoin(query, 'inner', cond) end,
+		leftjoin = function(self, query, cond) return self:addjoin(query, 'left', cond) end,
+		rightjoin = function(self, query, cond) return self:addjoin(query, 'right', cond) end,
 		
 		--设置别名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
 		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消所有的别名

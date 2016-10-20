@@ -1810,7 +1810,7 @@ return KEND_NONE;
 
 					if (errorStart.size() ==  0 || errorStart.back()[0] != '{')
 					{
-						errorMsg = "')' error paired";
+						errorMsg = "'}' error paired";
 						return 0;
 					}
 
