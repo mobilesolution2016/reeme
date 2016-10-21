@@ -412,13 +412,13 @@ local appMeta = {
 			local c = controlNew(act)
 			local cmeta = getmetatable(c)
 
-			if not cmeta then
-				--直接使用c为meta table，在此创建一个controller实例
+			if rawget(c, '__index') or not cmeta then
+				--直接使用c为meta table，然后再创建一个controller实例
 				cmeta = c
 				c = table.new(0, 40)
 			end
 
-			cmeta = cmeta and cmeta.__index or nil
+			cmeta = cmeta and rawget(cmeta, '__index') or nil
 			if type(cmeta) == 'function' then
 				setmetatable(c, ctlMeta2)
 			else
