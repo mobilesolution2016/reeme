@@ -27,105 +27,87 @@ builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT 
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
 --第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定。若返回为nil表示值为原值表达式
 local function buildSqlValue(self, cfg, v)	
+	local check
 	local tp = type(v)
 	local suggCon = '='
-	local model = self.m	
-	local op = allOps[self.op]
-	local quoteIt, multiVals = false, false
+	local quoteIt, multiVals, checkType = false, false, true
 
-	--自增长型字段的值，如果是在insert下的话，就必须是fullCreate，否则被忽略
-	if cfg.ai and op == 3 and (not self.fullop or not string.checkinteger(v)) then
-		return nil
+	check = function()
+		if v == ngx.null then
+			--NULL值直接设置
+			v, suggCon = 'NULL', ' IS '
+			
+		elseif tp == 'table' then	
+			--table类型则根据meta来进行判断是什么table
+			local mt = getmetatable(v)
+
+			if mt == datetimeMeta then
+				--日期时间
+				v = ngx.quote_sql_str(tostring(v))
+
+			elseif mt == rawsqlMeta then
+				--原值表达式
+				assert(type(v[0]) == 'string')
+				
+				checkType = false
+				suggCon = nil
+				v = v[0]
+				
+			elseif mt == queryMeta then	
+				--子查询
+				v.limitStart, v.limitTotal = nil, nil
+				local subsql = builder.SELECT(v, v.m, self.db)
+				if subsql then				
+					v = table.concat({ '(', subsql, ')' }, '')
+				else
+					v = '(error build sql for sub-query)'
+				end
+
+			elseif #v == 1 then		
+				v = v[1]
+				tp = type(v)
+				check()
+
+			elseif #v > 1 then
+				--表达式或多值			
+				multiVals, suggCon = true, ''
+			else
+				error('Illegal sql value for table type')
+			end
+			
+		elseif tp == 'cdata' then
+			--cdata类型，检测是否是boxed int64
+			local s = tostring(v)
+			local i64type, newv = reemext.cdataisint64(s, #s), s
+			if i64type > 0 then
+				v = newv:sub(1, #newv - i64type)
+			else
+				v, quoteIt = newv, true
+			end
+			tp = 'string'
+			
+		else
+			quoteIt = true
+		end
 	end
 	
-	local tblval = function(tv)
-		local mt = getmetatable(tv)
-		if mt == datetimeMeta then
-			--日期时间
-			return ngx.quote_sql_str(tostring(tv)), 'string', false
-		end	
-		if mt == rawsqlMeta then
-			--原值表达式
-			assert(type(tv[0]) == 'string')
-			suggCon = nil
-			return tv[0], 'string', false
-		end
-		if mt == queryMeta then	
-			--子查询
-			tv.limitStart, tv.limitTotal = nil, nil
-			local subsql = builder.SELECT(tv, tv.m, self.db)
-			if subsql then
-				return table.concat({ '(', subsql, ')' }, ''), 'string', false
-			else
-				return '(error build sql for sub-query)', 'string', false
-			end
-		end
-		if #v == 1 then
-			--仅有一个值的table
-			tv = tv[1]
-			local tvp = type(tv)
-			if tvp == 'table' then
-				return tblval(tv)
-			end
-			return tv, tvp, true
-		end
-		if #v > 1 then
-			--多值的table
-			multiVals, suggCon = true, ''
-			return tv, '', false
-		end
-	end
-
-	if v == nil then
-		--值为nil又不是UPDATE操作，且字段没有默认值又不可以为NULL，则根据字段类型给一个默认值，防止SQL出错
-		if op ~= 2 and cfg.default == nil and not cfg.null then
-			v = cfg.type == 1 and "''" or '0'
-			tp = 'string'
-		end
-
-	elseif v == ngx.null then
-		--NULL值直接设置
-		v, suggCon = 'NULL', ' IS '
-		
-	elseif tp == 'table' then
-		v, tp, quoteIt = tblval(v)
-		
-	elseif tp == 'cdata' then
-		--cdata类型，检测是否是boxed int64
-		local s = tostring(v)
-		local i64type, newv = reemext.cdataisint64(s, #s), s
-		if i64type > 0 then
-			v = newv:sub(1, #newv - i64type)
-		else
-			v, quoteIt = newv, true
-		end
-		tp = 'string'
-		
-	else
-		quoteIt = true
-	end
+	check()
 
 	if v ~= nil then
 		if cfg.type == 1 then
 			--字段要求为字符串
 			if multiVals then
-				local quoted = table.new(#v, 0)
+				multiVals = table.new(#v, 0)
 				for i = 1, #v do
-					local a, b, c = tblval(v[i])
-					assert(a and #b > 0)
-					
-					if c and (string.byte(a, 1) ~= 39 or string.byte(a, #a) ~= 39) then
-						quoted[i] = ngx.quote_sql_str(a)
-					else
-						quoted[i] = a
-					end
+					multiVals[i] = buildSqlValue(self, cfg, v[i]) or "''"
 				end
-
-				v = string.format(" IN(%s)", table.concat(quoted, ','))
-				quoted = nil
+				
+				v = string.format(" IN(%s)", table.concat(multiVals, ','))
+				multiVals = nil
 			else
 				v = tostring(v)
 				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
+					--没有引用，那么增加引用
 					v = ngx.quote_sql_str(v)
 				end
 			end
@@ -133,31 +115,49 @@ local function buildSqlValue(self, cfg, v)
 		elseif cfg.type == 4 then
 			--布尔型使用1或0来处理
 			if multiVals then
-				v = string.format(' IN(%s)', table.concat(v, ','))
+				multiVals = table.new(#v, 0)
+				for i = 1, #v do
+					multiVals[i] = buildSqlValue(self, cfg, v[i]) or '0'
+				end
+				
+				v = string.format(' IN(%s)', table.concat(multiVals, ','))
+				multiVals = nil
 			else
 				v = toboolean(v) and '1' or '0'
 			end
 			
 		elseif cfg.type == 3 then
-			--数值/浮点数类型，检测值必须为浮点数
+			--数值/浮点数类型
 			if multiVals then
-				v = string.format(' IN(%s)', table.concat(v, ','))
+				multiVals = table.new(#v, 0)
+				for i = 1, #v do
+					multiVals[i] = buildSqlValue(self, cfg, v[i]) or '0'
+				end
 				
-			elseif not string.checknumeric(v) then
-				logger.e(string.format("model '%s': a field named '%s' its type is number but the value is not a number", model.__name, cfg.colname))
+				v = string.format(' IN(%s)', table.concat(multiVals, ','))
+				multiVals = nil
+				
+			elseif checkType and not string.checknumeric(v) then
+				logger.e(string.format("model '%s': a field named '%s' its type is number but the value is not a number", self.m.__name, cfg.colname))
 				v = nil
 			end
 			
 		elseif multiVals then
-			--整数型，多值（就不对每一个值去做检查了）
-			v = string.format(' IN(%s)', table.concat(v, ','))
+			--整数型，多值
+			multiVals = table.new(#v, 0)
+			for i = 1, #v do
+				multiVals[i] = buildSqlValue(self, cfg, v[i]) or '0'
+			end
 			
-		elseif quoteIt then
-			--这个字符串必须是整数型的值
+			v = string.format(' IN(%s)', table.concat(multiVals, ','))
+			multiVals = nil
+			
+		elseif checkType then
+			--整数型的值
 			local reti, newv = string.checkinteger(v)
 			if not reti then
 				--否则就都是整数类型，检测值必须为整数
-				logger.e(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", model.__name, cfg.colname))
+				logger.e(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", self.m.__name, cfg.colname))
 				v = nil
 			end
 			
@@ -784,7 +784,8 @@ builder.buildKeyValuesSet = function(self, sqls, alias, allJoins)
 		return 1
 	end
 
-	local colAlias = self.aliasBA or {}
+	local op = allOps[self.op]
+	local colAlias = self.aliasBA or {}	
 	local fieldCfgs = self.colSelects == nil and model.__fields or self.colSelects
 
 	for name,v in pairs(vals) do
@@ -794,18 +795,29 @@ builder.buildKeyValuesSet = function(self, sqls, alias, allJoins)
 			name = colAlias[name] or name
 
 			local cfg = fieldCfgs[name]
-			if cfg then
-				local suggConn
-				v, suggConn = buildSqlValue(self, cfg, v)
-				if v then
-					if suggConn == nil then
-						v = builder.processTokenedString(self, alias, v, false, allJoins)
+			if cfg then				
+				if cfg.ai and self.op == 3 and (not self.fullop or not string.checkinteger(v)) then
+					--自增长型字段的值，如果是在insert下的话，就必须是fullCreate，否则被忽略
+
+				elseif v == nil then
+					--值为nil又不是UPDATE操作，且字段没有默认值又不可以为NULL，则根据字段类型给一个默认值，防止SQL出错
+					if op ~= 2 and cfg.default == nil and not cfg.null then
+						keyvals[#keyvals + 1] = cfg.type == 1 and "''" or '0'
 					end
 
-					if alias and #alias > 0 then
-						keyvals[#keyvals + 1] = table.concat({ alias, name, '=', v }, '')
-					else
-						keyvals[#keyvals + 1] = table.concat({ name, '=', v }, '')
+				else
+					local suggConn
+					v, suggConn = buildSqlValue(self, cfg, v)
+					if v then
+						if suggConn == nil then
+							v = builder.processTokenedString(self, alias, v, false, allJoins)
+						end
+
+						if alias and #alias > 0 then
+							keyvals[#keyvals + 1] = table.concat({ alias, name, '=', v }, '')
+						else
+							keyvals[#keyvals + 1] = table.concat({ name, '=', v }, '')
+						end
 					end
 				end
 			end
@@ -1012,11 +1024,7 @@ builder.buildJoinsConds = function(self, sqls, haveOns, allJoins)
 
 		local pos = #sqls
 		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q._alias .. '.', q.onValues, allJoins) then
-			if join.type == 'inner' then
-				sqls[#sqls + 1] = '1)'
-			else
-				table.remove(sqls, pos)
-			end
+			sqls[#sqls + 1] = '1)'
 		else
 			sqls[#sqls + 1] = ')'
 		end
