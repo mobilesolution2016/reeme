@@ -157,7 +157,7 @@ queryMeta = {
 			return self.builder.processWhere(self, 1, ')')
 		end,
 		
-		--设置只操作哪些列，如果不设置，则会操作model里的所有列。同时会将只排除的列清空掉
+		--设置只操作哪些列，如果不设置，则会操作model里的所有列。同时会将只排除的列清空掉。列名只能使用数据库的原始列名来进行设置，不可以使用alias之后的名字
 		columns = function(self, names)
 			if not self.colSelects then
 				self.colSelects = table.new(0, 8)
@@ -181,14 +181,12 @@ queryMeta = {
 						end
 
 						local f = fields[n]
-						if f then
-							self.colSelects[n] = f
-							if nto then
-								--添加重命名
-								self:alias(n, nto)
-							end
-						else
-							error(string.format('model columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
+						assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
+
+						self.colSelects[n] = f
+						if nto then
+							--添加重命名
+							self:alias(n, nto)
 						end
 					end
 				end
@@ -202,21 +200,19 @@ queryMeta = {
 					end
 					
 					local f = fields[n]
-					if f then
-						self.colSelects[n] = f
-						if nto then
-							--添加重命名
-							self:alias(str, nto)
-						end
-					else
-						error('model columns function set a not exists field:' .. n)
+					assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
+
+					self.colSelects[n] = f
+					if nto then
+						--添加重命名
+						self:alias(str, nto)
 					end
 				end
 			end
 			
 			return self
 		end,
-		--设置只排除哪些列，同时会将只选择哪些列清空掉
+		--设置只排除哪些列，同时会将只选择哪些列清空掉。列名只能使用数据库的原始列名来进行设置，不可以使用alias之后的名字
 		excepts = function(self, names)
 			if not self.colExcepts then
 				self.colExcepts = table.new(0, 8)
@@ -228,20 +224,16 @@ queryMeta = {
 			local fields = self.m.__fields
 			
 			if tp == 'string' then
-				for str in string.gmatch(names, '([^,]+)') do
-					if not fields[str] then
-						error('model excepts function set a not exists field:' .. str)
-					end
-					
-					self.colExcepts[str] = true
+				for n in string.gmatch(names, '([^,]+)') do
+					assert(fields[n] ~= nil, string.format('model.excepts function set a not exists field "%s" on table "%s"', n, self:sourceName()))
+
+					self.colExcepts[n] = true
 				end
-				
+
 			elseif tp == 'table' then
 				for i = 1, #names do
 					local n = names[i]
-					if not fields[n] then
-						error('model excepts function set a not exists field:' .. n)
-					end
+					assert(n ~= nil, string.format('model.excepts function set a not exists field "%s" on table "%s"', n, self:sourceName()))
 					
 					self.colExcepts[n] = true
 				end
