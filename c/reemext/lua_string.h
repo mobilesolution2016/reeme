@@ -1851,7 +1851,7 @@ _end:
 
 		for(;;)
 		{
-			const char* foundPos = savedPos ? savedPos : (const char*)std::memchr(src + offset, '{', srcLen - offset);
+			const char* foundPos = savedPos ? savedPos : (const char*)memchr(src + offset, '{', srcLen - offset);
 			savedPos = 0;
 
 			if (!foundPos)
