@@ -72,7 +72,9 @@ local function buildSqlValue(self, cfg, v)
 				--表达式或多值			
 				multiVals, suggCon = true, ''
 			else
-				error('Illegal sql value for table type')
+				local vEnc = ''
+				pcall(function() vEnc = string.json(v, string.JSON_UNICODES) end)
+				error('Illegal sql value for table type: ' .. vEnc)
 			end
 			
 		elseif tp == 'cdata' then
