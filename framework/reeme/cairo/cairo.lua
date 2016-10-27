@@ -1033,6 +1033,13 @@ M.load_png = ref_func(function(arg1, ...)
 	end
 end, C.cairo_surface_destroy)
 
+M.load_jpg = ref_func(function(arg1, ...)
+	if type(arg1) == 'string' then
+		return C.cairo_image_surface_create_from_jpg(arg1, ...)
+	end
+	return nil
+end, C.cairo_surface_destroy)
+
 local r = ffi.new'cairo_rectangle_t'
 function M.recording_surface(content, x, y, w, h)
 	if x then

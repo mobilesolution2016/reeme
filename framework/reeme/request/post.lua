@@ -13,6 +13,23 @@ local body    = req.read_body
 local data    = req.get_body_data
 local pargs   = req.get_post_args
 		
+local function copyfile(source,destination)
+	local sourcefile = io.open(source, "rb")
+	if not sourcefile then 
+		return false, 'source file open failed' 
+	end
+	destinationfile = io.open(destination, "wb+")
+	if not destinationfile then
+		sourcefile:close()
+		return false, 'destination file open failed'
+	end
+	destinationfile:write(sourcefile:read("*all"))
+	sourcefile:close()
+	destinationfile:close()
+	
+	return true
+end 
+
 local function rightmost(s, sep)
     local p = 1
     local i = find(s, sep, 1, true)
@@ -105,7 +122,8 @@ local function getPostArgsAndFiles(options)
                                 file = basename(d.filename),
                                 temp = getTempFileName(),
 								moveFile = function(self, dstFilename)
-									return os.rename(self.temp, dstFilename)
+									--return os.rename(self.temp, dstFilename)
+									return copyfile(self.temp, dstFilename)
 								end,
                             }
                             o, e = open(f.temp, "wb+")

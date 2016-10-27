@@ -1,5 +1,3 @@
-require('reemext')
-
 local appRootDir = ngx.var.APP_ROOT
 if not appRootDir then
 	ngx.say("APP_ROOT is not definde in app nginx conf")

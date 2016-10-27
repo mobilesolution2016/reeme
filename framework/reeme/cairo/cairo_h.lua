@@ -943,6 +943,8 @@ cairo_image_surface_get_stride (cairo_surface_t *surface);
  cairo_surface_t *
 cairo_image_surface_create_from_png (const char *filename);
  cairo_surface_t *
+cairo_image_surface_create_from_jpg (const char *filename);
+ cairo_surface_t *
 cairo_image_surface_create_from_png_stream (cairo_read_func_t read_func,
 		 void *closure);
  cairo_surface_t *
