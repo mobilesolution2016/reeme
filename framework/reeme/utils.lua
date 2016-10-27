@@ -59,10 +59,6 @@ local Utils = {
 		return ngx.decode_base64(str)
 	end,
 	
-	jsonEncode = require("cjson.safe").encode,
-
-	jsonDecode = require("cjson.safe").decode,
-	
 	crc32 = function(str)
 		if not str or type(str) ~= "string" then return nil end
 		
