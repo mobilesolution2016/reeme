@@ -303,7 +303,7 @@ queryMeta = {
 		
 		--两个Query进行联接
 		addjoin = function(self, query, joinType, cond)
-			local validJoins = { inner = 1, left = 1, right = 1 }
+			local validJoins = { inner = 1, left = 1, right = 1, full = 1, cross = 1 }
 			local jt = joinType == nil and 'inner' or joinType:lower()
 			
 			if validJoins[jt] == nil then
@@ -313,7 +313,7 @@ queryMeta = {
 
 			local tbname = query.m.__name
 			local j = { q = query, type = jt, on = self.joinOn, cond = cond or 'AND' }
-			
+
 			if not self.joins then
 				self.joins = { j }
 			else
@@ -325,6 +325,8 @@ queryMeta = {
 		join = function(self, query, cond) return self:addjoin(query, 'inner', cond) end,
 		leftjoin = function(self, query, cond) return self:addjoin(query, 'left', cond) end,
 		rightjoin = function(self, query, cond) return self:addjoin(query, 'right', cond) end,
+		fulljoin = function(self, query, cond) return self:addjoin(query, 'full', cond) end,
+		crossjoin = function(self, query, cond) return self:addjoin(query, 'cross', cond) end,
 		
 		--设置别名，如果不设置，则将使用自动别名，自动别名的规则是_C[C>=A && C<=Z]，在设置别名的时候请不要与自动别名冲突
 		--如果没有参数3，则设置的是表的别名，否则就是设置的字段的别名。不带任何参数的调用可以取消所有的别名
