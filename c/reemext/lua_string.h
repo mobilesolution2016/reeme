@@ -2834,11 +2834,13 @@ public:
 				{
 					// defered
 					if ((ch & 0xE0) == 0xC0)		//2 bit count
-						++ i;
-					else if ((ch & 0xF0) == 0xE0)	//3 bit count
 						i += 2;
-					else if ((ch & 0xF8) == 0xF0)	//4 bit count
+					else if ((ch & 0xF0) == 0xE0)	//3 bit count
 						i += 3;
+					else if ((ch & 0xF8) == 0xF0)	//4 bit count
+						i += 4;
+					else
+						i ++;
 
 					continue;
 				}
@@ -2875,6 +2877,7 @@ public:
 				else
 				{
 					unicode = '?';
+					i ++;
 					assert(0);
 				}
 
