@@ -1645,14 +1645,9 @@ static const char templSegDecl[] = { "__ret__, __segcc__, __segs__['" };
 static const char templSegAdd[] = { "'] = table.new(32, 0), __segcc__ + 1, table.concat(__ret__, '')\n" };
 static const char templInitCode[] = { 
 	"return function(self, __env__)\n"
-	"local __ret__, __segs__, __segcc__ = table.new(32, 0), table.new(0, 4), 0\n"
+	"local __ret__, __segs__, __segcc__, __cachesecs__ = table.new(32, 0), table.new(0, 4), 0, {}\n"
 	"local function fetchsection()\n"
-	"	while true do\n"
-	"		local r = table.remove(__ret__)\n"
-	"		local tp = type(r)\n"
-	"		if tp == 'table' then return r end\n"
-	"		if tp ~= 'string' then break end\n"
-	"	end\n"
+	"	return table.remove(__ret__)\n"
 	"end\n"
 	"local function echo(...)\n"
 	"	__ret__[#__ret__ + 1] = string.merge(...)\n"
@@ -1849,9 +1844,14 @@ _end:
 		if (offset >= srcLen)
 			return false;
 
-		for(;;)
-		{
-			const char* foundPos = savedPos ? savedPos : (const char*)memchr(src + offset, '{', srcLen - offset);
+		for(const char* foundPos = 0;;)
+		{			
+			if (savedPos)
+				foundPos = savedPos;
+			else if (src[offset] == '{')
+				foundPos = src + offset;
+			else
+				foundPos = (const char*)memchr(src + offset, '{', srcLen - offset);
 			savedPos = 0;
 
 			if (!foundPos)
@@ -1988,7 +1988,7 @@ _end:
 				foundPos = varEnd + 1;
 				offset = foundPos - src;
 
-				open();
+				open(offset);
 				goto _lastcheck;
 			}
 			else if (ch == '%')
@@ -2060,7 +2060,7 @@ _end:
 				foundPos = expEnd + 1;
 				offset = foundPos - src;
 
-				open();
+				open(offset);
 				goto _lastcheck;
 			}
 			else if (ch == '?')
@@ -2076,16 +2076,26 @@ _end:
 				if (!cmdEnd)
 					return false;
 
-				size_t add = cmdEnd - cmdStart - 1;
-				if (add == 0)
+				const char dstbuf[4] = { 'e', 'n', 'd', 0 };
+				char chkbuf[8] = { cmdStart[0], cmdStart[1], cmdStart[2] };				
+
+				size_t add = cmdEnd - cmdStart;
+				if (cmdStart[0] == '=' && add > 1)
+				{
+					// 结束且直接将这一段模板的值赋于变量（变量名就是cmdStart->cmdEnd之间的字符）
+					buf += "cachesection(self, false, __ret__, __cachesecs__)\n";
+					buf.append(cmdStart + 1, add - 1);
+					buf += "=table.remove(__ret__)\nend";
+				}
+				else if (*(uint32_t*)chkbuf == *(const uint32_t*)dstbuf && (cmdStart[3] == '}' || (uint8_t)cmdStart[3] <= 32))
 				{
 					// 结束
-					buf.append("cachesection(self, false, __ret__, __cachesecs__)\nend");
+					buf += "cachesection(self, false, __ret__, __cachesecs__)\nend";
 				}
 				else
 				{
 					// 开始
-					buf.append("if cachesection(self, true, __ret__, __cachesecs__");
+					buf += "if cachesection(self, true, __ret__, __cachesecs__";
 					if (add)
 					{
 						buf += ',';
@@ -2101,7 +2111,7 @@ _end:
 				foundPos = cmdEnd + 1;
 				offset = foundPos - src;
 
-				open();
+				open(offset);
 				goto _lastcheck;
 			}
 			else
@@ -2168,13 +2178,13 @@ _end:
 						offset = foundPos - src;
 						hasSegments = true;
 
-						open();
+						open(offset);
 						goto _lastcheck;
 					}
 				}
 			}
 
-			append(foundPos - src - offset);
+			append(foundPos - src - offset);			
 
 _lastcheck:
 			if (buf.size() + 400 >= TP_FIXED)
@@ -2184,10 +2194,29 @@ _lastcheck:
 		return true;
 	}
 
-	void open()
+	void open(size_t skipWhitesToNextOpenOffset = -1)
 	{
 		if (!bracketOpened)
-		{
+		{			
+			if (skipWhitesToNextOpenOffset != -1)
+			{
+				// 如果从skipWhitesToNextOpenOffset开始到下一个大括号之间如果全部都是空白字符且只有1个换行的话，那就全部忽略掉
+				int endl = 0;
+				const char* chk = src + skipWhitesToNextOpenOffset;
+				while((uint8_t)chk[0] <= 32 && chk < src + srcLen)
+				{
+					if (chk[0] == '\n')
+						endl ++;
+					chk ++;
+				}
+
+				if (endl <= 1 && chk[0] == '{')
+				{
+					offset = chk - src;
+					return ;
+				}
+			}
+
 			bracketOpened = true;
 			buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
 			buf.append(mlsBegin, mlsLength);
@@ -2777,6 +2806,8 @@ public:
 		uint8_t ch, v;
 		uint32_t unicode;
 		size_t i = 0, spos = 0;
+		const char upperChars[] = { "0123456789ABCDEF" };
+
 		while (i < len)
 		{
 			uint8_t ch = src[i];
@@ -2802,7 +2833,13 @@ public:
 				if (flags & kJsonUnicodes)
 				{
 					// defered
-					++ i;
+					if ((ch & 0xE0) == 0xC0)		//2 bit count
+						++ i;
+					else if ((ch & 0xF0) == 0xE0)	//3 bit count
+						i += 2;
+					else if ((ch & 0xF8) == 0xF0)	//4 bit count
+						i += 3;
+
 					continue;
 				}
 
@@ -2837,13 +2874,18 @@ public:
 				}
 				else
 				{
+					unicode = '?';
 					assert(0);
 				}
 
 				char* utf8dst = reserve(6);
 				utf8dst[0] = '\\';
 				utf8dst[1] = 'u';
-				opt_u32toa_hex(unicode, utf8dst + 2, false);
+
+				utf8dst[2] = upperChars[(unicode >> 12) & 0xF];
+				utf8dst[3] = upperChars[(unicode >> 8) & 0xF];
+				utf8dst[4] = upperChars[(unicode >> 4) & 0xF];
+				utf8dst[5] = upperChars[unicode & 0xF];
 
 				spos = i;
 			}

@@ -703,8 +703,12 @@ local modelMeta = {
 			end
 
 			return setmetatable(q, queryMeta)
-		end,		
-		--建立一个执行表达式的查询器而忽略其它行或列
+		end,
+		--建立一个SELECT查询器并设置列
+		columns = function(self, names)
+			return self:query():columns(names)
+		end,
+		--建立一个SELECT查询器并设置表达式同时忽略所有列
 		expression = function(self, expr)
 			return self:query():expr(expr):columns()
 		end,
