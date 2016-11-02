@@ -141,32 +141,29 @@ end
 
 --使用模板内缓存
 local function setCachesection(viewself, isBegin, rets, caches, ...)	
-	if not caches then
-		--cache没有，于是永远返回true，表示模板缓存或读取缓存失败
-		return true
-	end
-	
 	local cc = #caches
 	if isBegin then
 		--创建
-		local conds = { viewself.tplName, ... }
-		if #conds == 0 then
-			error('template cache beginned with no condition(s)')
+		if select('#', ...) == 0 then
+			caches[cc + 1] = { s = #rets }
+			return true
 		end
-
-		conds = table.concat(conds, '')
-		local cached = caches[conds]
-		if cached then
-			--条件相同的缓存数据存在，于是返回false表示不需要继续解析接下来到cache end之间的代码
-			rets[#rets + 1] = cached
-			return false
+		
+		local conds = table.concat({ viewself.tplName, ... }, '')
+		if globalSectionCaches then
+			local cached = globalSectionCaches[conds]
+			if cached then
+				--条件相同的缓存数据存在，于是返回false表示不需要继续解析接下来到cache end之间的代码
+				rets[#rets + 1] = cached
+				return false
+			end
 		end
-
+		
 		caches[cc + 1] = { c = conds, s = #rets }
 
 	elseif cc > 0 then
 		--结束。将开始到结束之间的所有代码组合后缓存起来
-		local last = table.remove(caches, cc)
+		local last = table.remove(caches)
 
 		cc = #rets
 		local k = 1
@@ -175,8 +172,17 @@ local function setCachesection(viewself, isBegin, rets, caches, ...)
 			newtbl[k] = rets[i]
 			k = k + 1
 		end
+		
+		while k > 1 do
+			table.remove(rets)
+			k = k - 1
+		end
 
-		caches[last.c] = table.concat(newtbl, '')
+		k = table.concat(newtbl, '')
+		if globalSectionCaches and last.c then
+			globalSectionCaches[last.c] = k
+		end
+		rets[#rets + 1] = k
 		
 	else
 		error('error for closed template cache, not paired with begin')
@@ -271,7 +277,6 @@ viewMeta.__index = {
 			reeme = self.__reeme,
 			subtemplate = loadSubtemplate,
 			cachesection = setCachesection,
-			__cachesecs__ = globalSectionCaches,
 		}
 		local meta = { __index = vals, __newindex = vals }
 		setmetatable(vals, { __index = _G })
@@ -304,11 +309,6 @@ viewMeta.__index = {
 
 		--按方法执行
 		methods[method or 'overwrite'](self, src, env)
-		
-		--结束时的检测
-		if vals.__cachesecs__ and #vals.__cachesecs__ > 0 then
-			error('render template with cache(s) not closed')
-		end
 
 		--换回meta
 		if oldMeta then

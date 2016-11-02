@@ -952,13 +952,13 @@ extern "C" size_t opt_u32toa_hex(uint32_t value, char* dst, bool useUpperCase)
 	int32_t endt = 32, i;
 	uint32_t mask = 0xF0000000;
 
-	do
+	for(int n = 0; n < 7; ++ n)
 	{
 		if (value & mask)
 			break;
 		mask >>= 4;
 		endt -= 4;
-	} while (mask != 0);
+	}
 
 	if (useUpperCase)
 	{
@@ -989,13 +989,13 @@ extern "C" size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase)
 	int32_t endt = 64, i;
 	uint64_t mask = 0xF000000000000000;
 
-	do
+	for(int n = 0; n < 7; ++ n)
 	{
 		if (value & mask)
 			break;
 		mask >>= 4;
 		endt -= 4;
-	} while (mask != 0);
+	}
 
 	if (useUpperCase)
 	{

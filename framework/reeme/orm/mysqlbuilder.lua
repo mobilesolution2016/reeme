@@ -22,7 +22,7 @@ builder.dbTypeName = 'mysql'
 --允许的条件组合方式
 builder.conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }
 --允许的联表方式
-builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN' }
+builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN', cross = 'CROSS JOIN' }
 
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
 --第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定。若返回为nil表示值为原值表达式
@@ -1013,21 +1013,31 @@ builder.buildJoinsConds = function(self, sqls, haveOns, allJoins)
 		return
 	end
 	
-	local validJoins = builder.validJoins
-	
 	for i = 1, cc do
 		local join = self.joins[i]
 		local q = join.q
 
-		sqls[#sqls + 1] = validJoins[join.type]
+		sqls[#sqls + 1] = builder.validJoins[join.type]
 		sqls[#sqls + 1] = q.m.__name
 		sqls[#sqls + 1] = q._alias
-		sqls[#sqls + 1] = 'ON('
+
+		local defon = true
+		if join.type == 'cross' then
+			defon = false
+		else
+			sqls[#sqls + 1] = 'ON('
+		end		
 
 		local pos = #sqls
 		if q.onValues == nil or not builder.buildWheres(q, sqls, nil, q._alias .. '.', q.onValues, allJoins) then
-			sqls[#sqls + 1] = '1)'
+			if defon then
+				sqls[#sqls + 1] = '1)'
+			end
+
 		else
+			if not defon then
+				table.insert(sqls, #sqls, 'ON(')
+			end
 			sqls[#sqls + 1] = ')'
 		end
 		
