@@ -576,6 +576,7 @@ static int lua_string_replace(lua_State* L)
 	}
 	else if (tp2 == LUA_TSTRING)
 	{
+		int repcc = 0;
 		to = lua_tolstring(L, 3, &toLen);
 
 		if (tp1 == LUA_TSTRING)
@@ -583,7 +584,7 @@ static int lua_string_replace(lua_State* L)
 			// ×Ö·û´®¶Ô×Ö·û´®Ìæ»»
 			from = lua_tolstring(L, 2, &fromLen);
 			if (fromLen > 0)
-			{
+			{				
 				srcptr = src;
 				for(;;)
 				{
@@ -596,11 +597,15 @@ static int lua_string_replace(lua_State* L)
 					lua_string_addbuf(&buf, to, toLen);	
 
 					srcptr = foundPos + fromLen;
+					repcc ++;
 				}
 			
-				lua_string_addbuf(&buf, srcptr, srcLen - (srcptr - src));
-				luaL_pushresult(&buf);
-				return 1;
+				if (repcc)
+				{
+					lua_string_addbuf(&buf, srcptr, srcLen - (srcptr - src));
+					luaL_pushresult(&buf);
+					return 1;
+				}
 			}
 		}
 		else if (tp1 == LUA_TUSERDATA)
@@ -618,11 +623,21 @@ static int lua_string_replace(lua_State* L)
 				lua_string_addbuf(&buf, to, toLen);
 
 				fromLen += offset + bms->m_subLen;
+				repcc ++;
 			}
 
-			if (fromLen < srcLen)
-				lua_string_addbuf(&buf, src + fromLen, srcLen - fromLen);
+			if (repcc)
+			{
+				if (fromLen < srcLen)
+					lua_string_addbuf(&buf, src + fromLen, srcLen - fromLen);
+
+				luaL_pushresult(&buf);
+				return 1;
+			}
 		}
+
+		lua_pushvalue(L, 1);
+		return 1;
 	}
 	else if (top == 2 && tp1 == LUA_TTABLE)
 	{

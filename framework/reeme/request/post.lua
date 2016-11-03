@@ -12,23 +12,8 @@ local var     = ngx.var
 local body    = req.read_body
 local data    = req.get_body_data
 local pargs   = req.get_post_args
-		
-local function copyfile(source,destination)
-	local sourcefile = io.open(source, "rb")
-	if not sourcefile then 
-		return false, 'source file open failed' 
-	end
-	destinationfile = io.open(destination, "wb+")
-	if not destinationfile then
-		sourcefile:close()
-		return false, 'destination file open failed'
-	end
-	destinationfile:write(sourcefile:read("*all"))
-	sourcefile:close()
-	destinationfile:close()
-	
-	return true
-end 
+
+local fd = require('reeme.fd')()
 
 local function rightmost(s, sep)
     local p = 1
@@ -75,19 +60,33 @@ end
 
 local function getTempFileName()
 	local ffi = require("ffi")
-    if ffi.abi('win') then
-        ffi.cdef[[
-            unsigned long GetTempPathA(unsigned long nBufferLength, char* lpBuffer);
-        ]]
-    
-        local tempPathLengh = 256
-        local tempPathBuffer = ffi.new("char[?]", tempPathLengh)
-        ffi.C.GetTempPathA(tempPathLengh, tempPathBuffer)
-        local tempPath = ffi.string(tempPathBuffer) or "d:/tmp"
-		return tempPath .. tmpname()
-	else
-		return tmpname()
-    end
+	local tname = os.tmpname()
+
+	local fpos = string.rfindchar(tname, '/')
+	if not fpos then
+		fpos = string.rfindchar(tname, '\\')
+		if not fpos then
+			fpos = #tname
+		end
+	end
+
+	if fd:pathIsDir(string.sub(tname, 1, fpos)) then
+		return tname
+	end
+
+	if ffi.abi('win') then
+		ffi.cdef[[
+			unsigned long GetTempPathA(unsigned long nBufferLength, char* lpBuffer);
+		]]
+
+		local tempPathLengh = 256
+		local tempPathBuffer = ffi.new("char[?]", tempPathLengh)
+		ffi.C.GetTempPathA(tempPathLengh, tempPathBuffer)
+		return ffi.string(tempPathBuffer) or "d:/"
+	end
+
+	assert(0, 'cannot get temp-filename')
+	return ''
 end
 	
 local function getPostArgsAndFiles(options)
@@ -96,6 +95,14 @@ local function getPostArgsAndFiles(options)
     local ct = var.content_type
 	if not options then options = { } end
     if ct == nil then return post, files end
+	
+	function _move(self, dstFilename)
+		if fd:pathIsFile(dstFilename) and not fd:deleteFile(dstFilename) then
+			return false
+		end		
+		return os.rename(self.temp, dstFilename)
+	end
+								
     if sub(ct, 1, 19) == "multipart/form-data" then
         local chunk = options.chunk_size or 8192
         local form, e = upload:new(chunk)
@@ -121,12 +128,9 @@ local function getPostArgsAndFiles(options)
                                 type = h["Content-Type"] and h["Content-Type"][1],
                                 file = basename(d.filename),
                                 temp = getTempFileName(),
-								moveFile = function(self, dstFilename)
-									--return os.rename(self.temp, dstFilename)
-									return copyfile(self.temp, dstFilename)
-								end,
+								moveFile = _move,
                             }
-                            o, e = open(f.temp, "wb+")
+                            o, e = open(f.temp, "wb")
                             if not o then return nil, e end
                             o:setvbuf("full", chunk)
                         else

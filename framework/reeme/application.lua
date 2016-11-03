@@ -76,7 +76,12 @@ ffi.cdef[[
 	size_t opt_i64toa(int64_t value, char* buffer);
 	size_t opt_u64toa(uint64_t value, char* buffer);
 	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);
+	
+	int deleteDirectory(const char* path);
+	int deleteFile(const char* fname);
 ]]
+
+_G.libreemext = reemext
 
 --lua standard library extends
 _G.table.unique = function(tbl)
@@ -96,6 +101,11 @@ end
 _G.io.exists = function(name)
 	return ffi.C.access(name, 0) == 0
 end
+
+_G.io.filesize = function(name)
+	return cExtLib.filesize(name)
+end
+
 
 local strlib = _G.string
 strlib.cut = function(str, p)
@@ -219,10 +229,11 @@ local function doLazyLoader(self, key, ...)
 	local lazyLoader = self.thisApp.configs[key]
 	local tp = type(lazyLoader)
 	if tp == "table" then
-		local fget = lazyLoader.get
-		local ffree = lazyLoader.free
-		if type(fget) == "function" then
+		local fget = lazyLoader.get		
+		if type(fget) == "function" then			
 			local r = fget(self, ...)
+			local ffree = lazyLoader.free
+			
 			if r and type(ffree) == "function" then
 				local loader = {
 					params = { ... },
@@ -236,9 +247,12 @@ local function doLazyLoader(self, key, ...)
 	elseif tp == 'function' then
 		return lazyLoader(self, ...)
 	end
+
+	rawset(self, key, lazyLoader)
+	return lazyLoader
 end
 
-local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, ffi_reflect = require('reeme.ffi_reflect') }
+local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, fd = 1, ffi_reflect = require('reeme.ffi_reflect') }
 local ctlMeta = {
 	__index = function(self, key)
 		local f = rawget(rawget(self, -10000), key) or

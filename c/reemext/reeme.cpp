@@ -433,6 +433,95 @@ uint32_t cdataisint64(const char* str, size_t len)
 	return 0;
 }
 
+int deleteDirectory(const char* dir)
+{
+#ifdef _WINDOWS
+	int len = strlen(dir) + 2;
+	char tempdirFix[512] = { 0 };
+	char* tempdir = tempdirFix;
+	
+	if (len > 512)
+	{
+		tempdir = (char*)malloc(len);
+		tempdir[len - 1] = 0;
+		tempdir[len] = 0;
+	}
+	memcpy(tempdir, dir, len);
+
+	SHFILEOPSTRUCTA file_op = {
+		NULL,
+		FO_DELETE,
+		tempdir,
+		"",
+		FOF_NOCONFIRMATION |
+		FOF_NOERRORUI |
+		FOF_SILENT,
+		false,
+		0,
+		""
+	};
+	int ret = SHFileOperationA(&file_op);
+	
+	if (tempdir != tempdirFix)
+		free(tempdir);
+
+	return ret == 0 ? TRUE : FALSE;
+#else
+	if (!dir || !dir[0])
+		return false;
+
+	DIR* dp = NULL;
+	DIR* dpin = NULL;
+
+	struct dirent* dirp;
+	dp = opendir(dir);
+	if (dp == 0)
+		return 0;
+
+	std::string strPathname;
+	while ((dirp = readdir(dp)) != 0)
+	{
+		if (strcmp(dirp->d_name, "..") == 0 || strcmp(dirp->d_name, ".") == 0)
+			continue;
+
+		strPathname = dir;
+		strPathname += '/';
+		strPathname += dirp->d_name;
+		dpin = opendir(strPathname.c_str());
+		if (dpin != 0)
+		{
+			closedir(dpin);
+			dpin = 0;
+
+			if (!ioDeleteDir(strPathname.c_str()))
+				return 0;
+		}
+		else if (remove(strPathname.c_str()) != 0)
+		{
+			closedir(dp);
+			return 0;
+		}
+	}
+
+	rmdir(dir);
+	closedir(dp);
+
+	return 1;
+#endif
+}
+
+int deleteFile(const char* fname)
+{
+#ifdef _WINDOWS
+	SetFileAttributesA(fname, FILE_ATTRIBUTE_ARCHIVE);
+	return DeleteFileA(fname);
+#else
+	if (access(fname, F_OK) == 0)
+		return remove(fname) == 0;
+	return false;
+#endif
+}
+
 static int lua_uint64_tolightuserdata(lua_State* L)
 {
 	const uint64_t* p = (const uint64_t*)lua_topointer(L, 1);
@@ -443,6 +532,40 @@ static int lua_uint64_tolightuserdata(lua_State* L)
 	}
 
 	luaL_checktype(L, 1, LUA_TCDATA);
+	return 0;
+}
+
+static int lua_filesize(lua_State* L)
+{
+	size_t len = 0;
+	const char* fname = lua_tolstring(L, 1, &len);
+	if (!fname || len < 1)
+		return 0;
+
+#ifdef _WINDOWS
+	HANDLE hFile = CreateFileA(fname, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+	if (hFile && hFile != INVALID_HANDLE_VALUE)
+	{
+		DWORD hi;
+		DWORD lo = GetFileSize(hFile, &hi);
+		CloseHandle(hFile);
+
+		lua_pushinteger(L, ((uint64_t)hi << 32) | lo);
+		return 1;
+	}
+#else
+	FILE* fp = fopen(fname, "rb");
+	if (fp)
+	{
+		fseek(fp, 0L, SEEK_END);
+		unsigned long s = ftell(fp);
+		fclose(fp);
+
+		lua_pushinteger(L, s);
+		return 1;
+	}
+#endif
+
 	return 0;
 }
 
@@ -510,6 +633,8 @@ REEME_API int luaopen_libreemext(lua_State* L)
 
 		// 将boxed int64直接转成void*型，以保证不同cdata int64的值唯一
 		{ "int64ltud", &lua_uint64_tolightuserdata },
+
+		{ "filesize", &lua_filesize },
 
 		{ NULL, NULL }
 	};

@@ -152,3 +152,6 @@ REEME_API uint64_t double2uint64(double dbl);
 REEME_API int64_t ltud2int64(void* p);
 REEME_API uint64_t ltud2uint64(void* p);
 REEME_API uint32_t cdataisint64(const char* str, size_t len);
+
+REEME_API int deleteDirectory(const char* path);
+REEME_API int deleteFile(const char* fname);
