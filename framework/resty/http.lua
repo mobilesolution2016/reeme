@@ -722,7 +722,7 @@ function _M.request_pipeline(self, requests)
 end
 
 
-function _M.request_uri(self, uri, params)
+function _M.request_uri(self, uri, params, noresult)
     if not params then params = {} end
 
     local parsed_uri, err = self:parse_uri(uri)
@@ -754,6 +754,10 @@ function _M.request_uri(self, uri, params)
         return nil, err
     end
 
+	if noresult then
+		return res
+	end
+	
     local body, err = res:read_body()
     if not body then
         return nil, err

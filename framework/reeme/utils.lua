@@ -33,6 +33,11 @@ else
 	socklib = ffi.C
 end
 
+ffi.cdef[[
+typedef unsigned char u_char;
+u_char * ngx_hex_dump(u_char *dst, const u_char *src, size_t len);
+]]
+
 local Utils = {
 	--en/decode
 	escapeUri = function(str)
@@ -87,6 +92,15 @@ local Utils = {
 		else
 			return ngx.md5_bin(str)
 		end
+	end,
+	
+	hex = function(str)
+		if not str or type(str) ~= "string" then return nil end
+		
+		local len = #str * 2
+		local buf = ffi.new(ffi.typeof("uint8_t[?]"), len)
+		ffi.C.ngx_hex_dump(buf, str, #str)
+		return ffi.string(buf, len)
 	end,
 	
 	--random
