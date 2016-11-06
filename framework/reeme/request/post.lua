@@ -91,7 +91,7 @@ local function getPostArgsAndFiles(options)
     local post = { }
     local files = { }
 	local bodydata = nil
-	local request_method = ngx.req.request_method
+	local request_method = ngx.req.get_method()
 	
     local ct = var.content_type
 	if not options then options = { } end
