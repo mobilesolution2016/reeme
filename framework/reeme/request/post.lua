@@ -12,7 +12,6 @@ local var     = ngx.var
 local body    = req.read_body
 local data    = req.get_body_data
 local pargs   = req.get_post_args
-local method  = ngx.var.request_method
 
 local function rightmost(s, sep)
     local p = 1
@@ -92,7 +91,7 @@ local function getPostArgsAndFiles(options)
     local post = { }
     local files = { }
 	local bodydata = nil
-	local request_method = method()
+	local request_method = ngx.req.request_method
 	
     local ct = var.content_type
 	if not options then options = { } end

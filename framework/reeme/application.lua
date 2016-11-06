@@ -76,7 +76,12 @@ ffi.cdef[[
 	size_t opt_i64toa(int64_t value, char* buffer);
 	size_t opt_u64toa(uint64_t value, char* buffer);
 	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);
+	
+	int deleteDirectory(const char* path);
+	int deleteFile(const char* fname);
 ]]
+
+_G.libreemext = reemext
 
 --lua standard library extends
 _G.table.unique = function(tbl)
@@ -96,6 +101,11 @@ end
 _G.io.exists = function(name)
 	return ffi.C.access(name, 0) == 0
 end
+
+_G.io.filesize = function(name)
+	return cExtLib.filesize(name)
+end
+
 
 local strlib = _G.string
 strlib.cut = function(str, p)
@@ -219,10 +229,11 @@ local function doLazyLoader(self, key, ...)
 	local lazyLoader = self.thisApp.configs[key]
 	local tp = type(lazyLoader)
 	if tp == "table" then
-		local fget = lazyLoader.get
-		local ffree = lazyLoader.free
-		if type(fget) == "function" then
+		local fget = lazyLoader.get		
+		if type(fget) == "function" then			
 			local r = fget(self, ...)
+			local ffree = lazyLoader.free
+			
 			if r and type(ffree) == "function" then
 				local loader = {
 					params = { ... },
@@ -236,9 +247,12 @@ local function doLazyLoader(self, key, ...)
 	elseif tp == 'function' then
 		return lazyLoader(self, ...)
 	end
+
+	rawset(self, key, lazyLoader)
+	return lazyLoader
 end
 
-local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, ffi_reflect = require('reeme.ffi_reflect') }
+local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, fd = 1, ffi_reflect = require('reeme.ffi_reflect') }
 local ctlMeta = {
 	__index = function(self, key)
 		local f = rawget(rawget(self, -10000), key) or
@@ -480,9 +494,6 @@ local appMeta = {
 				--执行动作
 				if c and actionMethod then
 					r = actionMethod(c)
-					if r == nil or r == false and c.__actionReturned then
-						r = c.__actionReturned
-					end
 
 				elseif self.missmatchProc then
 					r = self.missmatchProc(self, path, act)
@@ -497,31 +508,40 @@ local appMeta = {
 				end
 
 				--处理返回的结果
-				if r ~= nil then
-					local tp = type(r)
-					local out = self.outputProc or outputRedirect
+				local redirect = rawget(c.response, '__redirect')
+				if redirect then
+					--URL重定向的话就不需要输出任何其它内容了
+					ngx.redirect(redirect)
 
-					if tp == 'table' then
-						--可能是一个view也可能是json
-						local o
-						if getmetatable(r) == viewMeta then
-							o = r:content()
-						else
-							o = (self.tblfmtProc or defTblfmt)(self, r)
-						end
+				else
+					--否则的话，以response里的内容为主，如果response里没内容，再使用返回值
+					local resp = c.response:finish() or r
+					if resp ~= nil then
+						local tp = type(resp)
+						local out = self.outputProc or outputRedirect
 
-						out(self, o)
+						if tp == 'table' then
+							--可能是一个view也可能是json
+							local o
+							if getmetatable(resp) == viewMeta then
+								o = resp:content()
+							else
+								o = (self.tblfmtProc or defTblfmt)(self, resp)
+							end
 
-					elseif tp == 'string' then
-						--字符串直接输出
-						out(self, r)
+							out(self, o)
 
-					elseif r == false then
-						--动作函数返回false表示拒绝访问，此时如果定义有deniedProc的话就会被执行，否则统一返回ErrorAccess的报错
-						if self.deniedProc then
-							self.deniedProc(self, c, path, act)
-						else
-							out(self, 'Denied Error Access!')
+						elseif tp == 'string' then
+							--字符串直接输出
+							out(self, resp)
+
+						elseif resp == false then
+							--动作函数返回false表示拒绝访问，此时如果定义有deniedProc的话就会被执行，否则统一返回ErrorAccess的报错
+							if self.deniedProc then
+								self.deniedProc(self, c, path, act)
+							else
+								out(self, 'Denied Error Access!')
+							end
 						end
 					end
 				end
