@@ -49,50 +49,6 @@ local Utils = {
 		return ffi.string(buf, len)
 	end,
 	
-	--en/decrypt
-	rsaEncrypt = function(publicKey, str)
-		local rsa = require("resty.rsa")
-		local base64 = require("resty.base64")
-		
-		local pub, err = rsa:new(publicKey, true)
-		if not pub then
-			return nil, err
-		end
-		
-		local encrypted, err = pub:encrypt(str)
-		if not encrypted then
-			return nil, err
-		end
-		
-		return base64.base64_encode(encrypted)
-	end,
-	
-	rsaDecrypt = function(privateKey, str)
-		local rsa = require("resty.rsa")
-		local base64 = require("resty.base64")
-		
-		local priv, err = rsa:new(privateKey)
-		if not priv then
-			return nil, err
-		end
-		
-		local decrypted = priv:decrypt(base64.base64_decode(str))
-		if not decrypted then
-			return nil, err
-		end
-		return decrypted
-	end,
-	
-	--file
-	readFile = function(filename)
-		local file, err = io_open(filename, "rb")
-		local data = file and file:read("*a") or nil
-		if file then
-			file:close()
-		end
-		return data
-	end,
-	
 	--network
 	resolveHost = function(name, returnFirst)
 		if type(name) ~= 'string' then
