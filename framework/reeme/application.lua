@@ -482,7 +482,6 @@ local appMeta = {
 
 					elseif tp == 'string' then
 						actionMethod = nil
-						ngx.say(r)
 					end
 				end
 
