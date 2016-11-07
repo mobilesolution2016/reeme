@@ -25,7 +25,7 @@ local readables = {
 	startTime = function(reeme) return ngx.req.start_time end,
 	version = function(reeme) return ngx.req.http_version end,
 	rawHeader = function(reeme) return ngx.req.raw_header end,
-	method = function(reeme) return ngx.req.request_method end,
+	method = function(reeme) return ngx.req.get_method() end,
 	isPost = function(reeme) return ngx.req.get_method() == "POST" end,
 	isSubrequest = function(reeme) return ngx.is_subrequest end,
 	contentLength = function(reeme) return ngx.req.content_length end,

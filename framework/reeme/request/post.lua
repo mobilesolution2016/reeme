@@ -13,8 +13,6 @@ local body    = req.read_body
 local data    = req.get_body_data
 local pargs   = req.get_post_args
 
-local fd = require('reeme.fd')()
-
 local function rightmost(s, sep)
     local p = 1
     local i = find(s, sep, 1, true)
@@ -92,6 +90,9 @@ end
 local function getPostArgsAndFiles(options)
     local post = { }
     local files = { }
+	local bodydata = nil
+	local request_method = ngx.req.get_method()
+	
     local ct = var.content_type
 	if not options then options = { } end
     if ct == nil then return post, files end
@@ -193,13 +194,16 @@ local function getPostArgsAndFiles(options)
     else
         body()
         post = pargs()
+		if request_method == 'POST' then
+			bodydata = data()
+		end
     end
-    return post, files
+    return post, files, bodydata
 end
 
 return function(reeme)
-	local postArgs, files = getPostArgsAndFiles()
-	local post = { __R = reeme, __post = postArgs, files = files or { } }
+	local postArgs, files, body = getPostArgsAndFiles()
+	local post = { __R = reeme, __post = postArgs, files = files or { }, body = body }
 	
 	return setmetatable(post, { 
 		__index = postArgs or { },
