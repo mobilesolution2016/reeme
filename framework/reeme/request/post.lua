@@ -12,6 +12,7 @@ local var     = ngx.var
 local body    = req.read_body
 local data    = req.get_body_data
 local pargs   = req.get_post_args
+local fd 	  = require('reeme.fd')()
 
 local function rightmost(s, sep)
     local p = 1
