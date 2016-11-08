@@ -2944,7 +2944,7 @@ public:
 
 #define JSON_MAX_DEEP_LEVELS	1024
 #define jsonConvValue()\
-	switch(lua_type(L, -1)) {\
+	switch(vtype) {\
 	case LUA_TTABLE:\
 		if (recursionJsonEncode(L, mem, base + 1, flags, funcsIdx) == -1)\
 			return -1;\
@@ -3014,16 +3014,20 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 		lua_pushnil(L);
 		while(lua_next(L, tblIdx))
 		{
-			ptr = lua_tolstring(L, -2, &len);
+			int vtype = lua_type(L, -1);
+			if (vtype < LUA_TFUNCTION)
+			{
+				ptr = lua_tolstring(L, -2, &len);
 
-			mem->addChar2(cc ? ',' : '{', '"');
-			mem->addString(ptr, len);
-			mem->addChar2('"', ':');
+				mem->addChar2(cc ? ',' : '{', '"');
+				mem->addString(ptr, len);
+				mem->addChar2('"', ':');
 
-			jsonConvValue();
+				jsonConvValue();
+				cc ++;
+			}
 
 			lua_settop(L, base);
-			cc ++;
 		}
 
 		if (cc)
@@ -3041,13 +3045,17 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 		{
 			lua_rawgeti(L, tblIdx, n);
 
-			if (n > 1)
-				mem->addChar(',');
+			int vtype = lua_type(L, -1);
+			if (vtype < LUA_TFUNCTION)
+			{
+				if (n > 1)
+					mem->addChar(',');
 
-			jsonConvValue();
+				jsonConvValue();
+				cc ++;
+			}
 
 			lua_settop(L, base);
-			cc ++;
 		}
 
 		mem->addChar(']');
