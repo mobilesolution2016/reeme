@@ -635,7 +635,6 @@ private:
 
 					if (!pReadPos)
 						return 0;
-					endChar = pReadPos[0];
 				}
 				else if (pReadPos[0] == '{')
 				{
@@ -647,8 +646,6 @@ private:
 					pReadPos = parseReadNode(pReadPos + 1, JATObject);
 					if (!pReadPos)
 						return 0;
-
-					endChar = pReadPos[0];
 				}
 				else
 				{
@@ -657,18 +654,19 @@ private:
 					if (!pReadPos)
 						return 0;
 
-					attr->kType = m_bQuoteStart ? JATString : JATValue;
-
-					endChar = pReadPos[0];
+					attr->kType = m_bQuoteStart ? JATString : JATValue;					
 					onAddAttr(attr, 0);
 				}
+
+				SKIP_WHITES();
+				endChar = pReadPos[0];
 
 				cc ++;
 			}
 			else if (cc == 0 && pReadPos[0] == '}')
 			{
 				//¿ÕµÄ´óÀ¨ºÅ
-				endChar = pReadPos[0];
+				endChar = '}';
 
 				if (m_iNeedSetMarker)
 				{
