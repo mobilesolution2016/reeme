@@ -350,6 +350,19 @@ local defTblfmt = function(app, tbl)
 	return string.json(tbl, string.JSON_UNICODES)
 end
 
+local defRouter = function(uri)
+    if uri == '/' then
+        return 'index', 'index'
+    end
+	
+	local segs = string.split(uri, './')	
+    if #segs == 1 then
+		return segs[1], 'index'
+    end
+
+	return string.lower(table.concat(segs, '.', 1, #segs - 1)), string.lower(segs[#segs])
+end
+
 local appMeta = {
 	__index = {
 		init = function(self, cfgs)
@@ -437,7 +450,7 @@ local appMeta = {
 				setmetatable(c, ctlMeta2)
 			else
 				assert(type(cmeta) == 'table', 'The returned value for creator function of controller only can be function|table')
-				setmetatable(c, ctlMeta)
+				setmetatable(c, ctlMeta)				
 			end
 
 			rawset(c, -10000, self.users)
@@ -450,9 +463,8 @@ local appMeta = {
 		end,
 
 		run = function(self)
-			local router = self.configs.router or require("reeme.router")
-			local path, act = router(ngx.var.uri)
 			local r, c, actionMethod
+			local path, act = (self.routeProc or defRouter)(ngx.var.uri)			
 
 			--载入控制器
 			c, actionMethod, r = self:loadController(path, act)
@@ -494,8 +506,12 @@ local appMeta = {
 				if c and actionMethod then
 					r = actionMethod(c)
 
-				elseif self.missmatchProc then
-					r = self.missmatchProc(self, path, act)
+				elseif r == nil then
+					if self.missmatchProc then
+						r = self.missmatchProc(self, path, act)
+					else
+						error(string.format('the action "%s" of controller "%s" undefined', act, path))
+					end
 				end
 
 				--结束动作

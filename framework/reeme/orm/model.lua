@@ -938,12 +938,11 @@ local modelMeta = {
 		
 		--验证给定的长度是否超过了字段配置的限制
 		validlen = function(self, name, value, minlength, utf8Enc)
-			if type(value) ~= 'string' then
-				if value == nil then
-					return false
-				end
-				
+			local tp = type(value)		
+			if tp == 'number' then
 				value = tostring(value)
+			elseif tp ~= 'string' then
+				return false
 			end
 			
 			local f = self.__fields[name]

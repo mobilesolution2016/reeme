@@ -910,12 +910,12 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 							suggCon = '='
 						end
 
-						if mysqlwords[lastToken] --[[and string.byte(one.expr, #one.expr) ~= 40 ]]then
-							--最后一个符号为函数调用，那么就自动的为其加上括号。这种情况只有name和val分开写的时候才会运行到这里来，正因为分开写了，所以括号只能在这里自动的加
+						if mysqlwords[lastToken] == 1 --[[and string.byte(one.expr, #one.expr) ~= 40 ]]then
+							--最后一个符号为函数调用，那么就自动的为其加上括号。这种情况只有name和val分开写的时候才会运行到这里来，正因为分开写了，所以括号只能在这里自动的加							
 							merges[3], merges[4] = merges[3] .. '(', merges[4] .. ')'
 						else
 							--如果expr是一个纯字段名，那就要加上建议的连接符号
-							merges[3] = one.purekn and suggCon or ''
+							merges[3] = one.purekn and suggCon .. ' ' or ' '
 						end
 
 						rsql = table.concat(merges, '')

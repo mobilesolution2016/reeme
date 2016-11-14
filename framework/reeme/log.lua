@@ -32,7 +32,7 @@ local initConnect = function(reeme)
 	lastAddr = addr
 
 	local s = ngx.socket.tcp()	
-	s:settimeout(200)
+	s:settimeout(30)
 	
 	local ok, err = s:connect(addr, 9880)
 	if not ok then
