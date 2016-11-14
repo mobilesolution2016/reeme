@@ -222,7 +222,7 @@ local defConfigs = {
 
 local error_old = error
 function error(e)
-	error_old({ msg = e })
+	error_old(e, 0)
 end
 
 local function doLazyLoader(self, key, ...)
@@ -476,7 +476,7 @@ local appMeta = {
 			self.currentControllerName = path
 			self.currentRequestAction = act
 
-			local ok, err = xpcall(function()
+			local _, err = xpcall(function()
 				if self.preProc then
 					--执行动作前响应函数
 					r = self.preProc(self, c, path, act, actionMethod)
@@ -572,18 +572,15 @@ local appMeta = {
 			end
 			c = nil
 
-			if not ok then
-				local msg = type(err) == 'table' and err.msg or err
+			if err then
 				local out = self.outputProc or outputRedirect
-				local msgtp = type(msg)
+				local errtp = type(err)
 
-				if msgtp == "string" then
-					out(self, msg)
-				elseif msgtp == "table" then
-					local tblfmt = self.tblfmtProc or defTblfmt
-					out(self, tblfmt(self, msg))
-				elseif type(err) == "string" then
+				if errtp == "string" then
 					out(self, err)
+				elseif errtp == "table" then
+					local tblfmt = self.tblfmtProc or defTblfmt
+					out(self, tblfmt(self, err))
 				end
 
 				ngx.eof()
