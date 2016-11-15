@@ -72,7 +72,7 @@ local function read_msg_header ( sock )
 end
 
 local function handle_reply ( conn , req_id , offset_i )
-    offset_i = offset_i  or 0
+    offset_i = offset_i or 0
 
     local r_len , r_req_id , r_res_id , opcode = read_msg_header ( conn.sock )
     assert ( req_id == r_res_id )
@@ -93,7 +93,8 @@ local function handle_reply ( conn , req_id , offset_i )
 
     local r = { }
     for i = 1 , t.numberReturned do
-        r[i] = from_bson(get)
+		--reeme
+        r[i + offset_i] = from_bson(get)
     end
 
     return cursorid, r, t

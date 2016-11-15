@@ -40,10 +40,15 @@ end
 function cursor_methods:limit(n)
     assert(n)
     self.limit_n = n
+	return self
 end
 
---todo
---function cursor_methods:skip(n)
+--reeme
+function cursor_methods:skip(n)
+	assert(n)
+	self.i = n
+	return self
+end
 
 function cursor_methods:sort(fields)
     self.query["$orderby"] = fields
@@ -51,7 +56,7 @@ function cursor_methods:sort(fields)
 end
 
 function cursor_methods:next()
-    if self.limit_n > 0 and self.i >= self.limit_n then return nil end
+    if self.limit_n > 0 and (self.i - self.skip_n) >= self.limit_n then return nil end
 
     local v = self.results [ self.i  - self.skip_n + 1 ]
     if v ~= nil then
