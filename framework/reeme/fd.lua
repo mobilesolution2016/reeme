@@ -4,6 +4,15 @@ local _openDir = 0
 local _createDir = 0
 
 local dirt = {}
+local mode2n = function(mode)
+	if type(mode) == 'string' then
+		local s, g, o = string.byte(mode, 1, 3)
+		s = bit.lshift(s - 48, 6)
+		g = bit.lshift(g - 48, 3)
+		return bit.bor(bit.bor(s, g), o - 48)
+	end
+	return mode
+end
 
 if ffi.os == 'Windows' then
 	ffi.cdef[[
@@ -156,7 +165,7 @@ else
 	}
 
 	_createDir = function(self, path, mode)
-		return createdir(path, mode or 0)
+		return createdir(path, mode2n(mode) or 0)
 	end
 end
 
