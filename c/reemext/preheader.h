@@ -15,7 +15,7 @@
 #include <list>
 
 #ifdef _WINDOWS
-#	define WIN32_LEAN_AND_MEAN             // ´Ó Windows Í·ÖÐÅÅ³ý¼«ÉÙÊ¹ÓÃµÄ×ÊÁÏ
+#	define WIN32_LEAN_AND_MEAN             // ï¿½ï¿½ Windows Í·ï¿½ï¿½ï¿½Å³ï¿½ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½Ãµï¿½ï¿½ï¿½ï¿½ï¿½
 #	include <windows.h>
 #	include <tchar.h>
 #	include <boost/unordered_map.hpp>
@@ -45,6 +45,7 @@
 #   include <sys/socket.h>
 #   include <sys/ioctl.h>
 #   include <sys/uio.h>
+#   include <sys/stat.h>
 #   include <arpa/inet.h>
 #   include <netinet/in.h>
 #   include <netinet/ip.h>
@@ -53,6 +54,7 @@
 #	include <unordered_set>
 #   include <unistd.h>
 #   include <netdb.h>
+#	include <dirent.h>
 
 #   define SOCKET int
 #   define SD_BOTH 2

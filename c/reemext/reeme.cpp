@@ -101,7 +101,7 @@ static int connectToDeamon(lua_State* L, void* processHandle, const char* host, 
 
 	if (processHandle)
 	{
-		// ÏÈµÈ´ý100ms×óÓÒ£¬µÈ´ý½ø³ÌÍê³É³õÊ¼»¯£¬»òÊÇÖØ¸´µÄÆô¶¯¶øÍË³ö£¬×î¶à³¢ÊÔ5´Î
+		// ï¿½ÈµÈ´ï¿½100msï¿½ï¿½ï¿½Ò£ï¿½ï¿½È´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É³ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½à³¢ï¿½ï¿½5ï¿½ï¿½
 		for(int i = 0; i < 5; ++ i)
 		{
 #ifdef _WINDOWS
@@ -134,22 +134,22 @@ static int lua_start_deamon(lua_State* L)
 {
 	if (gDeamonSock != INVALID_SOCKET)
 	{
-		// ÒÑ¾­Á¬ÉÏÁË
+		// ï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		lua_pushboolean(L, 1);
 		return 1;
 	}
 
-	// taskdeamonÖ´ÐÐÎÄ¼þµÄÂ·¾¶
+	// taskdeamonÖ´ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Â·ï¿½ï¿½
 	size_t len = 0, pathLen = 0;
 	const char* deamonPath = lua_isstring(L, 1) ? luaL_checklstring(L, 1, &pathLen) : 0;
 	const char* args = 0, *host = "127.0.0.1";
 	unsigned short port = 5918;
 
-	// Æô¶¯²ÎÊý
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	int t = lua_type(L, 2), v = 0;
 	if (t == LUA_TTABLE)
 	{
-		// Èç¹ûÊÇ¸ötable£¬Ôò±àÂëÎªjson×Ö·û´®
+		// ï¿½ï¿½ï¿½ï¿½ï¿½Ç¸ï¿½tableï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªjsonï¿½Ö·ï¿½ï¿½ï¿½
 		lua_getglobal(L, "require");
 		lua_pushliteral(L, "cjson.safe");
 		lua_pcall(L, 1, 1, 0);
@@ -166,7 +166,7 @@ static int lua_start_deamon(lua_State* L)
 	}
 	else if (t == LUA_TSTRING)
 	{
-		// Èç¹ûÊÇ¸öjson×Ö·û´®£¬Ôò½âÂëÎªtable£¬ÒòÎªÐèÒª´ÓÖÐ»ñÈ¡²ÎÊý
+		// ï¿½ï¿½ï¿½ï¿½ï¿½Ç¸ï¿½jsonï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªtableï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½Òªï¿½ï¿½ï¿½Ð»ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 		lua_getglobal(L, "string");
 		lua_getfield(L, -1, "json");
 		lua_pushvalue(L, 2);
@@ -177,7 +177,7 @@ static int lua_start_deamon(lua_State* L)
 	}
 	else if (t == LUA_TNIL)
 	{
-		// ÔÊÐíÎªnil£¬ÒÔÈ«²¿Ê¹ÓÃÄ¬ÈÏ²ÎÊý
+		// ï¿½ï¿½ï¿½ï¿½Îªnilï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½Ê¹ï¿½ï¿½Ä¬ï¿½Ï²ï¿½ï¿½ï¿½
 		t = LUA_TSTRING;
 		args = "{}";
 		len = 2;
@@ -187,7 +187,7 @@ static int lua_start_deamon(lua_State* L)
 
 	if (v)
 	{
-		// »ñÈ¡±ØÒª²ÎÊý
+		// ï¿½ï¿½È¡ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½
 		lua_getfield(L, v, "listen");
 		if (lua_istable(L, -1))
 		{
@@ -206,7 +206,7 @@ static int lua_start_deamon(lua_State* L)
 	gDeamongStarting = true;
 
 #ifdef _WINDOWS
-	// ÔÚWindowsÉÏÊ¹ÓÃshellexecuteÀ´Æô¶¯taskdeamon.exe
+	// ï¿½ï¿½Windowsï¿½ï¿½Ê¹ï¿½ï¿½shellexecuteï¿½ï¿½ï¿½ï¿½ï¿½ï¿½taskdeamon.exe
 	std::wstring strExe, strCmd;
 
 	int cchPath = MultiByteToWideChar(CP_UTF8, 0, deamonPath, pathLen, 0, 0);
@@ -215,7 +215,7 @@ static int lua_start_deamon(lua_State* L)
 	strExe.resize(cchPath);
 	strCmd.resize(cchCmd + 5);
 
-	// Èç¹ûÊÇ²ÎÊý2ÊäÈëÊÇ×Ö·û´®µÄ»°£¬ÔòÓÐ¿ÉÄÜÊÇÒ»¸öÎÄ¼þÃû
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Ç²ï¿½ï¿½ï¿½2ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ä»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¿ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½
 	if (t == LUA_TSTRING && GetFileAttributesA(args))
 		strCmd = L"file:";
 	else
@@ -227,7 +227,7 @@ static int lua_start_deamon(lua_State* L)
 
 	if (pathLen == 0)
 	{
-		// Ã»ÓÐÖ¸¶¨Â·¾¶£¬ÄÇÃ´¾ÍÓÃµ±Ç°Ä£¿éËùÔÚµÄÂ·¾¶£¬Ïàµ±ÓÚÄ¬ÈÏtaskdeamon.exeºÍreemext.dllÊÇÔÚÍ¬Ò»¸öÄ¿Â¼ÏÂµÄ
+		// Ã»ï¿½ï¿½Ö¸ï¿½ï¿½Â·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã´ï¿½ï¿½ï¿½Ãµï¿½Ç°Ä£ï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½Â·ï¿½ï¿½ï¿½ï¿½ï¿½àµ±ï¿½ï¿½Ä¬ï¿½ï¿½taskdeamon.exeï¿½ï¿½reemext.dllï¿½ï¿½ï¿½ï¿½Í¬Ò»ï¿½ï¿½Ä¿Â¼ï¿½Âµï¿½
 		wchar_t szThisModule[512] = { 0 };
 		DWORD cchModule = GetModuleFileNameW(GetModuleHandle(L"reemext"), szThisModule, 512);
 
@@ -318,7 +318,7 @@ static int lua_request_deamon(lua_State* L)
 	int r = 0;
 	if (posts && len)
 	{
-		// ÏÈ·¢Í·
+		// ï¿½È·ï¿½Í·
 		PckHeader hd;
 		hd.bodyLeng = len;
 		hd.crc32 = CRC32Check(posts, len);
@@ -328,7 +328,7 @@ static int lua_request_deamon(lua_State* L)
 
 		if (send(gDeamonSock, (const char*)&hd, sizeof(hd), 0) == SOCKET_ERROR)
 		{
-			// Á¬½Ó¿ÉÄÜ¶ÏÁË£¬ÓÚÊÇÖØÁ¬
+			// ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½Ü¶ï¿½ï¿½Ë£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 			socketClose();
 
 			if (!socketConnect())
@@ -439,7 +439,7 @@ int deleteDirectory(const char* dir)
 	int len = strlen(dir) + 2;
 	char tempdirFix[512] = { 0 };
 	char* tempdir = tempdirFix;
-	
+
 	if (len > 512)
 	{
 		tempdir = (char*)malloc(len);
@@ -461,7 +461,7 @@ int deleteDirectory(const char* dir)
 		""
 	};
 	int ret = SHFileOperationA(&file_op);
-	
+
 	if (tempdir != tempdirFix)
 		free(tempdir);
 
@@ -493,7 +493,7 @@ int deleteDirectory(const char* dir)
 			closedir(dpin);
 			dpin = 0;
 
-			if (!ioDeleteDir(strPathname.c_str()))
+			if (!deleteDirectory(strPathname.c_str()))
 				return 0;
 		}
 		else if (remove(strPathname.c_str()) != 0)
@@ -521,6 +521,85 @@ int deleteFile(const char* fname)
 	return false;
 #endif
 }
+
+#ifndef _WINDOWS
+bool fnamematch(const char* needle, const char* haystack)
+{
+	for(; needle[0] != '\0'; ++ needle)
+	{
+		switch(needle[0])
+		{
+			case '?':
+				++ haystack;
+				break;
+
+			case '*':
+			{
+				if (needle[1] == '\0' || haystack[0] == '\0')
+					return true;
+				for(size_t i = 0; ; ++ i)
+				{
+					if (haystack[i] == '\0')
+						return false;
+					if (fnamematch(needle + 1, haystack + i))
+						return true;
+				}
+				return false;
+			}
+			break;
+
+			default:
+				if (haystack[0] != needle[0])
+					return false;
+				++ haystack;
+			break;
+		}
+	}
+
+	return haystack[0] == '\0';
+}
+const char* readdirinfo(void* p, const char* filter)
+{
+	for(;;)
+	{
+		const dirent* d = readdir((DIR*)p);
+		if (!d)
+			break;
+
+		const char* name = d->d_name;
+		if (!filter || strcmp(filter, "*.*") == 0)
+			return name;
+		if (!filter[1] && (filter[0] == '.' || filter[0] == '*'))
+			return name;
+
+		if (fnamematch(filter, name))
+			return name;
+	}
+	return NULL;
+}
+
+bool pathisfile(const char* path)
+{
+	struct stat buf;
+	if (stat(path, &buf) != 0)
+		return 0;
+	return S_ISREG(buf.st_mode);
+}
+bool pathisdir(const char* path)
+{
+	struct stat buf = { 0 };
+	if (stat(path, &buf) != 0)
+		return 0;
+	return S_ISDIR(buf.st_mode);
+}
+bool createdir(const char* path, int mode)
+{
+	struct stat buf = { 0 };
+	if (stat(path, &buf) == -1)
+		return mkdir(path, mode != 0 ? mode : 0700);
+	return true;
+}
+#endif
 
 static int lua_uint64_tolightuserdata(lua_State* L)
 {
@@ -577,7 +656,7 @@ static void initCommonLib(lua_State* L)
 	luaext_table(L);
 	luaext_utf8str(L);
 
-	// ÐÂÔö¼¸¸öÈ«¾Öº¯Êý
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«ï¿½Öºï¿½ï¿½ï¿½
 	lua_pushcfunction(L, &lua_toboolean);
 	lua_setglobal(L, "toboolean");
 
@@ -590,7 +669,7 @@ static void initCommonLib(lua_State* L)
 	lua_pushcfunction(L, &lua_rawhasequal);
 	lua_setglobal(L, "rawhasequal");
 
-	// ÒýÓÃÒ»²¿·Öffiº¯Êý
+	// ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ffiï¿½ï¿½ï¿½ï¿½
 	lua_getglobal(L, "require");
 	lua_pushliteral(L, "ffi");
 	lua_pcall(L, 1, 1, 0);
@@ -621,17 +700,17 @@ REEME_API int luaopen_libreemext(lua_State* L)
 {
 	initCommonLib(L);
 
-	// ½«²¿·ÖÀ©Õ¹º¯Êý×¢²áÎªmeta table²¢Ìá¹©meta table²éÕÒº¯Êý
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¹ï¿½ï¿½ï¿½ï¿½×¢ï¿½ï¿½Îªmeta tableï¿½ï¿½ï¿½á¹©meta tableï¿½ï¿½ï¿½Òºï¿½ï¿½ï¿½
 	static luaL_Reg cExtProcs[] = {
 		{ "sql_token_parse", &lua_sql_token_parse },
 		{ "start_deamon", &lua_start_deamon },
 		{ "connect_deamon", &lua_connect_deamon },
 		{ "request_deamon", &lua_request_deamon },
 
-		// ´ÓÖ¸¶¨µÄÎ»ÖÃ¿ªÊ¼È¡Ò»¸ö´Ê
+		// ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½Î»ï¿½Ã¿ï¿½Ê¼È¡Ò»ï¿½ï¿½ï¿½ï¿½
 		{ "find_token", lua_sql_findtoken },
 
-		// ½«boxed int64Ö±½Ó×ª³Évoid*ÐÍ£¬ÒÔ±£Ö¤²»Í¬cdata int64µÄÖµÎ¨Ò»
+		// ï¿½ï¿½boxed int64Ö±ï¿½ï¿½×ªï¿½ï¿½void*ï¿½Í£ï¿½ï¿½Ô±ï¿½Ö¤ï¿½ï¿½Í¬cdata int64ï¿½ï¿½ÖµÎ¨Ò»
 		{ "int64ltud", &lua_uint64_tolightuserdata },
 
 		{ "filesize", &lua_filesize },

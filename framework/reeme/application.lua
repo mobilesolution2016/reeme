@@ -76,7 +76,7 @@ ffi.cdef[[
 	size_t opt_i64toa(int64_t value, char* buffer);
 	size_t opt_u64toa(uint64_t value, char* buffer);
 	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);
-	
+
 	int deleteDirectory(const char* path);
 	int deleteFile(const char* fname);
 ]]
@@ -229,11 +229,11 @@ local function doLazyLoader(self, key, ...)
 	local lazyLoader = self.thisApp.configs[key]
 	local tp = type(lazyLoader)
 	if tp == "table" then
-		local fget = lazyLoader.get		
-		if type(fget) == "function" then			
+		local fget = lazyLoader.get
+		if type(fget) == "function" then
 			local r = fget(self, ...)
 			local ffree = lazyLoader.free
-			
+
 			if r and type(ffree) == "function" then
 				local loader = {
 					params = { ... },
@@ -354,8 +354,8 @@ local defRouter = function(uri)
     if uri == '/' then
         return 'index', 'index'
     end
-	
-	local segs = string.split(uri, './')	
+
+	local segs = string.split(uri, './')
     if #segs == 1 then
 		return segs[1], 'index'
     end
@@ -418,7 +418,7 @@ local appMeta = {
 				end)
 
 				if controlNew then
-					assert(type(controlNew) == 'function', string.format('Controller <%s> must return a function that can be create controller instance', path))
+					assert(type(controlNew) == 'function', string.format('Controller "%s" must return a function that can be create controller instance', path))
 					break
 				end
 
@@ -450,7 +450,7 @@ local appMeta = {
 				setmetatable(c, ctlMeta2)
 			else
 				assert(type(cmeta) == 'table', 'The returned value for creator function of controller only can be function|table')
-				setmetatable(c, ctlMeta)				
+				setmetatable(c, ctlMeta)
 			end
 
 			rawset(c, -10000, self.users)
@@ -464,7 +464,7 @@ local appMeta = {
 
 		run = function(self)
 			local r, c, actionMethod
-			local path, act = (self.routeProc or defRouter)(ngx.var.uri)			
+			local path, act = (self.routeProc or defRouter)(ngx.var.uri)
 
 			--载入控制器
 			c, actionMethod, r = self:loadController(path, act)

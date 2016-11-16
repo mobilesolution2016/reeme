@@ -31,7 +31,7 @@ uint32_t CRC32Check(const void* data, size_t size)
 }
 
 //////////////////////////////////////////////////////////////////////////
-// 将参数1转换为布尔值，参数2可以为true表示检测严格，如果不设置或为false表示不严格检测，在不严格检测中，所有的数值型字符串或只要是非0的值或任何非nil的值都被认为是true
+// 锟斤拷锟斤拷锟斤拷1转锟斤拷为锟斤拷锟斤拷值锟斤拷锟斤拷锟斤拷2锟斤拷锟斤拷为true锟斤拷示锟斤拷锟斤拷锟较革拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟矫伙拷为false锟斤拷示锟斤拷锟较革拷锟斤拷锟解，锟节诧拷锟较革拷锟斤拷锟斤拷锟叫ｏ拷锟斤拷锟叫碉拷锟斤拷值锟斤拷锟街凤拷锟斤拷锟斤拷只要锟角凤拷0锟斤拷值锟斤拷锟轿何凤拷nil锟斤拷值锟斤拷锟斤拷锟斤拷为锟斤拷true
 static int lua_toboolean(lua_State* L)
 {
 	int strict = lua_toboolean(L, 2);
@@ -93,7 +93,7 @@ static int lua_toboolean(lua_State* L)
 	return cc;
 }
 
-// 检测是否是userdata的NULL，如果是，则返回参数2或true，或不是，则返回参数3或自己
+// 锟斤拷锟斤拷锟角凤拷锟斤拷userdata锟斤拷NULL锟斤拷锟斤拷锟斤拷锟角ｏ拷锟津返回诧拷锟斤拷2锟斤拷true锟斤拷锟斤拷锟斤拷锟角ｏ拷锟津返回诧拷锟斤拷3锟斤拷锟皆硷拷
 static int lua_checknull(lua_State* L)
 {
 	int t = lua_type(L, 1);
@@ -111,7 +111,7 @@ static int lua_checknull(lua_State* L)
 	return 1;
 }
 
-// 判断参数1的值是否在接下来的所有参数中有一个相等的，如果有则返回相等的那个位置的参数的序号(最小序号是2，因为用于比对的参数从第2个开始)，如果没有，则返回nil
+// 锟叫断诧拷锟斤拷1锟斤拷值锟角凤拷锟节斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟叫诧拷锟斤拷锟斤拷锟斤拷一锟斤拷锟斤拷锟饺的ｏ拷锟斤拷锟斤拷锟斤拷锟津返伙拷锟斤拷锟饺碉拷锟角革拷位锟矫的诧拷锟斤拷锟斤拷锟斤拷锟斤拷(锟斤拷小锟斤拷锟斤拷锟斤拷2锟斤拷锟斤拷为锟斤拷锟节比对的诧拷锟斤拷锟接碉拷2锟斤拷锟斤拷始)锟斤拷锟斤拷锟斤拷没锟叫ｏ拷锟津返伙拷nil
 static int lua_hasequal(lua_State* L)
 {
 	int n = 2, top = lua_gettop(L);
@@ -155,3 +155,10 @@ REEME_API uint32_t cdataisint64(const char* str, size_t len);
 
 REEME_API int deleteDirectory(const char* path);
 REEME_API int deleteFile(const char* fname);
+
+REEME_API const char* readdirinfo(void* p, const char* filter);
+#ifndef _WINDOWS
+REEME_API bool pathisfile(const char* path);
+REEME_API bool pathisdir(const char* path);
+REEME_API bool createdir(const char* path, int mode);
+#endif
