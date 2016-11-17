@@ -898,6 +898,10 @@ local modelMeta = {
 			return v
 		end,
 		
+		getdb = function(self)
+			return rawget(self, '__db')
+		end,
+		
 		--按名称字段配置
 		getField = function(self, name)
 			return self.__fields[name]
@@ -972,7 +976,7 @@ local modelMeta = {
 			end
 			if type(value) ~= 'string' then
 				if value == nil then
-					error(string.format("valid enum value by field config failed, field name '%s', value is nil", name))
+					return false
 				end
 				value = tostring(value)
 			end
