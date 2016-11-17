@@ -25,12 +25,12 @@ end
 local oldRequire = require
 function require(name)
 	if string.byte(name, 1) == 47 then
-		return oldRequire(name:sub(2))
+		return oldRequire(name)
 	end
-	
+
 	local appName = appRootDir .. "/" .. name
-	
-    if package.loaded[appName] then 
+
+    if package.loaded[appName] then
 		return package.loaded[appName]
 	end
 
@@ -41,7 +41,7 @@ function require(name)
     else
         moduleName = name
     end
-	
+
     return oldRequire(moduleName)
 end
 
