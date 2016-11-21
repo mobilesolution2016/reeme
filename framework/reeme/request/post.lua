@@ -69,7 +69,7 @@ local function getTempFileName()
 		end
 	end
 
-	if fd:pathIsDir(string.sub(tname, 1, fpos)) then
+	if fd.pathIsDir(string.sub(tname, 1, fpos)) then
 		return tname
 	end
 
@@ -99,7 +99,7 @@ local function getPostArgsAndFiles(options)
     if ct == nil then return post, files end
 	
 	function _move(self, dstFilename)
-		if fd:pathIsFile(dstFilename) and not fd:deleteFile(dstFilename) then
+		if fd.pathIsFile(dstFilename) and not fd.deleteFile(dstFilename) then
 			return false
 		end		
 		return os.rename(self.temp, dstFilename)

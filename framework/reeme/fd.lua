@@ -2,16 +2,17 @@ local _isFile = 0
 local _isDir = 0
 local _openDir = 0
 local _createDir = 0
+local _getAttr = 0
+local _checkAttr = 0
 
 local dirt = {}
 local mode2n = function(mode)
-	if type(mode) == 'string' then
-		local s, g, o = string.byte(mode, 1, 3)
+	if type(mode) == 'string' and (#mode == 3 or #mode == 4) then
+		local s, g, o = string.byte(string.byte(mode) == 48 and string.sub(mode , 2) or mode, 1, 3)
 		s = bit.lshift(s - 48, 6)
 		g = bit.lshift(g - 48, 3)
 		return bit.bor(bit.bor(s, g), o - 48)
 	end
-	return mode
 end
 
 if ffi.os == 'Windows' then
@@ -41,25 +42,94 @@ if ffi.os == 'Windows' then
 		int __stdcall FindNextFileA(void*, WIN32_FIND_DATAA*);
 		int __stdcall FindClose(void* hFindFile);
 		int __stdcall CreateDirectoryA(const char*, void*);
+		unsigned __stdcall GetFileAttributesA(const char*);
 	]]
 
 	local kernel32 = ffi.load('kernel32.dll')
 	local shlwapi = ffi.load('shlwapi.dll')
+	
+	local FILE_ATTRIBUTE_TEMPORARY = 0x100
+	local FILE_ATTRIBUTE_ARCHIVE = 0x20
+	local FILE_ATTRIBUTE_DIRECTORY = 0x10
+	local FILE_ATTRIBUTE_HIDDEN = 0x2
+	local FILE_ATTRIBUTE_READONLY = 0x1
+	local FILE_ATTRIBUTE_EXECUTE = 0x80000000
+	
+	local executes = { exe = 1, com = 1, bat = 1 }
+	
+	local attrChecks = {
+		file = function(val)
+			return bit.band(val, FILE_ATTRIBUTE_ARCHIVE) ~= 0 and true or false
+		end,
+		dir = function(val)
+			return bit.band(val, FILE_ATTRIBUTE_DIRECTORY) ~= 0 and true or false
+		end,
+		hidden = function(val)
+			return bit.band(val, FILE_ATTRIBUTE_HIDDEN) ~= 0 and true or false
+		end,
+		link = function(val)
+			return false
+		end,
+		temporary = function(val)
+			return bit.band(val, FILE_ATTRIBUTE_TEMPORARY) ~= 0 and true or false
+		end,
+		socket = function(val)
+			return false
+		end,
+	}
 
-	_isFile = function(self, path)
+	_isFile = function(path)
 		return shlwapi.PathFileExistsA(path) ~= 0
 	end
-
-	_isDir = function(self, path)
+	_isDir = function(path)
 		return shlwapi.PathIsDirectoryA(path) ~= 0
 	end
+	
+	_getAttr = function(path)
+		local r = kernel32.GetFileAttributesA(path)
+		if r ~= 0xFFFFFFFF then
+			local fext = string.rfindchar(path, '.')
+			if fext then
+				fext = string.sub(path, fext + 1)
+				if fext and executes[string.lower(fext)] then					
+					r = bit.bor(r, FILE_ATTRIBUTE_EXECUTE)
+				end
+			end
+			
+			return r
+		end
+	end
+	
+	_checkAttr = function(path, what)
+		if type(what) == 'string' then
+			local val = type(path) == 'string' and kernel32.GetFileAttributesA(path) or path
+			if val ~= 0xFFFFFFFF then
+				local f = attrChecks[what]
+				if f then return f(val) end
+				
+				if #what == 3 or #what == 4 then
+					local r = true
+					local s, g, o = string.byte(string.byte(what) == 48 and string.sub(what , 2) or what, 1, 3)
 
-	_openDir = function(self, path, filter)
+					if (bit.band(s, 2) ~= 0 or bit.band(g, 2) ~= 0 or bit.band(o, 2) ~= 0) and bit.band(val, FILE_ATTRIBUTE_READONLY) ~= 0 then
+						r = false
+					end
+					if (bit.band(s, 1) ~= 0 or bit.band(g, 1) ~= 0 or bit.band(o, 1) ~= 0) and bit.band(val, FILE_ATTRIBUTE_EXECUTE) == 0 then
+						r = false
+					end
+					
+					return r
+				end
+			end
+		end
+	end
+
+	_openDir = function(path, filter)
 		local last = path:sub(#path)
 		local r = { (last == '\\' or last == '/') and path or (path .. '/'), ffi.new('WIN32_FIND_DATAA') }
 
 		r[3] = kernel32.FindFirstFileA(r[1] .. (filter == nil and '*.*' or filter), r[2])
-		if tostring(r[3]) == 'cdata<void *>: 0xffffffffffffffff' then
+		if r[3] == nil then
 			r[2] = nil
 			return nil
 		end
@@ -71,6 +141,7 @@ if ffi.os == 'Windows' then
 		pick = function(self)
 			if not self[4] or kernel32.FindNextFileA(self[3], self[2]) ~= 0 then
 				self[4] = ffi.string(self[2].cFileName)
+				self[5] = self[2].dwFileAttributes
 				return true
 			end
 
@@ -88,9 +159,13 @@ if ffi.os == 'Windows' then
 		fullname = function(self)
 			return self[1] .. self[4]
 		end,
+		
+		getAttrs = function(self)
+			return self[5]
+		end,
 	}
 
-	_createDir = function(self, path, mode)
+	_createDir = function(path, mode)
 		return kernel32.CreateDirectoryA(path, nil) ~= 0
 	end
 
@@ -103,21 +178,70 @@ else
 		bool pathisfile(const char* path);
 		bool pathisdir(const char* path);
 		bool createdir(const char* path, int mode);
+		unsigned getpathattrs(const char* path);
 	]]
 
 	local readdirinfo = _G.libreemext.readdirinfo
 	local pathisfile = _G.libreemext.pathisfile
 	local pathisdir = _G.libreemext.pathisdir
 	local createdir = _G.libreemext.createdir
+	local getpathattrs = _G.libreemext.getpathattrs
+	
+	local FILE = 1
+	local DIR = 2
+	local LINK = 4
+	local SOCKET = 8
+	local HIDDEN = 16
+	local O_READ, O_WRITE, O_EXEC = 256, 128, 64
+	local G_READ, G_WRITE, G_EXEC = 32, 16, 8
+	local R_READ, R_WRITE, R_EXEC = 4, 2, 1
 
-	_isFile = function(self, path)
+	local attrChecks = {
+		file = function(val)
+			return bit.band(val, FILE) ~= 0 and true or false
+		end,
+		dir = function(val)
+			return bit.band(val, DIR) ~= 0 and true or false
+		end,
+		hidden = function(val)
+			return bit.band(val, HIDDEN) ~= 0 and true or false
+		end,
+		link = function(val)
+			return bit.band(val, LINK) ~= 0 and true or false
+		end,
+		temporary = function(val)
+			return false
+		end,
+		socket = function(val)
+			return bit.band(val, SOCKET) ~= 0 and true or false
+		end,
+	}
+	
+	_isFile = function(path)
 		return pathisfile(path)
 	end
-	_isDir = function(self, path)
+	_isDir = function(path)
 		return pathisdir(path)
 	end
+	
+	_getAttr = function(path)
+		return getpathattrs(path)
+	end
+	
+	_checkAttr = function(path, what)
+		if type(what) == 'string' then
+			local val = type(path) == 'string' and getpathattrs(path) or path
+			if val ~= 0 then
+				local f = attrChecks[what]
+				if f then  return f(val) end
+				
+				f = mode2n(what)
+				return (f and bit.band(val, f) == f) and true or false
+			end
+		end
+	end
 
-	_openDir = function(self, path, filter)
+	_openDir = function(path, filter)
 		local handle = ffi.C.opendir(path)
 		if handle == nil then
 			return nil
@@ -145,6 +269,7 @@ else
 				local name = readdirinfo(self[1], self[3])
 				if name ~= nil then
 					self[4] = ffi.string(name)
+					self[5] = nil
 					return true
 				end
 			end
@@ -162,9 +287,16 @@ else
 		fullname = function(self)
 			return self[2] .. (self[4] or '')
 		end,
+		
+		getAttrs = function(self)
+			if not self[5] then
+				self[5] = getpathattrs(self[2] .. (self[4] or ''))
+			end
+			return self[5]
+		end,
 	}
 
-	_createDir = function(self, path, mode)
+	_createDir = function(path, mode)
 		return createdir(path, mode2n(mode) or 0)
 	end
 end
@@ -173,10 +305,14 @@ local fsysPub = {
 	__index = {
 		pathIsFile = _isFile,
 		pathIsDir = _isDir,
+		
+		getAttr = _getAttr,
+		checkAttr = _checkAttr,
 
 		openDir = _openDir,
 
-		createDir = function(self, path, mode, recur)
+		--支持多级创建
+		createDir = function(path, mode, recur)
 			if recur then
 				local s, drvLet = 0, false
 				local first = path:sub(1)
@@ -189,7 +325,7 @@ local fsysPub = {
 
 				for i = 1, #segs do
 					local chk = newpath .. segs[i]
-					if (drvLet and i == 1) or _isDir(self, chk) then
+					if (drvLet and i == 1) or _isDir(chk) then
 						newpath = chk .. '/'
 					else
 						s = i
@@ -200,7 +336,7 @@ local fsysPub = {
 				if s ~= 0 then
 					for i = s, #segs do
 						newpath = newpath .. segs[i]
-						if not _createDir(self, newpath) then
+						if not _createDir(newpath) then
 							return false
 						end
 
@@ -211,17 +347,18 @@ local fsysPub = {
 				return true
 			end
 
-			return _createDir(self, path, mode)
+			return _createDir(path, mode)
 		end,
-		deleteDir = function(self, dir)
+		--支持多级删除
+		deleteDir = function(dir)
 			return libreemext.deleteDirectory(dir) ~= 0
 		end,
 
-		deleteFile = function(self, dir)
+		deleteFile = function(dir)
 			return libreemext.deleteFile(dir) ~= 0
 		end,
 
-		filesize = function(self, path) return io.filesize(path) end,
+		filesize = function(path) return io.filesize(path) end,
 	}
 }
 

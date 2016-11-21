@@ -578,6 +578,32 @@ const char* readdirinfo(void* p, const char* filter)
 	return NULL;
 }
 
+unsigned getpathattrs(const char* path)
+{
+	struct stat buf;
+	if (stat(path, &buf) == -1)
+		return 0;
+
+	unsigned r = 0;
+	if (S_ISREG(buf.st_mode)) r |= 1;
+	if (S_ISDIR(buf.st_mode)) r |= 2;
+	if (buf.st_mode & S_IFLNK) r |= 4;
+	if (buf.st_mode & S_IFSOCK) r |= 8;
+
+	const char* lastseg = strrchr(path, '/');
+	if (lastseg)
+	{
+		if (lastseg + 1 <= path && lastseg[1] == '.')
+			r |= 0x10;
+	}
+	else if (path[0])
+	{
+		r |= 0x10;
+	}
+
+	return r | (buf.st_mode & 0x1FF);
+}
+
 bool pathisfile(const char* path)
 {
 	struct stat buf;

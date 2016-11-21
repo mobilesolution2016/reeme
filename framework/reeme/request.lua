@@ -21,6 +21,14 @@ local readables = {
 	post = function(reeme) return require("reeme.request.post")(reeme) end,
 	headers = function(reeme) return require("reeme.request.headers")(reeme) end,
 	
+	fulluri = function(reeme)
+		local query = ngx.var.query_string
+		if query then
+			return string.format('%s://%s%s?%s', ngx.var.scheme, ngx.var.host, ngx.var.uri, query)
+		end
+		return string.format('%s://%s%s', ngx.var.scheme, ngx.var.host, ngx.var.uri)
+	end,
+	
 	isInternal = function(reeme) return ngx.req.is_internal end,
 	startTime = function(reeme) return ngx.req.start_time end,
 	version = function(reeme) return ngx.req.http_version end,
