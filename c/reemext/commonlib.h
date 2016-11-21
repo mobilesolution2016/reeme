@@ -31,7 +31,6 @@ uint32_t CRC32Check(const void* data, size_t size)
 }
 
 //////////////////////////////////////////////////////////////////////////
-// ������1ת��Ϊ����ֵ������2����Ϊtrue��ʾ�����ϸ������������û�Ϊfalse��ʾ���ϸ����⣬�ڲ��ϸ������У����е���ֵ���ַ�����ֻҪ�Ƿ�0��ֵ���κη�nil��ֵ������Ϊ��true
 static int lua_toboolean(lua_State* L)
 {
 	int strict = lua_toboolean(L, 2);
@@ -93,7 +92,6 @@ static int lua_toboolean(lua_State* L)
 	return cc;
 }
 
-// �����Ƿ���userdata��NULL�������ǣ��򷵻ز���2��true�������ǣ��򷵻ز���3���Լ�
 static int lua_checknull(lua_State* L)
 {
 	int t = lua_type(L, 1);
@@ -111,7 +109,6 @@ static int lua_checknull(lua_State* L)
 	return 1;
 }
 
-// �жϲ���1��ֵ�Ƿ��ڽ����������в�������һ�����ȵģ��������򷵻����ȵ��Ǹ�λ�õĲ���������(��С������2����Ϊ���ڱȶԵĲ����ӵ�2����ʼ)������û�У��򷵻�nil
 static int lua_hasequal(lua_State* L)
 {
 	int n = 2, top = lua_gettop(L);
@@ -161,4 +158,5 @@ REEME_API const char* readdirinfo(void* p, const char* filter);
 REEME_API bool pathisfile(const char* path);
 REEME_API bool pathisdir(const char* path);
 REEME_API bool createdir(const char* path, int mode);
+REEME_API unsigned getpathattrs(const char* path);
 #endif

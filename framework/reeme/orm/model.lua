@@ -981,13 +981,17 @@ local modelMeta = {
 				value = tostring(value)
 			end
 
-			if f.enums[value] then
-				return true
+			local id = f.enums[value]
+			if id then
+				return id
 			end
 			
 			if value:byte(1) ~= 39 or value:byte(#value - 1) ~= 39 then
 				value = string.format("'%s'", value)
-				return f.enums[value] and true or false
+				id = f.enums[value]
+				if id then 
+					return id
+				end
 			end
 			
 			return false

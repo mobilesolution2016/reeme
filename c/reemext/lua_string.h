@@ -426,12 +426,10 @@ static int lua_string_rfindchar(lua_State* L)
 	{
 		long t = luaL_optinteger(L, 3, 0);
 		if (t > 1 && t <= len)
-		{
-			t --;
-			s += t;
-		}
+			f = strrchr(s + len - t, f[0]);
+		else
+			f = strrchr(s, f[0]);
 
-		f = strrchr(s, f[0]);
 		if (f)
 		{
 			lua_pushinteger(L, f - s + t + 1);

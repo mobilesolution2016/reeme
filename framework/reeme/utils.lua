@@ -119,6 +119,16 @@ local Utils = {
 		ffi.C.ngx_hex_dump(buf, str, #str)
 		return ffi.string(buf, len)
 	end,
+	
+	--标准的日期格式花为unix时间戳。如 2012/09/03 12:59:01（数字里的前导0不影响结果）
+	datetimeToStamp = function(str)
+		assert(type(str) == 'string')
+		
+		local y, m, d, h, i, s = str:match('(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)')
+		if y then
+			return os.time({year = y, month = m, day = d, hour = h, min = m, sec = s})
+		end
+	end,
 
 	--使用系统内置函数解析域名为IP地址
 	resolveHost = resolveHost,

@@ -70,9 +70,11 @@ return {
 					--枚举类型，转字符串
 					newf.type = 1
 					newf.maxlen = 0
-					newf.enums = string.split(decl, ',', string.SPLIT_TRIM + string.SPLIT_ASKEY)
+					newf.enums = string.split(decl, ',', string.SPLIT_TRIM)
 
 					for i = 1, #newf.enums do
+						local n = newf.enums[i]
+						newf.enums[n] = i
 						newf.maxlen = math.max(newf.maxlen, #newf.enums[i])
 					end
 
