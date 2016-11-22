@@ -685,7 +685,6 @@ static int lua_string_replace(lua_State* L)
 			lua_string_addbuf(&buf, rep.to, rep.toLen);
 
 			offset = rep.offset + rep.fromLen;
-			++ i;
 		}
 
 		if (offset < srcLen)
