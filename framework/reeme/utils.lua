@@ -161,16 +161,15 @@ local Utils = {
 	        method = method or 'GET',
 	        headers = 0
 	    }
-		
+
 		if type(headers) == 'table' then
-			data.header = table.new(0, 6)
-			data.header['Content-Type'] = 'text/html; charset=utf-8'
+			data.headers = table.new(0, 4)
+			data.headers['Content-Type'] = 'text/html; charset=utf-8'
 			for k,v in pairs(headers) do
 				data.headers[k] = v
 			end
 		else
-			data.headers = table.new(0, 2)
-			data.headers['Content-Type'] = 'text/html; charset=utf-8'
+			data.headers = { ['Content-Type'] = 'text/html; charset=utf-8' }
 		end
 
 		if posts then
@@ -180,10 +179,11 @@ local Utils = {
 
 		local res, err = require("resty.http").new():request_uri(url, data)
 		if res and not err then
+			res.status = tonumber(res.status)
 			return res
 		end
 
-		return false, err
+		return res, err
 	end,
 	
 	--http上传文件. posts = { afile = { filename = 'abc.xxx', mimetype = 'xxxx', handle = io.open() }, a_string_value = 'xxxxxxx' }，其中filename和mimetype都是可选的，filename没有的时候将使用name代替。可以文件和普通字符串混合一起传
@@ -205,39 +205,53 @@ local Utils = {
 		local contentLen, parts, cc = 0, table.new(4, 0), 1
 		
 		if type(headers) == 'table' then
-			data.header = table.new(0, 6)
-			data.header['Content-Type'] = contentType
+			data.headers = table.new(0, 4)
+			data.headers['Content-Type'] = contentType
 			for k,v in pairs(headers) do
 				data.headers[k] = v
 			end
 		else
-			data.headers = table.new(0, 2)
-			data.headers['Content-Type'] = contentType
+			data.headers = { ['Content-Type'] = contentType }
 		end
 		
 		--加载文件并格式化数据
 		for name, value in pairs(posts) do
 			if type(value) == 'table' then
-				local mimeType = 'application/octet-stream'				
+				local mimeType = 'application/octet-stream'
 				if value.mimetype then
 					mimeType = value.mimetype
 					
 				elseif value.fileext then
-					mimeType = mimeTypesMap[string.lower(value.fileext)]
+					mimeType = mimeTypesMap[string.lower(value.fileext)] or 'application/octet-stream'
 					
 				elseif value.filename then
 					local fext = string.rfindchar(value.filename, '.')
 					if fext then
 						fext = string.sub(value.filename, fext + 1)
 						if #fext > 0 then
-							mimeType = mimeTypesMap[string.lower(fext)]
+							mimeType = mimeTypesMap[string.lower(fext)] or 'application/octet-stream'
 						end
 					end
 				end
+				
+				local flen = ''
+				if value.size then
+					flen = string.format('; filelength="%u"', value.size)
+				end
 			
 				parts[cc] = string.format('%s--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\nContent-Type: %s\r\n\r\n', cc > 1 and '\r\n' or '', boundary, name, value.filename or name, mimeType)
-				parts[cc + 1] = value.handle:read()
-				value.handle:close()								
+				if value.handle then
+					--从文件句柄中读，必须是io.open打开的文件
+					parts[cc + 1] = value.handle:read('*a')
+					if not value.keephandle then
+						value.handle:close()
+						value.handle = nil
+					end
+					
+				elseif value.data then
+					--直接使用字符串数据
+					parts[cc + 1] = value.data
+				end
 			else
 				parts[cc] = string.format('%s--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n', cc > 1 and '\r\n' or '', boundary, name)
 				parts[cc + 1] = tostring(value)
@@ -247,8 +261,9 @@ local Utils = {
 		end
 
 		if cc > 0 then
-			parts[cc] = string.format('\r\n--%s--', boundary)
+			parts[cc] = string.format('\r\n--%s--', boundary)			
 		end
+		parts[cc + 1] = '\r\n'
 
 		--将所有数据合并成一个大字符串
 		data.body = table.concat(parts, '')
@@ -258,6 +273,7 @@ local Utils = {
 
 		data.body, data.headers = nil, nil
 		if res and not err then
+			res.status = tonumber(res.status)
 			return res
 		end
 

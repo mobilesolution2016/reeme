@@ -127,14 +127,10 @@ strlib.cmp = function(a, b, c, d)
 	local func
 	if type(c) == 'number' then
 		func = d == true and ffi.C.strncasecmp or ffi.C.strncmp
-		if func(a, b, c) == 0 then
-			return true
-		end
+		return func(a, b, c) == 0
 	else
 		func = c == true and ffi.C.strcasecmp or ffi.C.strcmp
-		if func(a, b) == 0 then
-			return true
-		end
+		return func(a, b) == 0
 	end
 
 	return false

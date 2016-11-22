@@ -15,6 +15,16 @@ local mode2n = function(mode)
 	end
 end
 
+local pathsegs = table.new(6, 0)
+local mergePath = function(self)
+	if self.driver then pathsegs[1] = self.driver .. ':' end
+	if self.path then pathsegs[#pathsegs + 1] = self.path end
+	if self.name then pathsegs[#pathsegs + 1] = self.name end
+	if self.ext then pathsegs[#pathsegs + 1] = self.ext end
+	pathsegs[#pathsegs + 1] = nil
+	return table.concat(pathsegs, '/')
+end
+
 if ffi.os == 'Windows' then
 	ffi.cdef[[
 		int PathFileExistsA(const char*);
@@ -358,7 +368,51 @@ local fsysPub = {
 			return libreemext.deleteFile(dir) ~= 0
 		end,
 
-		filesize = function(path) return io.filesize(path) end,
+		--取文件尺寸
+		filesize = io.filesize(path),
+		
+		--取文件扩展名，未成功返回nil
+		fileext = function(path)
+			local ext = string.rfindchar(path, '.')
+			if ext then
+				return string.lower(string.sub(path, ext + 1))
+			end
+		end,
+		
+		--分解路径
+		pathinfo = function(path)
+			local r = table.new(0, 6)
+			local namepos = string.rfindchar(path, '/', 1, true)
+			if not namepos then
+				namepos = string.rfindchar(path, '\\', 1, true)
+			end
+			
+			if namepos then
+				r.path = string.sub(path, 1, namepos)
+				r.name = string.sub(path, namepos + 1)
+				if #r.name > 1 then
+					local ext = string.rfindchar(r.name, '.')
+					if ext then
+						r.ext = string.lower(string.sub(r.name, ext + 1))
+						r.name = string.sub(r.name, 1, ext)
+					end
+				end
+			else
+				r.path = path
+			end
+			
+			if ffi.os == 'Windows' then
+				local second, third = string.byte(r.path, 2, 3)
+				if second == 58 and (third == 47 or third == 92) then
+					r.driver = string.sub(r.path, 1, 1)
+					r.path = string.sub(r.path, 4)
+				end
+			end
+			
+			r.merge = mergePath
+
+			return r
+		end,
 	}
 }
 
