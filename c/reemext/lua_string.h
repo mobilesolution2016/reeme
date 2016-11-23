@@ -1662,7 +1662,7 @@ static const char templInitCode[] = {
 	"	return table.remove(__ret__)\n"
 	"end\n"
 	"local function echo(...)\n"
-	"	__ret__[#__ret__ + 1] = string.merge(...)\n"
+	"	__ret__[#__ret__+1] = string.merge(...)\n"
 	"end\n"
 };
 
@@ -1684,7 +1684,7 @@ public:
 	ErorrStarts			errorStart;
 
 	char				mlsBegin[32], mlsEnd[32];
-	bool				bracketOpened, hasSegments;
+	bool				bracketOpened, hasSegments, isSafeMode;
 
 	enum KeywordEndType {
 		KEND_NONE,
@@ -1963,7 +1963,9 @@ _end:
 				{					
 					// 使用值
 					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+					if (isSafeMode) buf.append("tostring(", 9);
 					buf.append(varBegin, varEnd - varBegin);
+					if (isSafeMode) buf += ')';
 				}
 				else
 				{
@@ -2297,6 +2299,7 @@ static void _init_TemplateParser(TemplateParser& parser, const char* src, size_t
 	parser.pck = 0;
 	parser.hasSegments = false;
 	parser.bracketOpened = false;
+	parser.isSafeMode = false;
 	parser.wrote = sizeof(templInitCode) - 1;
 
 	parser.buf.reserve(TP_FIXED);
@@ -2336,6 +2339,11 @@ static int lua_string_parsetemplate(lua_State* L)
 	_init_TemplateParser(parser, src, srcLen);
 	if (lua_isstring(L, 4))
 		chunkName = lua_tostring(L, 4);
+	
+	lua_pushlstring(L, "__safemode", 10);
+	lua_rawget(L, 1);
+	if (lua_isboolean(L, -1) && lua_toboolean(L, -1))
+		parser.isSafeMode = true;
 
 	// 确认要用的多行字符串表示法没有在代码中被使用过，如果有用到了，则继续增加=号的数量
 	memset(parser.mlsBegin, 0, sizeof(parser.mlsBegin) * 2);
@@ -2406,6 +2414,10 @@ _run_error:
 			luaL_buffinit(L, &buf);
 			_init_TemplateParser(fullcode, src, srcLen);
 
+			strcpy(fullcode.mlsBegin, parser.mlsBegin);
+			strcpy(fullcode.mlsEnd, parser.mlsEnd);
+			fullcode.mlsLength = parser.mlsLength;
+
 			if (envType == LUA_TTABLE)
 			{
 				// 可能是子模板报出的错误
@@ -2427,15 +2439,10 @@ _run_error:
 			if (!err)
 				err = lua_tolstring(L, -1, &len);
 			
-			unsigned errIndex = 0;
 			if (len)
 			{
 				if (!_replaceErrLine(&buf, err, len))
 					lua_string_addbuf(&buf, err, len);
-
-				const char* pszInvalidVal = strstr(err, "invalid value (");
-				const char* pszAtIndex = pszInvalidVal ? strstr(pszInvalidVal, "at index ") : NULL;
-				errIndex = pszAtIndex ? atoi(pszAtIndex + 9) : 0;
 
 				lua_string_addbuf(&buf, ", ", 2);
 			}
@@ -2459,48 +2466,6 @@ _run_error:
 			}
 
 			luaL_pushresult(&buf);
-
-			/*if (errIndex > 0)
-			{
-				// 处理错误值的问题，在输出的最终代码中找到错误值所在的行，以便于找问题
-				std::string strCode;
-				const char* code = lua_tolstring(L, -1, &len);
-				strCode.append(code, len);
-
-				size_t codeoff = 0;
-				unsigned i, lns = 0;
-				for(i = 0; i < errIndex + 2; ++ i)
-				{
-					codeoff = strCode.find_first_of("__ret__[#__ret__+1]=", codeoff);
-					if (codeoff == -1) break;
-					codeoff += 20;
-				}
-
-				if (codeoff >= 20 && codeoff != -1)
-				{
-					codeoff -= 20;
-
-					const char* linecc = strCode.c_str(), *endCode = linecc + codeoff;
-					for(int kk = 0 ;kk < 200 ; ++ kk)
-					{
-						linecc = strchr(linecc, '\n');
-						if (!linecc || linecc >= endCode)
-							break;
-
-						linecc ++;
-						lns ++;
-					}
-
-					char infoSrc[128] = { 0 }, infoDst[128] = { 0 };
-					len = sprintf(infoSrc, "at index %u", errIndex);
-					sprintf(infoDst, "at index %u (line: %u %u %u)", errIndex, lns, codeoff, strCode.length());
-
-					codeoff = strCode.find_first_of(infoSrc);
-					if (codeoff != -1)
-						strCode.replace(0, len, infoDst);
-					lua_pushlstring(L, strCode.c_str(), std::max((size_t)1000, strCode.length()));			
-				}
-			}*/
 
 			lua_pushlstring(L, "", 0);			
 			lua_pushvalue(L, -2);

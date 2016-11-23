@@ -1,4 +1,4 @@
-local viewDir = nil 
+local viewDir = nil
 local viewMeta = { }
 local globalTplCaches = nil
 local globalSectionCaches = nil
@@ -8,7 +8,7 @@ local function getTemplatePathname(reeme, tpl)
 	if tpl:byte(1) ~= 47 then
 		local cfgs = reeme.thisApp.configs
 		local dirs = cfgs.dirs
-		
+
 		return string.format("%s/%s/%s/%s%s", ngx.var.APP_ROOT, dirs.appBaseDir, dirs.viewsDir, tpl:replace('.', '/'), cfgs.viewFileExt)
 	end
 	return tpl:sub(2)
@@ -21,11 +21,11 @@ local function loadTemplateFile(reeme, tpl, pathname)
 	if f then
 		t = f:read("*all")
 		f:close()
-		
+
 	elseif err then
 		error(string.format('file io error when load template file: %s'), tostring(err))
 	end
-	
+
 	return t
 end
 
@@ -35,7 +35,7 @@ local subNameCallMeta = {
 		if type(params) == 'table' then
 			return string.replace(self[1], params)
 		end
-		
+
 		return self[1]
 	end,
 }
@@ -49,7 +49,7 @@ local function convertSubSegName(segs)
 			segs[n] = setmetatable({ v }, subNameCallMeta)
 		end
 	end
-	
+
 	return segs
 end
 
@@ -58,7 +58,7 @@ local function loadSubtemplate(self, env, name, envForSub)
 	local t, r, ok, err
 	local restore = nil
 	local reeme = self.__reeme
-	
+
 	if type(envForSub) == 'table' then
 		--专用于这个模板的附加值，先保存原值再设置
 		restore = table.new(0, 8)
@@ -69,8 +69,8 @@ local function loadSubtemplate(self, env, name, envForSub)
 	end
 
 	local pathname = getTemplatePathname(reeme, name)
-	
-	if globalTplCaches then	
+
+	if globalTplCaches then
 		--从缓存中载入
 		local tType
 		r, tType = globalTplCaches:get(r, pathname)
@@ -88,7 +88,7 @@ local function loadSubtemplate(self, env, name, envForSub)
 			if not ok then
 				--运行模板函数时出错，报错
 				t = loadTemplateFile(reeme, nil, pathname)
-				
+
 				rawset(env, '__sub_err_msg', err)
 				rawset(env, '__sub_err_fullcode', t and string.parseTemplate(self, t) or string.format('subtemplate "%s" its source file losted'))
 				error(err)
@@ -106,7 +106,7 @@ local function loadSubtemplate(self, env, name, envForSub)
 		r, err = string.parseTemplate(self, t, true)
 		if type(err) == 'string' then
 			error(string.format('Error when parsing subtemplate: %s <br/><br/>%s', name, err))
-		end		
+		end
 
 		assert(type(r) == 'function')
 
@@ -117,7 +117,7 @@ local function loadSubtemplate(self, env, name, envForSub)
 			if globalTplCaches then
 				globalTplCaches:set(reeme, pathname, forCachedFunc, 'loaded')
 			end
-			
+
 			if type(r) == 'table' then
 				convertSubSegName(r)
 			end
@@ -140,7 +140,7 @@ local function loadSubtemplate(self, env, name, envForSub)
 end
 
 --使用模板内缓存
-local function setCachesection(viewself, isBegin, rets, caches, ...)	
+local function setCachesection(viewself, isBegin, rets, caches, ...)
 	local cc = #caches
 	if isBegin then
 		--创建
@@ -148,7 +148,7 @@ local function setCachesection(viewself, isBegin, rets, caches, ...)
 			caches[cc + 1] = { s = #rets }
 			return true
 		end
-		
+
 		local conds = table.concat({ viewself.tplName, ... }, '')
 		if globalSectionCaches then
 			local cached = globalSectionCaches[conds]
@@ -158,7 +158,7 @@ local function setCachesection(viewself, isBegin, rets, caches, ...)
 				return false
 			end
 		end
-		
+
 		caches[cc + 1] = { c = conds, s = #rets }
 
 	elseif cc > 0 then
@@ -172,7 +172,7 @@ local function setCachesection(viewself, isBegin, rets, caches, ...)
 			newtbl[k] = rets[i]
 			k = k + 1
 		end
-		
+
 		while k > 1 do
 			table.remove(rets)
 			k = k - 1
@@ -183,11 +183,11 @@ local function setCachesection(viewself, isBegin, rets, caches, ...)
 			globalSectionCaches[last.c] = k
 		end
 		rets[#rets + 1] = k
-		
+
 	else
 		error('error for closed template cache, not paired with begin')
 	end
-	
+
 	return true
 end
 
@@ -222,10 +222,10 @@ local function reportRunError(self, err)
 end
 
 local parsedRenderMethods = {
-	debug = function(self, source, env)	
+	debug = function(self, source, env)
 	end,
 	overwrite = function(self, source, env)
-		local ok, err = pcall(function() 
+		local ok, err = pcall(function()
 			local r = setfenv(source, env)(self, env)
 			rawset(self, 'finalHTML', r)
 		end)
@@ -234,7 +234,7 @@ local parsedRenderMethods = {
 		end
 	end,
 	append = function(self, source, env)
-		local ok, err = pcall(function() 
+		local ok, err = pcall(function()
 			local r = setfenv(source, env)(self, env)
 			rawset(self, 'finalHTML', table.concat({ rawget(self, 'finalHTML'), r }, ''))
 		end)
@@ -258,13 +258,22 @@ viewMeta.__index = {
 		end
 		return rawget(self, 'sourceCode')
 	end,
-	
+
+	safemode = function(self, is)
+		if type(is) == 'boolean' then
+			rawset(self, '__safemode', is)
+		else
+			return rawget(self, '__selfmode')
+		end
+		return self
+	end,
+
 	--参数2为所有的模板参数，参数3为nil表示重新渲染并且清除掉上一次的结果，否则将会累加在上一次的结果之后（如果本参数不是true而是string，那么将会做为join字符串放在累加的字符串中间）
 	render = function(self, env, method)
 		local gblCaches
 		local methods = parsedRenderMethods
 		local src = rawget(self, 'parsedTempl')
-		
+
 		if not src then
 			gblCaches = globalTplCaches
 			methods = sourceRenderMethods
@@ -315,10 +324,10 @@ viewMeta.__index = {
 			setmetatable(env, oldMeta)
 		end
 		meta, vals = nil, nil
-		
+
 		return self
 	end,
-	
+
 	--获取render之后的内容
 	content = function(self)
 		return rawget(self, 'finalHTML') or ''
@@ -333,7 +342,7 @@ viewMeta.__index = {
 		end
 		return self
 	end,
-	
+
 	--在渲染后的结果中追加字符串
 	appendString = function(self, code)
 		if type(code) == 'string' then
@@ -381,13 +390,13 @@ return function(r, tpl)
 		elseif r == 'getmeta' then
 			return viewMeta
 		end
-		
+
 		return
 	end
-	
+
 	if type(tpl) == 'string' then
 		local pathname = getTemplatePathname(r, tpl)
-		if globalTplCaches then	
+		if globalTplCaches then
 			--从缓存中载入
 			local t, tType = globalTplCaches:get(r, pathname)
 			if t then
