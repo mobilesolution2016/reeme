@@ -1,3 +1,4 @@
+local ffi = require('ffi')
 local _isFile = 0
 local _isDir = 0
 local _openDir = 0
