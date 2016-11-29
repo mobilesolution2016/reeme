@@ -126,7 +126,7 @@ local Utils = {
 		
 		local y, m, d, h, i, s = str:match('(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)')
 		if y then
-			return os.time({year = y, month = m, day = d, hour = h, min = m, sec = s})
+			return os.time({year = y, month = m, day = d, hour = h, min = i, sec = s})
 		end
 	end,
 
