@@ -1,6 +1,7 @@
 local ffi = require('ffi')
 local _isFile = 0
 local _isDir = 0
+local _isExists = 0
 local _openDir = 0
 local _createDir = 0
 local _getAttr = 0
@@ -95,6 +96,14 @@ if ffi.os == 'Windows' then
 	_isDir = function(path)
 		return shlwapi.PathIsDirectoryA(path) ~= 0
 	end
+	_isExists = function(path)
+		if shlwapi.PathFileExistsA(path) ~= 0 then
+			return 1
+		end
+		if shlwapi.PathIsDirectoryA(path) ~= 0 then
+			return 2
+		end
+	end
 	
 	_getAttr = function(path)
 		local r = kernel32.GetFileAttributesA(path)
@@ -110,7 +119,6 @@ if ffi.os == 'Windows' then
 			return r
 		end
 	end
-	
 	_checkAttr = function(path, what)
 		if type(what) == 'string' then
 			local val = type(path) == 'string' and kernel32.GetFileAttributesA(path) or path
@@ -188,15 +196,14 @@ else
 		const char* readdirinfo(void* handle, const char* filter);
 		bool pathisfile(const char* path);
 		bool pathisdir(const char* path);
+		unsigned pathisexists(const char* path);
 		bool createdir(const char* path, int mode);
 		unsigned getpathattrs(const char* path);
 	]]
 
 	local readdirinfo = _G.libreemext.readdirinfo
-	local pathisfile = _G.libreemext.pathisfile
-	local pathisdir = _G.libreemext.pathisdir
-	local createdir = _G.libreemext.createdir
 	local getpathattrs = _G.libreemext.getpathattrs
+	local pathisexists = _G.libreemext.pathisexists
 	
 	local FILE = 1
 	local DIR = 2
@@ -228,17 +235,18 @@ else
 		end,
 	}
 	
-	_isFile = function(path)
-		return pathisfile(path)
+	_isFile = _G.libreemext.pathisfile
+	_isDir = _G.libreemext.pathisdir
+	_isExists = function(path)
+		local r = pathisexists(path)
+		if r ~= 0 then
+			return r
+		end
 	end
-	_isDir = function(path)
-		return pathisdir(path)
-	end
-	
+
 	_getAttr = function(path)
 		return getpathattrs(path)
 	end
-	
 	_checkAttr = function(path, what)
 		if type(what) == 'string' then
 			local val = type(path) == 'string' and getpathattrs(path) or path
@@ -314,12 +322,23 @@ end
 
 local fsysPub = {
 	__index = {
+		--检测路径是否是个文件
 		pathIsFile = _isFile,
+		--检测路径是否是个目录
 		pathIsDir = _isDir,
-		
+		--检测路径是否存在（文件=1或是目录=2），返回nil说明该路径不存在（文件也不是目录也不是）
+		pathIsExists = _isExists,
+
+		--获取属性值，然后可以用于checkAttr函数的参数1，这样可以减少同一个path多次checkAttr时的IO操作次数
 		getAttr = _getAttr,
+
+		--checkAttr(path, checkWhat)
+		--path可以是一个路径，也可以是getAttr函数的返回值
+		--what可以是：file|dir|hidden|temporary|link|socket，或者777、755、422、511等等，这种8进制表示的权限（但请注意要传入字符串而不能是数字，因为Lua原生不支持0777这种8进制数）
 		checkAttr = _checkAttr,
 
+		--openDir(path[, filter])
+		--filter为文件名过滤器，通配符可随意用，如a.*，或xxx*。也可以没有，且指定为*|.|*.*和不指定是没有区别的，还不如不指定
 		openDir = _openDir,
 
 		--支持多级创建

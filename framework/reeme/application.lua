@@ -84,6 +84,7 @@ ffi.cdef[[
 _G.libreemext = reemext
 
 --lua standard library extends
+--将tbl中的元素构造成一个全新的唯一值的数组返回
 _G.table.unique = function(tbl)
 	local cc = #tbl
 	local s, r = table.new(0, cc), table.new(cc, 0)
@@ -96,6 +97,42 @@ _G.table.unique = function(tbl)
 		i = i + 1
 	end
 	return r
+end
+--将A数组中的元素如果在B数组存在有的就移除，剩下的不存在于B数组中的构建出一个新的数组返回（A必须是顺序数组，B可以是顺序数组也可以不是顺序的）
+_G.table.exclude = function(A, B)
+	if type(A) == 'table' and type(B) == 'table' then
+		local r, uniques = table.new(#A / 2, 0), B
+		
+		if #B > 0 then
+			uniques = table.new(0, #B)
+			for i = 1, #B do
+				uniques[B[i]] = true
+			end
+		end
+		
+		for i = 1, #A do
+			if not B[A[i]] then
+				r[#r + 1] = A[i]
+			end
+		end
+		
+		return r
+	end
+end
+_G.table.append = function(A, B)
+	if type(A) == 'table' and type(B) == 'table' then
+		if #B > 0 then
+			for i = 1, #B do
+				A[#A + 1] = B[i]
+			end
+		else
+			for k,v in pairs(B) do
+				A[k] = v
+			end
+		end
+	end
+	
+	return A
 end
 
 _G.io.exists = function(name)

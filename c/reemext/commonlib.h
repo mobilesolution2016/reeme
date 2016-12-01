@@ -159,4 +159,5 @@ REEME_API bool pathisfile(const char* path);
 REEME_API bool pathisdir(const char* path);
 REEME_API bool createdir(const char* path, int mode);
 REEME_API unsigned getpathattrs(const char* path);
+REEME_API unsigned pathisexists(const char* path);
 #endif

@@ -618,6 +618,18 @@ bool pathisdir(const char* path)
 		return 0;
 	return S_ISDIR(buf.st_mode);
 }
+unsigned pathisexists(const char* path)
+{
+	struct stat buf = { 0 };
+	if (stat(path, &buf) != 0)
+		return 0;
+
+	if (S_ISREG(buf.st_mode))
+		return 1;
+	if (S_ISDIR(buf.st_mode))
+		return 2;
+	return 0;
+}
 bool createdir(const char* path, int mode)
 {
 	struct stat buf = { 0 };
