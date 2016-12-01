@@ -165,6 +165,7 @@ local mysql = {
 			elseif self.transcount > 0 then
 				for v,_ in pairs(self.transaction) do
 					v:query('COMMIT')
+					v:query('SET AUTOCOMMIT=1')
 				end
 				self.transaction = {}
 				self.transcount = 0
