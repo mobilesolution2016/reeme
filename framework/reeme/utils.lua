@@ -85,7 +85,7 @@ local mimeTypesMap = {
 	evy = 'application/envoy', exe = 'application/octet-stream', fif = 'application/fractals', flr = 'x-world/x-vrml', gif = 'image/gif', gtar = 'application/x-gtar', gz = 'application/x-gzip',
 	h = 'text/plain', hdf = 'application/x-hdf', hlp = 'application/winhlp', hqx = 'application/mac-binhex40', hta = 'application/hta', htc = 'text/x-component', htm = 'text/html',
 	html = 'text/html', htt = 'text/webviewhtml', ico = 'image/x-icon', ief = 'image/ief', iii = 'application/x-iphone', ins = 'application/x-internet-signup', isp = 'application/x-internet-signup',
-	jfif = 'image/pipeg', jpe = 'image/jpeg', jpeg = 'image/jpeg', jpg = 'image/jpeg', js = 'application/x-javascript', latex = 'application/x-latex', lha = 'application/octet-stream',
+	jfif = 'image/pipeg', jpe = 'image/jpg', jpeg = 'image/jpeg', jpg = 'image/jpeg', js = 'application/x-javascript', latex = 'application/x-latex', lha = 'application/octet-stream',	
 	lsf = 'video/x-la-asf', lsx = 'video/x-la-asf', lzh = 'application/octet-stream', m13 = 'application/x-msmediaview', m14 = 'application/x-msmediaview', m3u = 'audio/x-mpegurl',
 	man = 'application/x-troff-man', mdb = 'application/x-msaccess', me = 'application/x-troff-me', mht = 'message/rfc822', mhtml = 'message/rfc822', mid = 'audio/mid', mny = 'application/x-msmoney',
 	mov = 'video/quicktime', movie = 'video/x-sgi-movie', mp2 = 'video/mpeg', mp3 = 'audio/mpeg', mpa = 'video/mpeg', mpe = 'video/mpeg', mpeg = 'video/mpeg', mpg = 'video/mpeg',
@@ -104,7 +104,7 @@ local mimeTypesMap = {
 	wav = 'audio/x-wav', wcm = 'application/vnd.ms-works', wdb = 'application/vnd.ms-works', wks = 'application/vnd.ms-works', wmf = 'application/x-msmetafile', wps = 'application/vnd.ms-works',
 	wri = 'application/x-mswrite', wrl = 'x-world/x-vrml', wrz = 'x-world/x-vrml', xaf = 'x-world/x-vrml', xbm = 'image/x-xbitmap', xla = 'application/vnd.ms-excel', xlc = 'application/vnd.ms-excel',
 	xlm = 'application/vnd.ms-excel', xls = 'application/vnd.ms-excel', xlt = 'application/vnd.ms-excel', xlw = 'application/vnd.ms-excel', xof = 'x-world/x-vrml', xpm = 'image/x-xpixmap',
-	xwd = 'image/x-xwindowdump', z = 'application/x-compress', zip = 'application/zip', rar = 'application/rar',
+	xwd = 'image/x-xwindowdump', z = 'application/x-compress', zip = 'application/zip', rar = 'application/rar', png = 'image/png', mng = 'image/mng', tga = 'image/tga',
 }
 
 
@@ -152,6 +152,11 @@ local Utils = {
 		end
 
 		return string.format('%s//%s%s', string.sub(url, 1, protocol), host, path)
+	end,
+	
+	--获取文件扩展名对应的mimeType字符串，不传参数的话则返回整个mimeType映射表
+	mapMimeType = function(ext)
+		return ext and mimeTypesMap[ext] or mimeTypesMap
 	end,
 
 	--HTTP上传

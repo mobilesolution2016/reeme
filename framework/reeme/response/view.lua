@@ -23,7 +23,7 @@ local function loadTemplateFile(reeme, tpl, pathname)
 		f:close()
 
 	elseif err then
-		error(string.format('file io error when load template file: %s'), tostring(err))
+		error(string.format('file io error when load template file: %s', tostring(err)))
 	end
 
 	return t

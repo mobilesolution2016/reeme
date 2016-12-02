@@ -1,7 +1,7 @@
 local readables = {
 	get = function(reeme) return ngx.req.get_uri_args() end,
 	args = function(reeme) 
-		local args = { }
+		local args = table.new(0, 12)
 		local get, post = reeme.request.get, reeme.request.post
 		
 		if get then
