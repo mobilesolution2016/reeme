@@ -215,6 +215,18 @@ resultMeta.__index = {
 	fullCreate = function(self, db)
 		return execModelInstance(self, db or self.__db, 'INSERT', false, true)
 	end,
+
+	--替换
+	replace = function(self, db)
+		local r = execModelInstance(self, db or self.__db, 'REPLACE', false, false)
+		if r then
+			local ai = rawget(self, -10000):findAutoIncreasementField()
+			if ai then
+				self[ai.colname] = r.insertid
+			end
+		end
+		return r
+	end,
 	
 	--删除，以主键为记录删除
 	delete = function(self, db)

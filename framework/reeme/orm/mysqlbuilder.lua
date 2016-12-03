@@ -577,6 +577,28 @@ builder.INSERT = function(self, db)
 	--end
 	return table.concat(sqls, ' ')
 end
+
+builder.REPLACE = function(self, db)
+	local sqls = {}
+	local model = self.m
+	
+	sqls[#sqls + 1] = 'REPLACE INTO'
+	sqls[#sqls + 1] = model.__name
+
+	local allJoins = {}
+	allJoins[self.m.__name] = self
+	allJoins[1] = self
+	
+	--all values
+	if builder.buildKeyValuesSet(self, sqls, '', allJoins) > 0 then
+		table.insert(sqls, #sqls, 'SET')
+	else
+		sqls[#sqls + 1] = '() VALUES()'
+	end
+	
+	--end
+	return table.concat(sqls, ' ')
+end
 	
 builder.DELETE = function(self)
 	local sqls = {}
