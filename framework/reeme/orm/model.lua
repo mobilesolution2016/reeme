@@ -244,13 +244,15 @@ queryMeta = {
 		--使用列表达式。不带参数的调用就是清除表达式
 		expr = function(self, expr)
 			if expr then
-				if not self.expressions then
-					self.expressions = table.new(4, 0)
+				if self.expressions then
+					self.expressions[#self.expressions + 1] = expr
+				else
+					self.expressions = { expr }
 				end
-				self.expressions[#self.expressions + 1] = expr
+				
 			else
 				self.expressions = nil
-			end		
+			end
 			self.colCache = nil
 			
 			return self
@@ -598,9 +600,27 @@ queryMeta = {
 			end
 		end,
 		--执行select查询并获取所有的行，然后将这些行的指定的一个字段形成为一个新的table返回，如果没有结果集或不是查询指令时返回一个空的table而非nil
+		--参数colname可以为nil——如果在此之前调用columns设置过至少一个列的话
 		fetchAllFirst = function(self, colname, db, result)
 			if self.op == 'SELECT' then
-				local res, r = self:columns(colname):execute(db, result)	
+				local res, r
+				if colname then
+					if not self.expressions then
+						self:columns(colname)
+					end
+				else
+					for name,_ in pairs(self.colSelects) do					
+						colname = name
+						break
+					end
+					if not colname then
+						return nil
+					end
+					
+					colname = colname.colname
+				end
+				
+				res, r = self:execute(db, result)	
 				if res and r + 1 then
 					r = r(true)
 
