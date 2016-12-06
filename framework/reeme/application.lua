@@ -409,7 +409,7 @@ local appMeta = {
 
 		--设置响应方法
 		on = function(self, name, func)
-			local valids = { pre = 1, err = 1, denied = 1, missmatch = 1, tblfmt = 1, output = 1, ['end'] = 1 }
+			local valids = { pre = 1, route = 1, err = 1, denied = 1, missmatch = 1, tblfmt = 1, output = 1, ['end'] = 1 }
 			if type(func) == 'function' and valids[name] then
 				self[name .. 'Proc'] = func
 			else
