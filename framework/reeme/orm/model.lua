@@ -802,14 +802,31 @@ local modelMeta = {
 		--和find一样但是仅查找第1行，其实就是find加上limit(1)
 		findFirst = function(self, name, val)
 			local q = self:query()
-			if name then q:where(name, val) end
+			if name then 
+				if type(name) == 'table' then
+					for k,v in pairs(name) do
+						q:where(k, v)
+					end
+				else
+					q:where(name, val)
+				end
+			end
 			return q:limit(1):exec()
 		end,
 		--和find一样但是仅查找第1行，并且限制查找时的列名（不会将所有列都取出），如果列名只有1个，那么返回的将是单值或nil
 		findFirstWithNames = function(self, colnames, name, val)
 			local q = self:query()
 
-			if name then q:where(name, val) end
+			if name then 
+				if type(name) == 'table' then
+					for k,v in pairs(name) do
+						q:where(k, v)
+					end
+				else
+					q:where(name, val)
+				end
+			end
+			
 			q = q:columns(colnames):limit(1):exec()
 			
 			if string.find(colnames, ',', 1, true) then
@@ -882,16 +899,15 @@ local modelMeta = {
 			return false
 		end,
 		
-		--按照字段的名称对值进行包装
+		--按照字段的名称对值进行包装，即自动值类型转换
 		value = function(self, colname, value)
-			local v = nil
+			local v, fullop
 			local b = self.builder
 			local cfg = self.__fields[colname]
 			
 			if cfg then
-				local fullop = b.fullop
-				b.fullop = true
-				v = b.wrapValue(cfg, value)
+				fullop, b.fullop = b.fullop, true
+				v = b:wrapValue(cfg, value, true)
 				b.fullop = fullop
 			end
 			
