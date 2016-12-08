@@ -204,6 +204,7 @@ else
 	local readdirinfo = _G.libreemext.readdirinfo
 	local getpathattrs = _G.libreemext.getpathattrs
 	local pathisexists = _G.libreemext.pathisexists
+	local createdir = _G.libreemext.createdir
 	
 	local FILE = 1
 	local DIR = 2
