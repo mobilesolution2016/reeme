@@ -101,7 +101,6 @@ static int connectToDeamon(lua_State* L, void* processHandle, const char* host, 
 
 	if (processHandle)
 	{
-		// �ȵȴ�100ms���ң��ȴ��������ɳ�ʼ���������ظ����������˳������ೢ��5��
 		for(int i = 0; i < 5; ++ i)
 		{
 #ifdef _WINDOWS
@@ -134,22 +133,18 @@ static int lua_start_deamon(lua_State* L)
 {
 	if (gDeamonSock != INVALID_SOCKET)
 	{
-		// �Ѿ�������
 		lua_pushboolean(L, 1);
 		return 1;
 	}
 
-	// taskdeamonִ���ļ���·��
 	size_t len = 0, pathLen = 0;
 	const char* deamonPath = lua_isstring(L, 1) ? luaL_checklstring(L, 1, &pathLen) : 0;
 	const char* args = 0, *host = "127.0.0.1";
 	unsigned short port = 5918;
 
-	// ��������
 	int t = lua_type(L, 2), v = 0;
 	if (t == LUA_TTABLE)
 	{
-		// �����Ǹ�table��������Ϊjson�ַ���
 		lua_getglobal(L, "require");
 		lua_pushliteral(L, "cjson.safe");
 		lua_pcall(L, 1, 1, 0);
@@ -166,7 +161,6 @@ static int lua_start_deamon(lua_State* L)
 	}
 	else if (t == LUA_TSTRING)
 	{
-		// �����Ǹ�json�ַ�����������Ϊtable����Ϊ��Ҫ���л�ȡ����
 		lua_getglobal(L, "string");
 		lua_getfield(L, -1, "json");
 		lua_pushvalue(L, 2);
@@ -177,7 +171,6 @@ static int lua_start_deamon(lua_State* L)
 	}
 	else if (t == LUA_TNIL)
 	{
-		// ����Ϊnil����ȫ��ʹ��Ĭ�ϲ���
 		t = LUA_TSTRING;
 		args = "{}";
 		len = 2;
@@ -187,7 +180,6 @@ static int lua_start_deamon(lua_State* L)
 
 	if (v)
 	{
-		// ��ȡ��Ҫ����
 		lua_getfield(L, v, "listen");
 		if (lua_istable(L, -1))
 		{
@@ -206,7 +198,6 @@ static int lua_start_deamon(lua_State* L)
 	gDeamongStarting = true;
 
 #ifdef _WINDOWS
-	// ��Windows��ʹ��shellexecute������taskdeamon.exe
 	std::wstring strExe, strCmd;
 
 	int cchPath = MultiByteToWideChar(CP_UTF8, 0, deamonPath, pathLen, 0, 0);
@@ -215,7 +206,6 @@ static int lua_start_deamon(lua_State* L)
 	strExe.resize(cchPath);
 	strCmd.resize(cchCmd + 5);
 
-	// �����ǲ���2�������ַ����Ļ������п�����һ���ļ���
 	if (t == LUA_TSTRING && GetFileAttributesA(args))
 		strCmd = L"file:";
 	else
@@ -227,7 +217,6 @@ static int lua_start_deamon(lua_State* L)
 
 	if (pathLen == 0)
 	{
-		// û��ָ��·������ô���õ�ǰģ�����ڵ�·�����൱��Ĭ��taskdeamon.exe��reemext.dll����ͬһ��Ŀ¼�µ�
 		wchar_t szThisModule[512] = { 0 };
 		DWORD cchModule = GetModuleFileNameW(GetModuleHandle(L"reemext"), szThisModule, 512);
 
@@ -318,7 +307,6 @@ static int lua_request_deamon(lua_State* L)
 	int r = 0;
 	if (posts && len)
 	{
-		// �ȷ�ͷ
 		PckHeader hd;
 		hd.bodyLeng = len;
 		hd.crc32 = CRC32Check(posts, len);
@@ -328,7 +316,6 @@ static int lua_request_deamon(lua_State* L)
 
 		if (send(gDeamonSock, (const char*)&hd, sizeof(hd), 0) == SOCKET_ERROR)
 		{
-			// ���ӿ��ܶ��ˣ���������
 			socketClose();
 
 			if (!socketConnect())
@@ -779,20 +766,22 @@ static void initCommonLib(lua_State* L)
 	luaext_table(L);
 	luaext_utf8str(L);
 
-	// ��������ȫ�ֺ���
-	lua_pushcfunction(L, &lua_toboolean);
-	lua_setglobal(L, "toboolean");
+	// 新增一些全局函数
+	static luaL_Reg cGlobalProcs[] = {
+		{ "toboolean", &lua_toboolean },
+		{ "checknull", &lua_checknull },
+		{ "hasequal", &lua_hasequal },
+		{ "rawhasequal", &lua_rawhasequal },
+		{ "findmetatable", &lua_findmetatable },
 
-	lua_pushcfunction(L, &lua_checknull);
-	lua_setglobal(L, "checknull");
+		{ NULL, NULL }
+	};
 
-	lua_pushcfunction(L, &lua_hasequal);
-	lua_setglobal(L, "hasequal");
+	lua_getglobal(L, "_G");
+	luaL_register(L, NULL, cGlobalProcs);
+	lua_settop(L, top);
 
-	lua_pushcfunction(L, &lua_rawhasequal);
-	lua_setglobal(L, "rawhasequal");
-
-	// ����һ����ffi����
+	// 缓存一些函数方便C来调用
 	lua_getglobal(L, "require");
 	lua_pushliteral(L, "ffi");
 	lua_pcall(L, 1, 1, 0);
@@ -823,24 +812,19 @@ REEME_API int luaopen_libreemext(lua_State* L)
 {
 	initCommonLib(L);
 
-	// ��������չ����ע��Ϊmeta table���ṩmeta table���Һ���
+	// 一些隐藏的扩展函数
 	static luaL_Reg cExtProcs[] = {
 		{ "sql_token_parse", &lua_sql_token_parse },
 		{ "start_deamon", &lua_start_deamon },
 		{ "connect_deamon", &lua_connect_deamon },
 		{ "request_deamon", &lua_request_deamon },
 
-		// ��ָ����λ�ÿ�ʼȡһ����
 		{ "find_token", lua_sql_findtoken },
 
-		// ��boxed int64ֱ��ת��void*�ͣ��Ա�֤��ͬcdata int64��ֵΨһ
 		{ "int64ltud", &lua_uint64_tolightuserdata },
 
 		{ NULL, NULL }
 	};
-
-	lua_pushcfunction(L, &lua_findmetatable);
-	lua_setglobal(L, "findmetatable");
 
 	luaL_newmetatable(L, "REEME_C_EXTLIB");
 	luaL_register(L, NULL, cExtProcs);
