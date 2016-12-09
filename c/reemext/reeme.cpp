@@ -522,6 +522,121 @@ int deleteFile(const char* fname)
 #endif
 }
 
+bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update)
+{
+#ifdef _WINDOWS
+	HANDLE hFile = CreateFileA(fname, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+	if (hFile != INVALID_HANDLE_VALUE)
+	{
+		SYSTEMTIME sys;
+		FILETIME c, u, l;
+
+		BOOL ret = GetFileTime(hFile, &c, 0, &u);
+		CloseHandle(hFile);
+
+		if (!ret)
+			return false;
+
+		if (create)
+		{
+			FileTimeToLocalFileTime(&c, &l);
+			FileTimeToSystemTime(&l, &sys);
+			create->year = sys.wYear;
+			create->month = sys.wMonth;
+			create->day = sys.wDay;			
+			create->dayofweek = sys.wDayOfWeek;
+			create->hour = sys.wHour;
+			create->minute = sys.wMinute;
+			create->second = sys.wSecond;
+			create->millisecond = sys.wMilliseconds;
+		}
+
+		if (update)
+		{
+			FileTimeToLocalFileTime(&u, &l);
+			FileTimeToSystemTime(&l, &sys);
+			update->year = sys.wYear;
+			update->month = sys.wMonth;
+			update->day = sys.wDay;			
+			update->dayofweek = sys.wDayOfWeek;
+			update->hour = sys.wHour;
+			update->minute = sys.wMinute;
+			update->second = sys.wSecond;
+			update->millisecond = sys.wMilliseconds;
+		}
+
+		return true;
+	}
+#else
+	struct stat statbuf;
+	if (lstat(fname, &statbuf) == 0)
+	{
+		time_t c;
+#ifdef HAVE_ST_BIRTHTIME
+		c = statbuf.st_birthtime;
+#else
+		c = statbuf.st_ctime;
+#endif
+
+		if (create)
+		{
+			tm* ctm = localtime(&c);
+			create->year = 1900 + ctm->tm_year;
+			create->month = ctm->tm_mon;
+			create->day = ctm->tm_mday;
+			create->dayofweek = ctm->tm_wday;
+			create->hour = ctm->tm_hour;
+			create->minute = ctm->tm_min;
+			create->second = ctm->tm_sec;
+			create->millisecond = 0;
+		}
+
+		if (update)
+		{
+			tm* utm = localtime((const time_t *)&statbuf.st_mtime);
+			update->year = 1900 + utm->tm_year;
+			update->month = utm->tm_mon;
+			update->day = utm->tm_mday;
+			update->dayofweek = utm->tm_wday;
+			update->hour = utm->tm_hour;
+			update->minute = utm->tm_min;
+			update->second = utm->tm_sec;
+			update->millisecond = 0;
+		}
+
+		return true;
+	}
+#endif
+	return false;
+}
+
+double getFileSize(const char* fname)
+{
+#ifdef _WINDOWS
+	HANDLE hFile = CreateFileA(fname, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+	if (hFile && hFile != INVALID_HANDLE_VALUE)
+	{
+		DWORD hi;
+		DWORD lo = GetFileSize(hFile, &hi);
+		CloseHandle(hFile);
+
+		return static_cast<double>(((uint64_t)hi << 32) | lo);
+	}
+#else
+	FILE* fp = fopen(fname, "rb");
+	if (fp)
+	{
+		fseek(fp, 0L, SEEK_END);
+		long s = ftell(fp);
+		fclose(fp);
+
+		return static_cast<double>(s);
+	}
+#endif
+
+	return -1;
+}
+
 #ifndef _WINDOWS
 bool fnamematch(const char* needle, const char* haystack)
 {
@@ -656,40 +771,6 @@ static int lua_uint64_tolightuserdata(lua_State* L)
 	return 0;
 }
 
-static int lua_filesize(lua_State* L)
-{
-	size_t len = 0;
-	const char* fname = lua_tolstring(L, 1, &len);
-	if (!fname || len < 1)
-		return 0;
-
-#ifdef _WINDOWS
-	HANDLE hFile = CreateFileA(fname, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-	if (hFile && hFile != INVALID_HANDLE_VALUE)
-	{
-		DWORD hi;
-		DWORD lo = GetFileSize(hFile, &hi);
-		CloseHandle(hFile);
-
-		lua_pushinteger(L, ((uint64_t)hi << 32) | lo);
-		return 1;
-	}
-#else
-	FILE* fp = fopen(fname, "rb");
-	if (fp)
-	{
-		fseek(fp, 0L, SEEK_END);
-		unsigned long s = ftell(fp);
-		fclose(fp);
-
-		lua_pushinteger(L, s);
-		return 1;
-	}
-#endif
-
-	return 0;
-}
-
 static void initCommonLib(lua_State* L)
 {
 	int top = lua_gettop(L);
@@ -754,8 +835,6 @@ REEME_API int luaopen_libreemext(lua_State* L)
 
 		// ��boxed int64ֱ��ת��void*�ͣ��Ա�֤��ͬcdata int64��ֵΨһ
 		{ "int64ltud", &lua_uint64_tolightuserdata },
-
-		{ "filesize", &lua_filesize },
 
 		{ NULL, NULL }
 	};

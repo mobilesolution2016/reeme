@@ -29,46 +29,67 @@
 
 local cacheFuncs = table.new(0, 128)
 
+local decParams = function(r, uts)
+	local ts, pos = string.hasinteger(r)
+	if ts == uts then
+		local code, tp = string.sub(r, pos + 6), string.sub(r, pos, pos + 5)
+		return code, tp
+	end
+end
+
 return function(sharedName)
 	local setfunc = require('reeme.response.view')
 	
 	if sharedName then
 		local caches = ngx.shared[sharedName]
-		
-		setfunc('templatecache', {
-			get = function(self, reeme, name)
-				local r = cacheFuncs[name]
+		local pub = {
+			--取出的时候，如果fullpath所对应的文件时间已经变了，则缓存会失效
+			get = function(self, reeme, fullpath)
+				local uts = reeme.fd.fileuts(fullpath)
+				
+				--优先查找函数级函数
+				local r = cacheFuncs[fullpath]
 				if r then
+					r = decParams(r, uts)
+					if not r then
+						cacheFuncs[fullpath] = nil
+					end
 					return r, 'loaded'
 				end
 				
+				--然后再是共享内存
 				if caches then
-					r = caches:get(name)
+					r = caches:get(fullpath)
 					if r then
-						local v, t = string.sub(r, 7), string.sub(r, 1, 6)
-						--for debug code
-						--[[if t == 'b-code' then
-							v = loadstring(v, '__templ_tempr__')
-							return v, 'loaded'
-						end]]
-
+						local v, t = decParams(r, uts)
+						if not v then
+							caches:delete(fullpath)
+						end
 						return v, t
 					end
 				end
 			end,
 
-			set = function(self, reeme, name, v, tp)
+			--存入的时候，函数会记录fullpath即模板所在文件的文件更新时间
+			set = function(self, reeme, fullpath, v, tp, uts)
+				if not uts then
+					uts = reeme.fd.fileuts(fullpath) or 0
+				end
+				
 				if tp == 'loaded' then
-					local r = { 'b-code', string.dump(v) }
-					caches:set(name, table.concat(r, ''))
-					cacheFuncs[name] = v
+					local r = { uts, 'b-code', string.dump(v) }
+					caches:set(fullpath, table.concat(r, ''))
+					cacheFuncs[fullpath] = v
 					
 				elseif tp == 'parsed' then
-					local r = { tp, v }
-					caches:set(name, table.concat(r, ''))
+					local r = { uts, 'parsed', v }
+					caches:set(fullpath, table.concat(r, ''))
 				end
 			end,
-		})
+		}
+		
+		setfunc('templatecache', pub)
+		return pub
 	else
 		setfunc('templatecache', nil)
 	end

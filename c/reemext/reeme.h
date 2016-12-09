@@ -14,6 +14,12 @@ enum LuaRegistryFixedValue {
 	kLuaRegVal_ngx_re_match,
 };
 
+struct LocalDateTime
+{
+	uint16_t	year, month, day, dayofweek;
+	uint16_t	hour, minute, second, millisecond;
+} ;
+
 //////////////////////////////////////////////////////////////////////////
 template <typename T> static inline T hashString(const char *str)
 {

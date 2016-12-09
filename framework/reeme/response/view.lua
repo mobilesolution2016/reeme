@@ -73,7 +73,7 @@ local function loadSubtemplate(self, env, name, envForSub)
 	if globalTplCaches then
 		--从缓存中载入
 		local tType
-		r, tType = globalTplCaches:get(r, pathname)
+		r, tType = globalTplCaches:get(reeme, pathname)
 
 		if r then
 			if tType ~= 'loaded' then
@@ -389,6 +389,8 @@ return function(r, tpl)
 			globalSectionCaches = tpl
 		elseif r == 'getmeta' then
 			return viewMeta
+		elseif r == 'getcaches' then
+			return globalTplCaches, globalSectionCaches
 		end
 
 		return

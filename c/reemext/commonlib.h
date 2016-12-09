@@ -153,6 +153,9 @@ REEME_API uint32_t cdataisint64(const char* str, size_t len);
 REEME_API int deleteDirectory(const char* path);
 REEME_API int deleteFile(const char* fname);
 
+REEME_API bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update);
+REEME_API double getFileSize(const char* fname);
+
 REEME_API const char* readdirinfo(void* p, const char* filter);
 #ifndef _WINDOWS
 REEME_API bool pathisfile(const char* path);

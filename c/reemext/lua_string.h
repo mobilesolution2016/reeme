@@ -250,8 +250,7 @@ static int lua_string_split(lua_State* L)
 		if (top >= 4)
 			retAs = lua_type(L, tblVal = 4);
 	}
-	
-	if (retAs == LUA_TBOOLEAN)
+	else if (retAs == LUA_TBOOLEAN)
 	{
 		// is true return plained string(s)
 		if (lua_toboolean(L, tblVal))
@@ -957,7 +956,6 @@ static int lua_string_hasnumeric(lua_State* L)
 		else
 		{			
 			s = (const char*)lua_tolstring(L, 1, &len);
-
 			if (len > 0)
 			{
 				d = strtod(s, &endp);
@@ -972,7 +970,7 @@ static int lua_string_hasnumeric(lua_State* L)
 		lua_pushnumber(L, d);
 		if (endp)
 		{
-			lua_pushlstring(L, endp, len - (endp - s));
+			lua_pushinteger(L, endp - s + 1);
 			return 2;
 		}
 
@@ -1160,22 +1158,10 @@ static int lua_string_hasinteger(lua_State* L)
 					r = 2;
 			}
 		}
-		else if (tp == LUA_TCDATA)
-		{
-			lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
-			lua_pushvalue(L, 1);
-			lua_pcall(L, 1, 1, 0);
-
-			s = lua_tolstring(L, -1, &len);
-			if (len >= 3 && cdataValueIsInt64((const uint8_t*)s, len, &len))
-				r = 1;
-		}
 	}
 
 	if (r)
 	{
-		if (tp != LUA_TCDATA)
-		{
 #if defined(REEME_64) && defined(DOUBLE_EXCEED_CHEDK)
 			if (v > DOUBLE_UINT_MAX)
 			{
@@ -1204,17 +1190,10 @@ static int lua_string_hasinteger(lua_State* L)
 #endif
 			if (endp)
 			{
-				lua_pushlstring(L, endp, len - (endp - s));
+				lua_pushinteger(L, endp - s + 1);
 				return 2;
 			}
 			return 1;
-		}
-		else
-		{
-			lua_pushvalue(L, 1);
-			lua_pushlstring(L, s, len);
-			return 2;
-		}
 	}
 	if (t >= 2)
 	{

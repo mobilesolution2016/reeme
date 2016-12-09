@@ -76,9 +76,6 @@ ffi.cdef[[
 	size_t opt_i64toa(int64_t value, char* buffer);
 	size_t opt_u64toa(uint64_t value, char* buffer);
 	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);
-
-	int deleteDirectory(const char* path);
-	int deleteFile(const char* fname);
 ]]
 
 _G.libreemext = reemext
@@ -144,11 +141,6 @@ end
 _G.io.exists = function(name)
 	return ffi.C.access(name, 0) == 0
 end
-
-_G.io.filesize = function(name)
-	return cExtLib.filesize(name)
-end
-
 
 local strlib = _G.string
 strlib.cut = function(str, p)

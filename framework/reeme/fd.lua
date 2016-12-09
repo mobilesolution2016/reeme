@@ -27,6 +27,20 @@ local mergePath = function(self)
 	return table.concat(pathsegs, '/')
 end
 
+ffi.cdef[[
+	typedef struct _LocalDateTime
+	{
+		uint16_t	year, month, day, dayofweek;
+		uint16_t	hour, minute, second, millisecond;
+	} LocalDateTime;
+	
+	int deleteDirectory(const char* path);
+	int deleteFile(const char* fname);
+	
+	bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update);
+	double getFileSize(const char* fname);
+]]
+
 if ffi.os == 'Windows' then
 	ffi.cdef[[
 		int PathFileExistsA(const char*);
@@ -321,122 +335,156 @@ else
 	end
 end
 
+local _getFileSize = _G.libreemext.getFileSize
+local _getFileTime = _G.libreemext.getFileTime
+local createTime, updateTime = ffi.new('LocalDateTime'), ffi.new('LocalDateTime')
+
 local fsysPub = {
-	__index = {
-		--检测路径是否是个文件
-		pathIsFile = _isFile,
-		--检测路径是否是个目录
-		pathIsDir = _isDir,
-		--检测路径是否存在（文件=1或是目录=2），返回nil说明该路径不存在（文件也不是目录也不是）
-		pathIsExists = _isExists,
+	--检测路径是否是个文件
+	pathIsFile = _isFile,
+	--检测路径是否是个目录
+	pathIsDir = _isDir,
+	--检测路径是否存在（文件=1或是目录=2），返回nil说明该路径不存在（文件也不是目录也不是）
+	pathIsExists = _isExists,
 
-		--获取属性值，然后可以用于checkAttr函数的参数1，这样可以减少同一个path多次checkAttr时的IO操作次数
-		getAttr = _getAttr,
+	--获取属性值，然后可以用于checkAttr函数的参数1，这样可以减少同一个path多次checkAttr时的IO操作次数
+	getAttr = _getAttr,
 
-		--checkAttr(path, checkWhat)
-		--path可以是一个路径，也可以是getAttr函数的返回值
-		--what可以是：file|dir|hidden|temporary|link|socket，或者777、755、422、511等等，这种8进制表示的权限（但请注意要传入字符串而不能是数字，因为Lua原生不支持0777这种8进制数）
-		checkAttr = _checkAttr,
+	--checkAttr(path, checkWhat)
+	--path可以是一个路径，也可以是getAttr函数的返回值
+	--what可以是：file|dir|hidden|temporary|link|socket，或者777、755、422、511等等，这种8进制表示的权限（但请注意要传入字符串而不能是数字，因为Lua原生不支持0777这种8进制数）
+	checkAttr = _checkAttr,
 
-		--openDir(path[, filter])
-		--filter为文件名过滤器，通配符可随意用，如a.*，或xxx*。也可以没有，且指定为*|.|*.*和不指定是没有区别的，还不如不指定
-		openDir = _openDir,
+	--openDir(path[, filter])
+	--filter为文件名过滤器，通配符可随意用，如a.*，或xxx*。也可以没有，且指定为*|.|*.*和不指定是没有区别的，还不如不指定
+	openDir = _openDir,
 
-		--支持多级创建
-		createDir = function(path, mode, recur)
-			if recur then
-				local s, drvLet = 0, false
-				local first = path:sub(1)
-				local segs = string.split(path, '/\\')
-				local newpath = (first == '\\' or first == '/') and first or ''
+	--支持多级创建
+	createDir = function(path, mode, recur)
+		if recur then
+			local s, drvLet = 0, false
+			local first = path:sub(1)
+			local segs = string.split(path, '/\\')
+			local newpath = (first == '\\' or first == '/') and first or ''
 
-				if ffi.os == 'Windows' and #segs[1] == 2 and string.byte(segs[1], 2) == 58 then
-					drvLet = true
-				end
-
-				for i = 1, #segs do
-					local chk = newpath .. segs[i]
-					if (drvLet and i == 1) or _isDir(chk) then
-						newpath = chk .. '/'
-					else
-						s = i
-						break
-					end
-				end
-
-				if s ~= 0 then
-					for i = s, #segs do
-						newpath = newpath .. segs[i]
-						if not _createDir(newpath, mode) then
-							return false
-						end
-
-						newpath = newpath .. '/'
-					end
-				end
-
-				return true
+			if ffi.os == 'Windows' and #segs[1] == 2 and string.byte(segs[1], 2) == 58 then
+				drvLet = true
 			end
 
-			return _createDir(path, mode)
-		end,
-		--支持多级删除
-		deleteDir = function(dir)
-			return libreemext.deleteDirectory(dir) ~= 0
-		end,
+			for i = 1, #segs do
+				local chk = newpath .. segs[i]
+				if (drvLet and i == 1) or _isDir(chk) then
+					newpath = chk .. '/'
+				else
+					s = i
+					break
+				end
+			end
 
-		deleteFile = function(dir)
-			return libreemext.deleteFile(dir) ~= 0
-		end,
+			if s ~= 0 then
+				for i = s, #segs do
+					newpath = newpath .. segs[i]
+					if not _createDir(newpath, mode) then
+						return false
+					end
 
-		--取文件尺寸
-		filesize = io.filesize(path),
+					newpath = newpath .. '/'
+				end
+			end
+
+			return true
+		end
+
+		return _createDir(path, mode)
+	end,
+	--支持多级删除
+	deleteDir = function(dir)
+		return libreemext.deleteDirectory(dir) ~= 0
+	end,
+
+	deleteFile = function(dir)
+		return libreemext.deleteFile(dir) ~= 0
+	end,
+
+	--根据文件路径取文件尺寸，失败返回nil
+	filesize = function(path)
+		local s = _getFileSize(path)
+		if s ~= -1 then return s end
+	end,
+	
+	--根据路径取文件创建与最后修改时间，返回创建和更新时间，失败返回两个nil
+	filetime = function(path)
+		local c, u = ffi.new('LocalDateTime'), ffi.new('LocalDateTime')
+		if _getFileTime(path, c, u) then
+			return c, u
+		end
+	end,
+	--仅获取文件的更新时间
+	fileutime = function(path)
+		local u = ffi.new('LocalDateTime')
+		if _getFileTime(path, nil, u) then
+			return u
+		end
+	end,
+	
+	--根据路径取文件创建与最后修改时间，返回创建和更新时间戳，失败返回两个nil
+	filets = function(path)
+		if _getFileTime(path, createTime, updateTime) then
+			return os.time({year = createTime.year, month = createTime.month, day = createTime.day, hour = createTime.hour, min = createTime.minute, sec = createTime.second}),
+				   os.time({year = updateTime.year, month = updateTime.month, day = updateTime.day, hour = updateTime.hour, min = updateTime.minute, sec = updateTime.second})
+		end
+	end,
+	--仅获取文件的更新时间的时间戳
+	fileuts = function(path)
+		if _getFileTime(path, nil, updateTime) then
+			return os.time({year = updateTime.year, month = updateTime.month, day = updateTime.day, hour = updateTime.hour, min = updateTime.minute, sec = updateTime.second})
+		end
+	end,
+	
+	--取文件扩展名，未成功返回nil
+	fileext = function(path)
+		local ext = string.rfindchar(path, '.')
+		if ext then
+			return string.lower(string.sub(path, ext + 1))
+		end
+	end,
+	
+	--分解路径
+	pathinfo = function(path)
+		local r = table.new(0, 6)
+		local namepos = string.rfindchar(path, '/', 1, true)
+		if not namepos then
+			namepos = string.rfindchar(path, '\\', 1, true)
+		end
 		
-		--取文件扩展名，未成功返回nil
-		fileext = function(path)
-			local ext = string.rfindchar(path, '.')
-			if ext then
-				return string.lower(string.sub(path, ext + 1))
+		if namepos then
+			r.path = string.sub(path, 1, namepos)
+			r.name = string.sub(path, namepos + 1)
+			if #r.name > 1 then
+				local ext = string.rfindchar(r.name, '.')
+				if ext then
+					r.ext = string.lower(string.sub(r.name, ext + 1))
+					r.name = string.sub(r.name, 1, ext)
+				end
 			end
-		end,
+		else
+			r.path = path
+		end
 		
-		--分解路径
-		pathinfo = function(path)
-			local r = table.new(0, 6)
-			local namepos = string.rfindchar(path, '/', 1, true)
-			if not namepos then
-				namepos = string.rfindchar(path, '\\', 1, true)
+		if ffi.os == 'Windows' then
+			local second, third = string.byte(r.path, 2, 3)
+			if second == 58 and (third == 47 or third == 92) then
+				r.driver = string.sub(r.path, 1, 1)
+				r.path = string.sub(r.path, 4)
 			end
-			
-			if namepos then
-				r.path = string.sub(path, 1, namepos)
-				r.name = string.sub(path, namepos + 1)
-				if #r.name > 1 then
-					local ext = string.rfindchar(r.name, '.')
-					if ext then
-						r.ext = string.lower(string.sub(r.name, ext + 1))
-						r.name = string.sub(r.name, 1, ext)
-					end
-				end
-			else
-				r.path = path
-			end
-			
-			if ffi.os == 'Windows' then
-				local second, third = string.byte(r.path, 2, 3)
-				if second == 58 and (third == 47 or third == 92) then
-					r.driver = string.sub(r.path, 1, 1)
-					r.path = string.sub(r.path, 4)
-				end
-			end
-			
-			r.merge = mergePath
+		end
+		
+		r.merge = mergePath
 
-			return r
-		end,
-	}
+		return r
+	end,
 }
 
 return function()
-	return setmetatable({}, fsysPub)
+	return fsysPub
 end
