@@ -119,20 +119,26 @@ _G.table.exclude = function(A, B)
 		return r
 	end
 end
-_G.table.append = function(A, B)
-	if type(A) == 'table' and type(B) == 'table' then
-		if #B > 0 then
-			for i = 1, #B do
-				A[#A + 1] = B[i]
-			end
-		else
-			for k,v in pairs(B) do
-				A[k] = v
+_G.table.append = function(A, ...)
+	if type(A) == 'table' then
+		for i = 1, select('#', ...) do
+			local B = select(i, ...)
+			if type(B) == 'table' then
+				if #B > 0 then
+					local s = #A
+					for k = 1, #B do
+						A[s + k] = B[k]
+					end
+				else
+					for k,v in pairs(B) do
+						A[k] = v
+					end
+				end
 			end
 		end
+		
+		return A
 	end
-	
-	return A
 end
 
 _G.io.exists = function(name)

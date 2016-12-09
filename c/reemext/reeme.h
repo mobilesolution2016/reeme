@@ -4,6 +4,8 @@
 #include "preheader.h"
 
 #define LUA_TCDATA 10
+// 开启本宏，将在整数型的值超过double的最大整数值范围时采用cdata<int64>来表示
+// #define DOUBLE_EXCEED_CHEDK	1
 
 enum LuaRegistryFixedValue {
 	kLuaRegVal_FFINew = -99990,

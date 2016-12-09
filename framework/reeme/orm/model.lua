@@ -244,13 +244,15 @@ queryMeta = {
 		--使用列表达式。不带参数的调用就是清除表达式
 		expr = function(self, expr)
 			if expr then
-				if not self.expressions then
-					self.expressions = table.new(4, 0)
+				if self.expressions then
+					self.expressions[#self.expressions + 1] = expr
+				else
+					self.expressions = { expr }
 				end
-				self.expressions[#self.expressions + 1] = expr
+				
 			else
 				self.expressions = nil
-			end		
+			end
 			self.colCache = nil
 			
 			return self
@@ -598,9 +600,27 @@ queryMeta = {
 			end
 		end,
 		--执行select查询并获取所有的行，然后将这些行的指定的一个字段形成为一个新的table返回，如果没有结果集或不是查询指令时返回一个空的table而非nil
+		--参数colname可以为nil——如果在此之前调用columns设置过至少一个列的话
 		fetchAllFirst = function(self, colname, db, result)
 			if self.op == 'SELECT' then
-				local res, r = self:columns(colname):execute(db, result)	
+				local res, r
+				if colname then
+					if not self.expressions then
+						self:columns(colname)
+					end
+				else
+					for name,_ in pairs(self.colSelects) do					
+						colname = name
+						break
+					end
+					if not colname then
+						return nil
+					end
+					
+					colname = colname.colname
+				end
+				
+				res, r = self:execute(db, result)	
 				if res and r + 1 then
 					r = r(true)
 
@@ -802,14 +822,31 @@ local modelMeta = {
 		--和find一样但是仅查找第1行，其实就是find加上limit(1)
 		findFirst = function(self, name, val)
 			local q = self:query()
-			if name then q:where(name, val) end
+			if name then 
+				if type(name) == 'table' then
+					for k,v in pairs(name) do
+						q:where(k, v)
+					end
+				else
+					q:where(name, val)
+				end
+			end
 			return q:limit(1):exec()
 		end,
 		--和find一样但是仅查找第1行，并且限制查找时的列名（不会将所有列都取出），如果列名只有1个，那么返回的将是单值或nil
 		findFirstWithNames = function(self, colnames, name, val)
 			local q = self:query()
 
-			if name then q:where(name, val) end
+			if name then 
+				if type(name) == 'table' then
+					for k,v in pairs(name) do
+						q:where(k, v)
+					end
+				else
+					q:where(name, val)
+				end
+			end
+			
 			q = q:columns(colnames):limit(1):exec()
 			
 			if string.find(colnames, ',', 1, true) then
@@ -882,16 +919,15 @@ local modelMeta = {
 			return false
 		end,
 		
-		--按照字段的名称对值进行包装
+		--按照字段的名称对值进行包装，即自动值类型转换
 		value = function(self, colname, value)
-			local v = nil
+			local v, fullop
 			local b = self.builder
 			local cfg = self.__fields[colname]
 			
 			if cfg then
-				local fullop = b.fullop
-				b.fullop = true
-				v = b.wrapValue(cfg, value)
+				fullop, b.fullop = b.fullop, true
+				v = b:wrapValue(cfg, value, true)
 				b.fullop = fullop
 			end
 			

@@ -939,6 +939,54 @@ static int lua_string_checknumeric(lua_State* L)
 	return 0;
 }
 
+static int lua_string_hasnumeric(lua_State* L)
+{
+	double d = 0;
+	size_t len = 0;
+	char *endp = 0;
+	const char* s = 0;
+	int r = 0, t = lua_gettop(L);
+
+	if (t >= 1)
+	{
+		if (lua_isnumber(L, 1))
+		{
+			r = 1;
+			d = lua_tonumber(L, 1);
+		}
+		else
+		{			
+			s = (const char*)lua_tolstring(L, 1, &len);
+
+			if (len > 0)
+			{
+				d = strtod(s, &endp);
+				if (endp > s)
+					r = 1;
+			}
+		}
+	}
+
+	if (r)
+	{
+		lua_pushnumber(L, d);
+		if (endp)
+		{
+			lua_pushlstring(L, endp, len - (endp - s));
+			return 2;
+		}
+
+		return 1;
+	}
+	if (t >= 2)
+	{
+		lua_pushvalue(L, 2);
+		return 1;
+	}
+
+	return 0;
+}
+
 // 检测是否是整数或其它方式表示整数的值，如果符合检测条件，则返回转换后的整数，否则返回nil或参数2（如果有参数2的话）
 static int lua_string_checkinteger(lua_State* L)
 {	
@@ -965,8 +1013,9 @@ static int lua_string_checkinteger(lua_State* L)
 			if (len > 0)
 			{
 				int digits = 10;
-				if (s[0] == '0')
+				switch(s[0])
 				{
+				case '0':
 					if (s[1] == 'x')
 					{
 						digits = 16;
@@ -979,9 +1028,17 @@ static int lua_string_checkinteger(lua_State* L)
 						len --;
 						s ++;						
 					}
-				}
-				else if (s[0] == '-')
+					break;
+
+				case '-':
 					negative = true;
+					break;
+				
+				case '+':
+					s ++;
+					len --;
+					break;
+				}
 
 				v = strtoll(s, &endp, digits);
 				if (endp && endp - s == len)
@@ -1004,7 +1061,7 @@ static int lua_string_checkinteger(lua_State* L)
 	{
 		if (tp != LUA_TCDATA)
 		{
-#ifdef REEME_64
+#if defined(REEME_64) && defined(DOUBLE_EXCEED_CHEDK)
 			if (v > DOUBLE_UINT_MAX)
 			{
 				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFINew);
@@ -1030,6 +1087,126 @@ static int lua_string_checkinteger(lua_State* L)
 #else
 			lua_pushnumber(L, (double)v);
 #endif
+			return 1;
+		}
+		else
+		{
+			lua_pushvalue(L, 1);
+			lua_pushlstring(L, s, len);
+			return 2;
+		}
+	}
+	if (t >= 2)
+	{
+		lua_pushvalue(L, 2);
+		return 1;
+	}
+
+	return 0;
+}
+// 检测字符串是否是数字，或者是以数字开头字符串（字符串在数字之后还有其它的内容无所谓），如果是，返回数字本身（number类型）以及字符串中非数字开始的位置
+// 如果不是数字或不含数字，则返回为nil（如果有参数2，则在失败时返回参数2）
+static int lua_string_hasinteger(lua_State* L)
+{	
+	size_t len = 0;
+	long long v = 0;
+	char *endp = 0;
+	const char* s = 0;
+	bool negative = false;
+	int r = 0, t = lua_gettop(L), tp = 0;	
+
+	if (t >= 1)
+	{
+		tp = lua_type(L, 1);
+		if (tp == LUA_TNUMBER)
+		{
+			r = 1;
+			v = lua_tointeger(L, 1);
+		}
+		else if (tp == LUA_TSTRING)
+		{						
+			s = (const char*)lua_tolstring(L, 1, &len);
+
+			if (len > 0)
+			{
+				int digits = 10;
+				switch(s[0])
+				{
+				case '0':				
+					if (s[1] == 'x')
+					{
+						digits = 16;
+						len -= 2;
+						s += 2;						
+					}
+					else
+					{
+						digits = 8;
+						len --;
+						s ++;						
+					}
+					break;
+				case '-':
+					negative = true;
+					break;
+				case '+':
+					s ++;
+					len --;
+					break;
+				}
+
+				v = strtoll(s, &endp, digits);
+				if (endp > s)
+					r = 2;
+			}
+		}
+		else if (tp == LUA_TCDATA)
+		{
+			lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_tostring);
+			lua_pushvalue(L, 1);
+			lua_pcall(L, 1, 1, 0);
+
+			s = lua_tolstring(L, -1, &len);
+			if (len >= 3 && cdataValueIsInt64((const uint8_t*)s, len, &len))
+				r = 1;
+		}
+	}
+
+	if (r)
+	{
+		if (tp != LUA_TCDATA)
+		{
+#if defined(REEME_64) && defined(DOUBLE_EXCEED_CHEDK)
+			if (v > DOUBLE_UINT_MAX)
+			{
+				lua_rawgeti(L, LUA_REGISTRYINDEX, kLuaRegVal_FFINew);
+				if (negative)
+				{
+					lua_pushliteral(L, "int64_t");
+					lua_pcall(L, 1, 1, 0);
+
+					int64_t* p64t = (int64_t*)const_cast<void*>(lua_topointer(L, -1));
+					p64t[0] = (int64_t)v;
+				}
+				else
+				{
+					lua_pushliteral(L, "uint64_t");
+					lua_pcall(L, 1, 1, 0);
+
+					uint64_t* p64t = (uint64_t*)const_cast<void*>(lua_topointer(L, -1));
+					p64t[0] = (uint64_t)v;
+				}
+			}
+			else
+				lua_pushnumber(L, (double)v);
+#else
+			lua_pushnumber(L, (double)v);
+#endif
+			if (endp)
+			{
+				lua_pushlstring(L, endp, len - (endp - s));
+				return 2;
+			}
 			return 1;
 		}
 		else
@@ -3420,9 +3597,11 @@ static void luaext_string(lua_State *L)
 
 		// 数值+浮点数字符串检测
 		{ "checknumeric", &lua_string_checknumeric },
+		{ "hasnumeric", &lua_string_hasnumeric },
 		// 整数字符串检测，支持boxed int64
 		{ "checkinteger", &lua_string_checkinteger },
 		{ "checkinteger32", &lua_string_checkinteger32 },
+		{ "hasinteger", &lua_string_hasinteger },
 		// 布尔型检测（允许数值、字符串和boolean类型）
 		{ "checkboolean", &lua_string_checkboolean },
 		// 字符串检测，可以检测最小最大长度、使用正则(google re2)匹配、使用函数检测等

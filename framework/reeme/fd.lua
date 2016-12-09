@@ -348,7 +348,7 @@ local fsysPub = {
 				local s, drvLet = 0, false
 				local first = path:sub(1, 1)
 				local segs = string.split(path, '/\\')
-				local newpath = (first == '\\' or first == '/') and path or ''
+				local newpath = (first == '\\' or first == '/') and first or ''
 
 				if ffi.os == 'Windows' and #segs[1] == 2 and string.byte(segs[1], 2) == 58 then
 					drvLet = true
@@ -367,7 +367,7 @@ local fsysPub = {
 				if s ~= 0 then
 					for i = s, #segs do
 						newpath = newpath .. segs[i]
-						if not _createDir(newpath) then
+						if not _createDir(newpath, mode) then
 							return false
 						end
 

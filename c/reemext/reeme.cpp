@@ -633,11 +633,13 @@ unsigned pathisexists(const char* path)
 bool createdir(const char* path, int mode)
 {
 	struct stat buf = { 0 };
-	if (stat(path, &buf) != 0)
-		return false;
-	if (!S_ISDIR(buf.st_mode))
-		return mkdir(path, mode != 0 ? mode : 0700);
-	return true;
+	if (stat(path, &buf) == -1)
+	{
+		umask(0);
+		return mkdir(path, mode != 0 ? mode : 0666) == 0 || errno == EEXIST;
+	}
+
+	return (S_ISDIR(buf.st_mode)) ? true : false;
 }
 #endif
 

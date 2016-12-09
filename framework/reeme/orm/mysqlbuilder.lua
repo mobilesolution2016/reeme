@@ -26,7 +26,7 @@ builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT 
 
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
 --第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定。若返回为nil表示值为原值表达式
-local function buildSqlValue(self, cfg, v)	
+local function buildSqlValue(self, cfg, v, limitByField)
 	local check
 	local tp = type(v)
 	local suggCon = '='
@@ -108,6 +108,10 @@ local function buildSqlValue(self, cfg, v)
 				multiVals = nil
 			else
 				v = tostring(v)
+				if limitByField and #v > cfg.maxlen then
+					v = string.sub(1, cfg.maxlen)
+				end
+				
 				if quoteIt and (string.byte(v, 1) ~= 39 or string.byte(v, #v) ~= 39) then
 					--没有引用，那么增加引用
 					v = ngx.quote_sql_str(v)
