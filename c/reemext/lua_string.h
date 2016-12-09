@@ -250,7 +250,8 @@ static int lua_string_split(lua_State* L)
 		if (top >= 4)
 			retAs = lua_type(L, tblVal = 4);
 	}
-	else if (retAs == LUA_TBOOLEAN)
+
+	if (retAs == LUA_TBOOLEAN)
 	{
 		// is true return plained string(s)
 		if (lua_toboolean(L, tblVal))
