@@ -363,7 +363,7 @@ local fsysPub = {
 	createDir = function(path, mode, recur)
 		if recur then
 			local s, drvLet = 0, false
-			local first = path:sub(1)
+			local first = path:sub(1, 1)
 			local segs = string.split(path, '/\\')
 			local newpath = (first == '\\' or first == '/') and first or ''
 
