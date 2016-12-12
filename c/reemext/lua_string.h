@@ -3229,6 +3229,8 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 		mem->addChar(']');
 	}
 
+	funcsIdx[3] --;
+
 	return cc;
 }
 
@@ -3283,10 +3285,11 @@ static int pushJsonString(lua_State* L, JsonMemList& mems, size_t total, uint32_
 	char* dst = (char*)malloc(total), *ptr = dst;
 	while ((n = mems.popFirst()) != NULL)
 	{
-		memcpy(ptr, (char*)(n + 1), n->used);		
+		size_t used = n->used;
+		memcpy(ptr, (char*)(n + 1), n->used);
 		if (ptr != dst)
 			free(n);	// 第一个不需要释放，因为不是用malloc分配的
-		ptr += n->used;
+		ptr += used;
 	}
 
 	lua_pushlstring(L, dst, total);
