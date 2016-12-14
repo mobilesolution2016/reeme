@@ -36,7 +36,7 @@ local initConnect = function(reeme)
 	
 	local ok, err = s:connect(addr, 9880)
 	if not ok then
-		_G['logger'] = globalLoggerDummy
+		grawset('logger', globalLoggerDummy)
 		cannotConnect = true
 		return false
 	end		
@@ -66,14 +66,14 @@ local sendmsg = function(t, ...)
 	
 	local ok, err = s:connect(lastAddr, 9880)
 	if err then
-		_G['logger'] = globalLoggerDummy
+		grawset('logger', globalLoggerDummy)
 		cannotConnect = true
 		return
 	end
 
 	ok, err = s:send(ffi.string(pckhd, 4))
 	if err then
-		_G['logger'] = globalLoggerDummy
+		grawset('logger', globalLoggerDummy)
 		cannotConnect = true
 		return
 	end
@@ -108,7 +108,7 @@ globalLogger = {
 		sendmsg(kCmdClear)
 	end,
 	close = function()
-		_G['logger'] = globalLoggerDummy
+		grawset('logger', globalLoggerDummy)
 	end
 }
 globalLoggerDummy = {
@@ -130,7 +130,7 @@ globalLoggerDummy = {
 	end,
 }
 
-_G['logger'] = globalLoggerDummy
+grawset('logger', globalLoggerDummy)
 
 setmetatable(globalLogger, { __call = function(self, ...)
 	sendmsg(kLogInfo, ...)
@@ -149,13 +149,13 @@ return function(reeme, t)
 	elseif tp == 'table' then
 		if initConnect then
 			if initConnect(reeme) then
-				_G['logger'] = globalLogger
+				grawset('logger', globalLogger)
 			end
 			initConnect = nil
 		end
 		
 	elseif not reeme then
-		_G['logger'] = globalLoggerDummy
+		grawset('logger', globalLoggerDummy)
 	end
 	
 	return globalLogger

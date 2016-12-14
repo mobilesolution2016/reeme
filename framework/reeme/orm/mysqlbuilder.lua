@@ -11,7 +11,7 @@ local rawsqlMeta = require('reeme.orm.rawsql')(mysqlwords)
 
 local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
-local reemext = ffi.load('reemext')
+local reemext = require('ffi').load('reemext')
 local allOps = { SELECT = 1, UPDATE = 2, INSERT = 3, DELETE = 4 }
 
 --ºÏ²¢Æ÷
