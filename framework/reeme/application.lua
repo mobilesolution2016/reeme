@@ -14,6 +14,23 @@ local newffiload = function(name)
 	end
 end
 
+--find the real _G table
+local _G_index = _G
+local mt = getmetatable(_G_index)
+while mt do
+	if not mt.__index then
+		break
+	end
+	_G_index = mt.__index
+	mt = getmetatable(mt)
+end
+
+local function setglobal(key, value)
+	rawset(_G_index, key, value)
+end
+
+
+--some ffi.C functions
 if ffi.os == 'Windows' then
 	ffi.cdef [[
 		int strcmp(const char*, const char*);
@@ -78,27 +95,8 @@ ffi.cdef[[
 	size_t opt_u64toa_hex(uint64_t value, char* dst, bool useUpperCase);
 ]]
 
-local function grawset(key, value)
-	local mt = getmetatable(_G)
-	local index = nil
-	while mt do
-		if not mt.__index then
-			break
-		end
-		
-		index = mt.__index
-		mt = getmetatable(mt)
-	end
-	
-	if index then
-		rawset(index, key, value)
-	end
-end
-
-grawset('libreemext', reemext)
-grawset('findmetatable', findmetatable)
-grawset('toboolean', toboolean)
-grawset('grawset', grawset)
+setglobal('libreemext', reemext)
+setglobal('setglobal', setglobal)
 
 --lua standard library extends
 --将tbl中的元素构造成一个全新的唯一值的数组返回

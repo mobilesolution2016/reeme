@@ -778,6 +778,13 @@ static void initCommonLib(lua_State* L)
 	};
 
 	lua_getglobal(L, "_G");
+	for(;;)
+	{
+		if (lua_getmetatable(L, -1))
+			lua_getfield(L, -1, "__index");
+		else
+			break;
+	}
 	luaL_register(L, NULL, cGlobalProcs);
 	lua_settop(L, top);
 
