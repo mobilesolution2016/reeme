@@ -28,6 +28,28 @@ static uint8_t json_unescape_chars[256] = { 0 };
 static uint8_t integer64_valid_bits[256] = { 0 };
 static uint8_t string_fmt_valid_fmt[256] = { 0 };
 static uint8_t string_template_ctls[256] = { 0 };
+static uint8_t string_htmlent_ctls[65536] = { 0 };
+static const char string_htmlent_strs[][12] = {
+	"&quot;", "&apos;", "&amp;", "&lt;", "&gt;",
+	// ISO 8859-1 符号实体
+	"&nbsp;", "&iexcl;", "&cent;", "&pound;", "&curren;", "&yen;", "&brvbar;", "&sect;", "&uml;", "&copy;", "&ordf;", "&laquo;", "&not;", "&shy;", "&reg;", "&macr;", "&deg;", "&plusmn;", "&sup2;", "&sup3;", "&acute;", "&micro;", "&para;", "&middot;", "&cedil;", "&sup1;", "&ordm;", "&raquo;", "&frac14;", "&frac12;", "&frac34;", "&iquest;", "&times;", "&divide;",
+	// ISO 8859-1 字符实体
+	"&Agrave;", "&Aacute;", "&Acirc;", "&Atilde;", "&Auml;", "&Aring;", "&AElig;", "&Ccedil;", "&Egrave;", "&Eacute;", "&Ecirc;", "&Euml;", "&Igrave;", "&Iacute;", "&Icirc;", "&Iuml;", "&ETH;", "&Ntilde;", "&Ograve;", "&Oacute;", "&Ocirc;", "&Otilde;", "&Ouml;", "&Oslash;", "&Ugrave;", "&Uacute;", "&Ucirc;", "&Uuml;", "&Yacute;", "&THORN;", "&szlig;", "&agrave;", "&aacute;", "&acirc;", "&atilde;", "&auml;", "&aring;", "&aelig;", "&ccedil;", "&egrave;", "&eacute;", "&ecirc;", "&euml;", "&igrave;", "&iacute;", "&icirc;", "&iuml;", "&eth;", "&ntilde;", "&ograve;", "&oacute;", "&ocirc;", "&otilde;", "&ouml;", "&oslash;", "&ugrave;", "&uacute;", "&ucirc;", "&uuml;", "&yacute;", "&thorn;", "&yuml;"
+};
+// 所有的HTML实体
+static uint8_t string_htmlent_dblcodes[] = {
+	// ISO 8859-1 符号实体
+	0x00, 0x20, 0xC2, 0xA1, 0xC2, 0xA2, 0xC2, 0xA3, 0xC2, 0xA4, 0xC2, 0xA5, 0xC2, 0xA6, 0xC2, 0xA7, 0xC2, 0xA8, 0xC2, 0xA9, 0xC2, 0xAA, 0xC2, 0xAB, 0xC2, 0xAC, 0x00, 0xAD, 0xC2, 0xAE, 0xC2, 0xAF, 0xC2, 0xB0,
+	0xC2, 0xB1, 0xC2, 0xB2, 0xC2, 0xB3, 0xC2, 0xB4, 0xC2, 0xB5, 0xC2, 0xB6, 0xC2, 0xB7, 0xC2, 0xB8, 0xC2, 0xB9, 0xC2, 0xBA, 0xC2, 0xBB, 0xC2, 0xBC, 0xC2, 0xBD, 0xC2, 0xBE, 0xC2, 0xBF, 0xC3, 0x97, 0xC3, 0xB7,
+	// ISO 8859-1 字符实体			
+	0xC3, 0x80, 0xC3, 0x81, 0xC3, 0x82, 0xC3, 0x83, 0xC3, 0x84, 0xC3, 0x85, 0xC3, 0x86, 0xC3, 0x87, 0xC3, 0x88, 0xC3, 0x89, 0xC3, 0x8A, 0xC3, 0x8B, 0xC3, 0x8C, 0xC3, 0x8D, 0xC3, 0x8E, 0xC3, 0x8F, 0xC3, 0x90, 
+	0xC3, 0x91, 0xC3, 0x92, 0xC3, 0x93, 0xC3, 0x94, 0xC3, 0x95, 0xC3, 0x96, 0xC3, 0x98, 0xC3, 0x99, 0xC3, 0x9A, 0xC3, 0x9B, 0xC3, 0x9C, 0xC3, 0x9D, 0xC3, 0x9E, 0xC3, 0x9F, 0xC3, 0xA0, 0xC3, 0xA1, 0xC3, 0xA2, 
+	0xC3, 0xA3, 0xC3, 0xA4, 0xC3, 0xA5, 0xC3, 0xA6, 0xC3, 0xA7, 0xC3, 0xA8, 0xC3, 0xA9, 0xC3, 0xAA, 0xC3, 0xAB, 0xC3, 0xAC, 0xC3, 0xAD, 0xC3, 0xAE, 0xC3, 0xAF, 0xC3, 0xB0, 0xC3, 0xB1, 0xC3, 0xB2, 0xC3, 0xB3,
+	0xC3, 0xB4, 0xC3, 0xB5, 0xC3, 0xB6, 0xC3, 0xB8, 0xC3, 0xB9, 0xC3, 0xBA, 0xC3, 0xBB, 0xC3, 0xBC, 0xC3, 0xBD, 0xC3, 0xBE, 0xC3, 0xBF, 
+};
+
+typedef MAP_CLASS_NAME<StringPtrKey, uint32_t> HtmlEntStringsMap;
+static HtmlEntStringsMap gHtmlEntStrings;
 
 struct initJsonEscapeChars
 {
@@ -89,6 +111,27 @@ struct initJsonEscapeChars
 
 		// 所有的模板控制符
 		string_template_ctls['%'] = string_template_ctls[':'] = string_template_ctls['='] = string_template_ctls['?'] = string_template_ctls['-'] = string_template_ctls['#'] = 1;
+
+
+		string_htmlent_ctls['"'] = 1;
+		string_htmlent_ctls['\''] = 2;
+		string_htmlent_ctls['&'] = 3;
+		string_htmlent_ctls['<'] = 4;
+		string_htmlent_ctls['>'] = 5;
+		for (size_t i = 0; i < sizeof(string_htmlent_dblcodes) / sizeof(string_htmlent_dblcodes[0]); i += 2)
+		{
+			uint32_t v = ((uint32_t)string_htmlent_dblcodes[i] << 8) | (uint32_t)string_htmlent_dblcodes[i + 1];
+			string_htmlent_ctls[v] = (i >> 1) + 6;
+		}
+
+		assert(sizeof(string_htmlent_dblcodes) / sizeof(string_htmlent_dblcodes[0]) / 2 + 5 == sizeof(string_htmlent_strs) / sizeof(string_htmlent_strs[0]));
+
+		for (size_t i = 0; i < sizeof(string_htmlent_strs) / sizeof(string_htmlent_strs[0]); ++ i)
+		{
+			assert(strlen(string_htmlent_strs[i]) < 12);
+			StringPtrKey key(string_htmlent_strs[i]);
+			gHtmlEntStrings.insert(HtmlEntStringsMap::value_type(key, i));
+		}
 	}
 } _g_initJsonEscapeChars;
 

@@ -24,6 +24,10 @@ enum StringJsonFlags {
 	kJsonDropObjectNull = 0x08000000,
 };
 
+enum StringHtmlEntFlags {
+	kHtmlEntReservedOnly = 0x1,
+};
+
 //////////////////////////////////////////////////////////////////////////
 static int lua_string_addbuf(luaL_Buffer* buf, const char* str, size_t len)
 {
@@ -2118,11 +2122,22 @@ _end:
 
 				if (ch == '=')
 				{					
-					// 使用值
-					buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
-					if (isSafeMode) buf.append("tostring(", 9);
-					buf.append(varBegin, varEnd - varBegin);
-					if (isSafeMode) buf += ')';
+					// 使用值，如果第2个是个@符号，则使用htmlentities进行转换
+					if (varBegin[0] == '@')
+					{
+						buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+						buf.append("string.htmlentitiesenc(tostring(", 9);
+						buf.append(varBegin + 1, varEnd - varBegin - 1);
+						buf += ')';
+						buf += ')';
+					}
+					else
+					{
+						buf.append(tenplSetvarCode, sizeof(tenplSetvarCode) - 1);
+						if (isSafeMode) buf.append("tostring(", 9);
+						buf.append(varBegin, varEnd - varBegin);
+						if (isSafeMode) buf += ')';
+					}
 				}
 				else
 				{
@@ -2883,6 +2898,156 @@ static int lua_string_makestrpackage(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static int lua_string_htmlentitiesenc(lua_State* L)
+{
+	char ch;	
+	size_t i, prevpos = 0;
+	luaL_Buffer buf, *pBuf = &buf;
+	size_t len = 0, skips = 0, addlen;
+	const char* s = luaL_checklstring(L, 1, &len), *src;
+	uint32_t flags = luaL_optinteger(L, 2, 0);
+
+	uint8_t v, pos = 0;
+	luaL_buffinit(L, &buf);
+
+	for(i = 0; i < len; i += skips)
+	{
+		v = s[i];
+		if (v & 0x80)
+		{
+			if ((v & 0xE0) == 0xC0)
+			{
+				skips = 2;
+				pos = string_htmlent_ctls[((uint32_t)v << 8) | (uint8_t)s[i + 1]];
+			}
+			else if ((v & 0xF0) == 0xE0)
+				skips = 3;
+			else if ((v & 0xF8) == 0xF0)
+				skips = 4;
+			else if ((v & 0xFC) == 0xF8)
+				skips = 5;
+			else if ((v & 0xFE) == 0xFC)
+				skips = 6;
+			else
+				return luaL_error(L, "Unknown code '0x%02x' in string.htmlentitiesenc", v);
+		}
+		else
+		{
+			skips = 1;
+			pos = string_htmlent_ctls[v];
+		}
+
+		if (pos)
+		{
+			addlen = i - prevpos;
+			if (addlen)
+				lua_string_addbuf(pBuf, s + prevpos, addlen);
+			prevpos = i + skips;
+
+			if (pos <= 5)
+			{
+				src = string_htmlent_strs[pos - 1];
+				while((ch = *src ++) != 0)
+					luaL_addchar(pBuf, ch);
+
+				pos = 0;
+				continue;
+			}
+			else if (!(flags & kHtmlEntReservedOnly))
+			{
+				src = string_htmlent_strs[pos - 1];
+				while((ch = *src ++) != 0)
+					luaL_addchar(pBuf, ch);
+
+				pos = 0;
+				continue;
+			}			
+		}
+	}
+
+	lua_string_addbuf(pBuf, s + prevpos, i - prevpos);
+	luaL_pushresult(pBuf);
+	return 1;
+}
+
+static int lua_string_htmlentitiesdec(lua_State* L)
+{
+	StringPtrKey key;
+	char tmpBuf[12], ch;
+	bool foundEnd = false;
+	luaL_Buffer buf, *pBuf = &buf;
+	size_t i, len, bufLen, v, prevpos = 0;
+	HtmlEntStringsMap::iterator ite, iEnd = gHtmlEntStrings.end();
+	const char* s = luaL_checklstring(L, 1, &len);
+
+	luaL_buffinit(L, pBuf);
+	for(i = 0; i < len; ++ i)
+	{
+		ch = s[i];
+		if (ch == '&')
+		{
+		_refind:
+			tmpBuf[0] = '&';
+			foundEnd = false;
+
+			for(bufLen = 1; bufLen < 12 && i + bufLen < len; )
+			{
+				ch = s[i + bufLen];
+				tmpBuf[bufLen ++] = ch;
+				if (ch == ';')
+				{
+					foundEnd = true;
+					break;
+				}
+				if (ch == '&')
+				{
+					i += bufLen;
+					goto _refind;
+				}
+			}
+
+			if (foundEnd)
+			{
+				tmpBuf[bufLen] = 0;
+				key.pString = tmpBuf;
+				key.nHashID = hashString<size_t>(tmpBuf, bufLen);
+
+				ite = gHtmlEntStrings.find(key);
+				if (ite != iEnd)
+				{
+					size_t addlen = i - prevpos;
+					if (addlen)
+						lua_string_addbuf(pBuf, s + prevpos, addlen);
+					prevpos = i + bufLen;
+					i = prevpos - 1;
+
+					v = ite->second;
+					switch (v)
+					{
+					case 0: luaL_addchar(pBuf, '"'); break;
+					case 1: luaL_addchar(pBuf, '\''); break;
+					case 2: luaL_addchar(pBuf, '&'); break;
+					case 3: luaL_addchar(pBuf, '<'); break;
+					case 4: luaL_addchar(pBuf, '>'); break;
+					case 5: luaL_addchar(pBuf, ' '); break;
+
+					default:
+						v = (v - 5) * 2;
+						luaL_addchar(pBuf, string_htmlent_dblcodes[v]);
+						luaL_addchar(pBuf, string_htmlent_dblcodes[v + 1]);
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	lua_string_addbuf(pBuf, s + prevpos, i - prevpos);
+	luaL_pushresult(pBuf);
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static int lua_string_bmcompile(lua_State* L)
 {
 	size_t len;
@@ -3598,6 +3763,10 @@ static void luaext_string(lua_State *L)
 		// 为模板解析生成语言字符串包
 		{ "makestrpackage", &lua_string_makestrpackage },
 
+		// HTML实体转换
+		{ "htmlentitiesenc", &lua_string_htmlentitiesenc },
+		{ "htmlentitiesdec", &lua_string_htmlentitiesdec },
+
 		// 编译Boyer-Moore子字符串用于查找
 		{ "bmcompile", &lua_string_bmcompile },
 		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串和源字符串越长性能越优）
@@ -3643,6 +3812,10 @@ static void luaext_string(lua_State *L)
 
 	lua_pushliteral(L, "JSON_OBJECT_DROPNULL");	// 当不是Array而是Object且某个member为userdata:null时，不将这个member编码成name:null而是直接扔掉
 	lua_pushinteger(L, kJsonDropObjectNull);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "HTML_RESERVED_ONLY");	// htmlentitiesenc函数仅处理HTML的预留实体符号，不处理ISO-XXXX系列的符号
+	lua_pushinteger(L, kHtmlEntReservedOnly);
 	lua_rawset(L, -3);
 
 	// 所有扩展的函数
