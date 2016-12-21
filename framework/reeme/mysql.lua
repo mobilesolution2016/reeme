@@ -67,7 +67,7 @@ local mysql = {
 				local modelsDir = cfgs.dirs.modelsDir
 
 				if modelsDir:byte(1) == 47 then
-					m = require(string.format('%s.%s', modelsDir, name))
+					m = require(string.format('%s.%s', ffi.abi('win') and string.sub(modelsDir, 2) or modelsDir, name))
 				else
 					m = require(string.format('%s.%s.%s', cfgs.dirs.appBaseDir, modelsDir, name))
 				end
