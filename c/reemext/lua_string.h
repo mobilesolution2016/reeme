@@ -2904,8 +2904,14 @@ static int lua_string_htmlentitiesenc(lua_State* L)
 	size_t i, prevpos = 0;
 	luaL_Buffer buf, *pBuf = &buf;
 	size_t len = 0, skips = 0, addlen;
-	const char* s = luaL_checklstring(L, 1, &len), *src;
+	const char* s = luaL_optlstring(L, 1, NULL, &len), *src;
 	uint32_t flags = luaL_optinteger(L, 2, 0);
+
+	if (!s || len == 0)
+	{
+		lua_pushlstring(L, "", 0);
+		return 1;
+	}
 
 	uint8_t v, pos = 0;
 	luaL_buffinit(L, &buf);
@@ -2980,6 +2986,12 @@ static int lua_string_htmlentitiesdec(lua_State* L)
 	HtmlEntStringsMap::iterator ite, iEnd = gHtmlEntStrings.end();
 	const char* s = luaL_checklstring(L, 1, &len);
 
+	if (!s || len == 0)
+	{
+		lua_pushlstring(L, "", 0);
+		return 1;
+	}
+
 	luaL_buffinit(L, pBuf);
 	for(i = 0; i < len; ++ i)
 	{
@@ -3038,6 +3050,85 @@ static int lua_string_htmlentitiesdec(lua_State* L)
 						break;
 					}
 				}
+			}
+		}
+	}
+
+	lua_string_addbuf(pBuf, s + prevpos, i - prevpos);
+	luaL_pushresult(pBuf);
+	return 1;
+}
+
+static int lua_string_addslashes(lua_State* L)
+{
+	char ch;	
+	size_t i, prevpos = 0;
+	luaL_Buffer buf, *pBuf = &buf;
+	size_t len = 0, skips = 0, addlen;
+	const char* s = luaL_optlstring(L, 1, NULL, &len), *src;
+	int nsq = lua_toboolean(L, 2), ndq = lua_toboolean(L, 3);
+
+	if (!s || len == 0)
+	{
+		lua_pushlstring(L, "", 0);
+		return 1;
+	}
+
+	uint8_t v, pos = 0;
+	luaL_buffinit(L, &buf);
+
+	for(i = 0; i < len; ++ i)
+	{
+		ch = s[i];
+		if ((ch == '\'' && !nsq) || (ch == '"' && !ndq) || ch == '\\')
+		{
+			addlen = i - prevpos;
+			if (addlen)
+				lua_string_addbuf(pBuf, s + prevpos, addlen);
+			prevpos = i + 1;
+
+			luaL_addchar(pBuf, '\\');
+			luaL_addchar(pBuf, ch);
+		}
+	}
+
+	lua_string_addbuf(pBuf, s + prevpos, i - prevpos);
+	luaL_pushresult(pBuf);
+	return 1;
+}
+
+static int lua_string_stripslashes(lua_State* L)
+{
+	char ch;	
+	size_t i, prevpos = 0;
+	luaL_Buffer buf, *pBuf = &buf;
+	size_t len = 0, skips = 0, addlen;
+	const char* s = luaL_optlstring(L, 1, NULL, &len), *src;
+	int nsq = lua_toboolean(L, 2), ndq = lua_toboolean(L, 3);
+
+	if (!s || len == 0)
+	{
+		lua_pushlstring(L, "", 0);
+		return 1;
+	}
+
+	uint8_t v, pos = 0;
+	luaL_buffinit(L, &buf);
+
+	for(i = 0; i < len; ++ i)
+	{
+		ch = s[i];
+		if (ch = '\\')
+		{
+			ch = s[i + 1];
+			if ((ch == '\'' && !nsq) || (ch == '"' && !ndq) || ch == '\\')
+			{
+				addlen = i - prevpos;
+				if (addlen)
+					lua_string_addbuf(pBuf, s + prevpos, addlen);
+				prevpos = i + 2;
+
+				luaL_addchar(pBuf, ch);
 			}
 		}
 	}
@@ -3766,6 +3857,10 @@ static void luaext_string(lua_State *L)
 		// HTML实体转换
 		{ "htmlentitiesenc", &lua_string_htmlentitiesenc },
 		{ "htmlentitiesdec", &lua_string_htmlentitiesdec },
+
+		// 为单双引号添加反斜杠/去除反斜杠
+		{ "addslashes", &lua_string_addslashes },
+		{ "stripslashes", &lua_string_stripslashes },
 
 		// 编译Boyer-Moore子字符串用于查找
 		{ "bmcompile", &lua_string_bmcompile },
