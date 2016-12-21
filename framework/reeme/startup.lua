@@ -50,5 +50,9 @@ local ok, err = pcall(function()
 	require("public.index")(app)
 end)
 if not ok then
-	ngx.say(err)
+	if type(err) == 'table' then
+		ngx.say(string.json(err))
+	else
+		ngx.say(err)
+	end
 end
