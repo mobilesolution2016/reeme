@@ -22,6 +22,7 @@ enum StringJsonFlags {
 	kJsonLuaString = 0x20000000,
 	kJsonUnicodes = 0x10000000,
 	kJsonDropObjectNull = 0x08000000,
+	kJsonSimpleEscape = 0x04000000,
 };
 
 enum StringHtmlEntFlags {
@@ -3250,7 +3251,12 @@ public:
 		while (i < len)
 		{
 			uint8_t ch = src[i];
-			v = json_escape_chars[ch];
+			if (!(flags & kJsonSimpleEscape))
+				v = json_escape_chars[ch];
+			else if (ch == '\\' || ch == '"')
+				v = 1;
+			else
+				v = 0;
 
 			if (v == 0)
 			{
@@ -3903,6 +3909,10 @@ static void luaext_string(lua_State *L)
 
 	lua_pushliteral(L, "JSON_UNICODES");		// 字符串中的utf8/unicode不要转义，直接保留使用。上一个标志JSON_LUASTRING存在时，本标志被忽略
 	lua_pushinteger(L, kJsonUnicodes);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "JSON_SIMPLE_ESCAPE");		// 仅对\和"进行转义，其它的都忽略
+	lua_pushinteger(L, kJsonSimpleEscape);
 	lua_rawset(L, -3);
 
 	lua_pushliteral(L, "JSON_OBJECT_DROPNULL");	// 当不是Array而是Object且某个member为userdata:null时，不将这个member编码成name:null而是直接扔掉
