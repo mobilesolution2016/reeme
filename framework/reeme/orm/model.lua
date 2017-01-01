@@ -895,14 +895,17 @@ local modelMeta = {
 			return q
 		end,
 		--建立一个update查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键或给出的值类型不对，直接报错
-		updateBy = function(self, vals, val)
-			assert(val ~= nil, 'call model.updateBy with nil value')
-			
-			local where = makeWhereByPrimaryCol(self, val)
+		updateBy = function(self, a, b, val)
+			local where = makeWhereByPrimaryCol(self, val or b)
 			if where then
 				local q = self:query('UPDATE'):limit(1)
 				q.__where = where
-				q.keyvals = vals
+				if b then
+					q.keyvals = {}
+					q.keyvals[a] = b
+				else
+					q.keyvals = a
+				end
 				q = q:exec()
 				
 				if q and q.rows == 1 then
@@ -1037,12 +1040,13 @@ local modelMeta = {
 	}
 }
 
+--[[
 --当mode:findByXXXX或者model:findFirstByXXXX被调用的时候，只要XXXX是一个合法的字段名称，就可以按照该字段进行索引。下面的两个meta table一个用于模拟
 --函数调用，一个用于生成一个模拟器
 local simFindFuncMeta = {
-	__call = function(self, value, p1, p2)
-		local func = modelMeta.__index[self.of and 'find' or 'findFirst']
-		return func(self.m, self.f, value, p1, p2)
+	__call = function(self, p1, p2, p3)
+		local func = modelMeta.__index[self.of and 'findFirst' or 'find']
+		return func(self.m, self.f, p1, p2, p3)
 	end
 }
 
@@ -1050,15 +1054,15 @@ local modelMeta2 = {
 	__index = function(self, key)
 		if type(key) == 'string' then
 			local l, of, field = #key, false, nil
-			
+
 			if l > 7 and key:sub(1, 7) == 'findBy_' then
 				field = key:sub(8)
-				
+
 			elseif l > 12 and key:sub(1, 12) == 'findFirstBy_' then
 				field, of = key:sub(13), true
 			end
 			
-			if field and self[field] then
+			if field then
 				--字段存在
 				local call = { m = self, f = field, of = of }
 				return setmetatable(call, simFindFuncMeta)
@@ -1068,5 +1072,6 @@ local modelMeta2 = {
 }
 
 setmetatable(modelMeta.__index, modelMeta2)
+]]
 
 return modelMeta

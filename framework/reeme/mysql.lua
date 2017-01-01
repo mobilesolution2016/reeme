@@ -3,6 +3,7 @@ local modelmeta = require('reeme.orm.model')
 local builder = require('reeme.orm.mysqlbuilder')
 local parseFields = require('reeme.orm.common').parseFields
 local rawsqlMeta = require('reeme.orm.rawsql')()
+local datetimeFrom = require('reeme.orm.datetime')
 
 local mysql = {
 	__index = {
@@ -135,6 +136,32 @@ local mysql = {
 			local r = {}
 			r[0] = sql
 			return setmetatable(r, rawsqlMeta)
+		end,
+
+		--返回Date
+		date = function(self, dt)
+			local r
+			local ok, msg = pcall(function()
+				r = datetimeFrom(dt .. ' 00:00:00')
+			end)
+			
+			if ok then
+				return r
+			end
+			return msg
+		end,
+		
+		--返回DateTime值
+		datetime = function(self, dt)
+			local r
+			local ok, msg = pcall(function()
+				r = datetimeFrom(dt)
+			end)
+			
+			if ok then
+				return r
+			end
+			return msg
 		end,
 		
 		--事务

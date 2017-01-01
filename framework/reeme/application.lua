@@ -39,6 +39,8 @@ if ffi.os == 'Windows' then
 		int strncasecmp(const char*, const char*, size_t) __asm__("_strnicmp");
 
 		int access(const char *, int) __asm__("_access");
+		
+		unsigned __stdcall GetCurrentThreadId();
 	]]
 
 	ffi.load = function(name)
@@ -51,6 +53,11 @@ if ffi.os == 'Windows' then
 		end
 		return h
 	end
+	
+	local kernel32 = ffi.load('kernel32.dll')
+	_G.os.threadId = function()
+		return kernel32.GetCurrentThreadId()
+	end
 else
 	ffi.cdef [[
 		int strcmp(const char*, const char*);
@@ -59,6 +66,8 @@ else
 		int strncasecmp(const char*, const char*, size_t);
 
 		int access(const char *, int);
+		
+		unsigned long pthread_self();
 	]]
 
 	ffi.load = function(name)
@@ -70,6 +79,11 @@ else
 			return newffiload('lib' .. name)
 		end
 		return h
+	end
+	
+
+	_G.os.threadId = function()
+		return ffi.C.pthread_self()
 	end
 end
 

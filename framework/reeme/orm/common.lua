@@ -43,8 +43,8 @@ return {
 				
 				--括号里面的定义
 				local decl = v:sub(3, defv - 1)
-				if not decl or #decl < 1 then
-					error(string.format('use(%s) syntax error, expet declaration in t(...) when parse field "%s"', modelName, k))
+				if not decl then
+					error(string.format('use(%s) syntax error, expet declaration in s|i|n|b|d|t|e(...) when parse field "%s"', modelName, k))
 				end
 
 				--取出默认值
@@ -84,9 +84,9 @@ return {
 					end
 				end
 				
-				if newf.maxlen == nil and string.countchars(decl, '0123456789') == #decl then
+				if newf.maxlen == nil then
 					--指定了有效的长度
-					newf.maxlen = tonumber(decl)
+					newf.maxlen = string.checkinteger(decl) or 0
 				end
 				
 				--如果是数值型并且maxl超过11位，就认为是64位整数

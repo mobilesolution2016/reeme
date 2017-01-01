@@ -39,7 +39,7 @@ local initConnect = function(reeme)
 		setglobal('logger', globalLoggerDummy)
 		cannotConnect = true
 		return false
-	end		
+	end	
 
 	local appname = ngx.var.APP_NAME
 	if appname and #appname > 0 then
@@ -68,14 +68,14 @@ local sendmsg = function(t, ...)
 	if err then
 		setglobal('logger', globalLoggerDummy)
 		cannotConnect = true
-		return
+		return false
 	end
 
 	ok, err = s:send(ffi.string(pckhd, 4))
 	if err then
 		setglobal('logger', globalLoggerDummy)
 		cannotConnect = true
-		return
+		return false
 	end
 	
 	if #msg > 0 then
@@ -83,6 +83,7 @@ local sendmsg = function(t, ...)
 	end
 	
 	s:setkeepalive(7200000)
+	return true
 end
 
 globalLogger = {
@@ -105,7 +106,7 @@ globalLogger = {
 		sendmsg(kLogFault, ...)
 	end,
 	clear = function()
-		sendmsg(kCmdClear)
+		return sendmsg(kCmdClear)
 	end,
 	close = function()
 		setglobal('logger', globalLoggerDummy)

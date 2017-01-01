@@ -101,8 +101,11 @@ local function getPostArgsAndFiles(options)
 	function _move(self, dstFilename)
 		if fd.pathIsFile(dstFilename) and not fd.deleteFile(dstFilename) then
 			return false
-		end		
+		end	
 		return os.rename(self.temp, dstFilename)
+	end
+	function _del(self)
+		fd.deleteFile(self.temp)
 	end
 								
     if sub(ct, 1, 19) == "multipart/form-data" then
@@ -131,6 +134,7 @@ local function getPostArgsAndFiles(options)
                                 file = basename(d.filename),
                                 temp = getTempFileName(),
 								moveFile = _move,
+								delFile = _del,
                             }
                             o, e = open(f.temp, "wb")
                             if not o then return nil, e end

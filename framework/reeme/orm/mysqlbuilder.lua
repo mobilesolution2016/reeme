@@ -316,7 +316,7 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 		
 	else
 		tokens, poses = _parseExpression(expr)
-		assert(tokens ~= nil)
+		assert(tokens ~= nil, expr)
 	end
 
 	--逐个token的循环进行处理
