@@ -5,8 +5,6 @@ VisualStudioVersion = 14.0.24720.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "reemext", "reemext.vcxproj", "{4816FA07-1579-41CE-BC4A-AECEB6701A66}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "taskdeamon", "taskdeamon.vcxproj", "{460244DC-E286-4DCB-9507-7A7EFB6D52E2}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -23,14 +21,6 @@ Global
 		{4816FA07-1579-41CE-BC4A-AECEB6701A66}.Release|x64.Build.0 = Release|x64
 		{4816FA07-1579-41CE-BC4A-AECEB6701A66}.Release|x86.ActiveCfg = Release|Win32
 		{4816FA07-1579-41CE-BC4A-AECEB6701A66}.Release|x86.Build.0 = Release|Win32
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Debug|x64.ActiveCfg = Debug|x64
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Debug|x64.Build.0 = Debug|x64
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Debug|x86.ActiveCfg = Debug|Win32
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Debug|x86.Build.0 = Debug|Win32
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Release|x64.ActiveCfg = Release|x64
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Release|x64.Build.0 = Release|x64
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Release|x86.ActiveCfg = Release|Win32
-		{460244DC-E286-4DCB-9507-7A7EFB6D52E2}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

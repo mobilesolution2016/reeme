@@ -862,6 +862,11 @@ private:
 						return 0;
 					}
 				}
+				else if (ch == '.')
+				{
+					// 小数
+					m_kValType = JVTDouble;
+				}
 				else
 				{
 					// 八进制整数
