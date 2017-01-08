@@ -33,15 +33,42 @@ static int lua_sql_token_parse(lua_State* L)
 				prevpos = i;
 				kToken = TName;
 			}
-			else if (ch == '\'')
+			else if (m == 4)
 			{
-				prevpos = i;
-				kToken = TString;
+				if (ch == '\'')
+				{
+					prevpos = i;
+					kToken = TString;
+				}
+				else if (ch == '?')
+				{
+					prevpos = i;
+					while(sql[i + 1] == 3)
+						i ++;
+
+					lua_pushlstring(L, sql + prevpos, i - prevpos + 1);
+					lua_rawseti(L, r1, ++ cc);
+
+					lua_pushinteger(L, prevpos + 1);
+					lua_rawseti(L, r2, cc);
+				}
+				else if (ch == '*')
+				{
+					prevpos = i;
+
+					lua_pushlstring(L, "*", 1);
+					lua_rawseti(L, r1, ++ cc);
+
+					lua_pushinteger(L, i + 1);
+					lua_rawseti(L, r2, cc);
+				}
 			}
-			else if (ch == '?')
+			else if (m >= 5)
 			{
+				// < <= > >= = != 这几个等式符号
+_eq_sym:
 				prevpos = i;
-				while(sql[i + 1] == 3)
+				if (m == 6 && sql[i + 1] == '=')
 					i ++;
 
 				lua_pushlstring(L, sql + prevpos, i - prevpos + 1);
@@ -50,21 +77,11 @@ static int lua_sql_token_parse(lua_State* L)
 				lua_pushinteger(L, prevpos + 1);
 				lua_rawseti(L, r2, cc);
 			}
-			else if (ch == '*')
-			{
-				prevpos = i;
-
-				lua_pushlstring(L, "*", 1);
-				lua_rawseti(L, r1, ++ cc);
-
-				lua_pushinteger(L, i + 1);
-				lua_rawseti(L, r2, cc);
-			}
 			break;
 
 		case TName:
 			m = sql_where_splits[ch];
-			if (m == 1)
+			if (m != 2 && m != 3)
 			{
 				lua_pushlstring(L, sql + prevpos, i - prevpos);
 				lua_rawseti(L, r1, ++ cc);
@@ -73,6 +90,8 @@ static int lua_sql_token_parse(lua_State* L)
 				lua_rawseti(L, r2, cc);
 
 				kToken = TNone;
+				if (m >= 5)
+					goto _eq_sym;
 			}
 			break;
 

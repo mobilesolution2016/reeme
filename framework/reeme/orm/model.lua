@@ -520,6 +520,7 @@ queryMeta = {
 				db = m.__db or self.R(m.__builder.dbTypeName .. 'db')
 			end
 			if not db then
+				logger.d(self.builder[self.op](self))
 				return nil
 			end
 			
@@ -924,6 +925,10 @@ local modelMeta = {
 		
 		--按照字段的名称对值进行包装，即自动值类型转换
 		value = function(self, colname, value)
+			if value == ngx.null then
+				return value
+			end
+			
 			local v, fullop
 			local b = self.builder
 			local cfg = self.__fields[colname]

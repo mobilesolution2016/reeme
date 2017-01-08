@@ -13,6 +13,7 @@ local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
 local reemext = require('ffi').load('reemext')
 local allOps = { SELECT = 1, UPDATE = 2, INSERT = 3, DELETE = 4 }
+local mysqlequals = { ['='] = 1, ['!='] = 1, ['<'] = 1, ['<='] = 1, ['>'] = 1, ['>='] = 1 }
 
 --合并器
 local builder = table.new(0, 24)
@@ -26,16 +27,25 @@ builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT 
 
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
 --第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定。若返回为nil表示值为原值表达式
-local function buildSqlValue(self, cfg, v, limitByField)
+local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 	local check
 	local tp = type(v)
-	local suggCon = '='
+	local suggCon, removeEq = '=', false
 	local quoteIt, multiVals, checkType = false, false, true
 
 	check = function()
 		if v == ngx.null then
 			--NULL值直接设置
-			v, suggCon = 'NULL', ' IS '
+			v = 'NULL'
+			if usedEq == nil then
+				suggCon = ' IS '
+			elseif usedEq == '=' then
+				suggCon, removeEq = ' IS ', true
+			elseif usedEq == '!=' then
+				suggCon, removeEq = ' IS NOT ', true
+			else
+				error(string.format("Illegal equation symbol: '%s' used for NULL", usedEq))
+			end
 			
 		elseif tp == 'table' then	
 			--table类型则根据meta来进行判断是什么table
@@ -96,6 +106,14 @@ local function buildSqlValue(self, cfg, v, limitByField)
 	check()
 
 	if v ~= nil then
+		local spec = 'IN'
+
+		if usedEq == '=' then
+			spec, removeEq = 'IN', true
+		elseif usedEq == '!=' then
+			spec, removeEq = 'NOT IN', true
+		end
+
 		if cfg.type == 1 then
 			--字段要求为字符串
 			if multiVals then
@@ -103,8 +121,8 @@ local function buildSqlValue(self, cfg, v, limitByField)
 				for i = 1, #v do
 					multiVals[i] = buildSqlValue(self, cfg, v[i]) or "''"
 				end
-				
-				v = string.format(" IN(%s)", table.concat(multiVals, ','))
+
+				v = string.format(" %s(%s)", spec, table.concat(multiVals, ','))
 				multiVals = nil
 			else
 				v = tostring(v)
@@ -126,7 +144,7 @@ local function buildSqlValue(self, cfg, v, limitByField)
 					multiVals[i] = buildSqlValue(self, cfg, v[i]) or '0'
 				end
 				
-				v = string.format(' IN(%s)', table.concat(multiVals, ','))
+				v = string.format(' %s(%s)', spec, table.concat(multiVals, ','))
 				multiVals = nil
 			else
 				v = toboolean(v) and '1' or '0'
@@ -140,11 +158,11 @@ local function buildSqlValue(self, cfg, v, limitByField)
 					multiVals[i] = buildSqlValue(self, cfg, v[i]) or '0'
 				end
 				
-				v = string.format(' IN(%s)', table.concat(multiVals, ','))
+				v = string.format(' %s(%s)', spec, table.concat(multiVals, ','))
 				multiVals = nil
 				
 			elseif checkType and not string.checknumeric(v) then
-				logger.e(string.format("model '%s': a field named '%s' its type is number but the value is not a number", self.m.__name, cfg.colname))
+				logger.e(string.format("model '%s': a field named '%s' its type is number but the value is '%s' not a number", self.m.__name, cfg.colname, tostring(v)))
 				v = nil
 			end
 			
@@ -155,7 +173,7 @@ local function buildSqlValue(self, cfg, v, limitByField)
 				multiVals[i] = buildSqlValue(self, cfg, v[i]) or '0'
 			end
 			
-			v = string.format(' IN(%s)', table.concat(multiVals, ','))
+			v = string.format(' %s(%s)', spec, table.concat(multiVals, ','))
 			multiVals = nil
 			
 		elseif checkType then
@@ -163,7 +181,7 @@ local function buildSqlValue(self, cfg, v, limitByField)
 			local reti, newv = string.checkinteger(v)
 			if not reti then
 				--否则就都是整数类型，检测值必须为整数
-				logger.e(string.format("model '%s': a field named '%s' its type is integer but the value is not a integer", self.m.__name, cfg.colname))
+				logger.e(string.format("model '%s': a field named '%s' its type is integer but the value is '%s' not a integer", self.m.__name, cfg.colname, tostring(v)))
 				v = nil
 			end
 			
@@ -173,7 +191,7 @@ local function buildSqlValue(self, cfg, v, limitByField)
 		end
 	end
 	
-	return v, suggCon
+	return v, suggCon, removeEq
 end
 
 builder.wrapValue = buildSqlValue
@@ -323,23 +341,23 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 	local sql, adjust = expr, 0
 	local fields, aliasab = self.m.__fields, self.aliasAB
 	local selfname = self.userAlias or self.m.__name
-	local lastField, lastToken
+	local lastField, lastToken, lastEq
 
 	for i = 1, #tokens do
-		local newone		
-		lastToken = tokens[i]
+		local newone
+		local token = tokens[i]
 
-		if string.byte(lastToken, 1) == 63 then
+		if string.byte(token, 1) == 63 then
 			--?替换位
 			local bindpos
 
-			if #lastToken == 1 then
+			if #token == 1 then
 				--没有指定位置的替换位
 				bindpos = self.lastBindpos + 1
 				self.lastBindpos = bindpos
 			else
 				--直接指定了位置的替换位
-				bindpos = tonumber(string.sub(lastToken, 1))
+				bindpos = tonumber(string.sub(token, 1))
 				self.lastBindpos = math.max(bindpos, self.lastBindpos)
 			end
 
@@ -355,7 +373,7 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 			
 		else
 			--非替换位
-			local a, b = string.cut(lastToken, '.')
+			local a, b = string.cut(token, '.')
 
 			if b then
 				--可能是表名.字段名
@@ -372,11 +390,19 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 					end
 				end
 				
+				lastToken = a
+				
 			elseif a == '*' then
 				--所有字段
 				newone = alias .. '*'
 
-			elseif not mysqlwords[a] then
+			elseif mysqlwords[a] then
+				lastToken = a
+				
+			elseif mysqlequals[a] then
+				lastEq = a
+			
+			else
 				--查找是否字段名。先在自己身上查找，没有找到再去所联的表中查找
 				local field = self:getField(a)
 				if field then
@@ -398,17 +424,19 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 						end
 					end
 				end
+				
+				lastToken = a
 			end
 		end
 
 		if newone then
 			--替换掉最终的表达式
-			sql = sql:subreplace(newone, poses[i] + adjust, #lastToken)
-			adjust = adjust + #newone - #lastToken
+			sql = sql:subreplace(newone, poses[i] + adjust, #token)
+			adjust = adjust + #newone - #token
 		end
 	end
 	
-	return sql, lastField, lastToken
+	return sql, lastField, lastToken, lastEq
 end
 
 
@@ -918,15 +946,15 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				rsql = one.expr
 			else
 				--按照表达式进行解析
-				local lastToken, suggCon
+				local lastToken, lastEq, suggCon, removeEq
 
 				merges[1] = conds[onecond]
-				merges[2], fieldCfg, lastToken = builder.processTokenedString(self, alias, one.expr, one.purekn, allJoins)
+				merges[2], fieldCfg, lastToken, lastEq = builder.processTokenedString(self, alias, one.expr, one.purekn, allJoins)
 
 				if one.value then
 					assert(fieldCfg ~= nil, string.format("Field not exists! table name=%s, op=%s, expr=%s", model.__name, self.op, one.expr))
 
-					merges[4], suggCon = buildSqlValue(self, fieldCfg, one.value)
+					merges[4], suggCon, removeEq = buildSqlValue(self, fieldCfg, one.value, false, lastEq)
 
 					if merges[4] then
 						merges[3] = ''
@@ -939,6 +967,11 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 						if mysqlwords[lastToken] == 1 --[[and string.byte(one.expr, #one.expr) ~= 40 ]]then
 							--最后一个符号为函数调用，那么就自动的为其加上括号。这种情况只有name和val分开写的时候才会运行到这里来，正因为分开写了，所以括号只能在这里自动的加							
 							merges[3], merges[4] = merges[3] .. '(', merges[4] .. ')'
+						elseif removeEq then
+							--对某些等式的特殊处理
+							assert(suggCon)
+							merges[2] = string.replace(merges[2], lastEq, '')
+							merges[3] = suggCon
 						else
 							--如果expr是一个纯字段名，那就要加上建议的连接符号
 							merges[3] = one.purekn and suggCon .. ' ' or ' '
