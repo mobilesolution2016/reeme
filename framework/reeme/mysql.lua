@@ -1,4 +1,5 @@
 local models = {}
+local ffi = require('ffi')
 local modelmeta = require('reeme.orm.model')
 local builder = require('reeme.orm.mysqlbuilder')
 local parseFields = require('reeme.orm.common').parseFields
