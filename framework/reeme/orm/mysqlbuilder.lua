@@ -845,7 +845,7 @@ builder.buildKeyValuesSet = function(self, sqls, alias, allJoins)
 	local fieldCfgs = self.colSelects == nil and model.__fields or self.colSelects
 
 	for name,v in pairs(vals) do
-		if type(name) == 'number' or string.countchars(name, '0123456789') == #name then
+		if type(name) == 'number' or (type(name) == 'string' and string.countchars(name, '0123456789') == #name) then
 			keyvals[#keyvals + 1] = v
 		else
 			name = colAlias[name] or name

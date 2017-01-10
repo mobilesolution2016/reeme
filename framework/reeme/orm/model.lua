@@ -901,7 +901,7 @@ local modelMeta = {
 			if where then
 				local q = self:query('UPDATE'):limit(1)
 				q.__where = where
-				if b then
+				if val then
 					q.keyvals = {}
 					q.keyvals[a] = b
 				else
