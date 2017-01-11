@@ -23,6 +23,7 @@ enum StringJsonFlags {
 	kJsonUnicodes = 0x10000000,
 	kJsonDropObjectNull = 0x08000000,
 	kJsonSimpleEscape = 0x04000000,
+	kJsonEmptyToObject = 0x02000000
 };
 
 enum StringHtmlEntFlags {
@@ -3462,6 +3463,8 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 
 		if (cc)
 			mem->addChar('}');
+		else if (flags & kJsonEmptyToObject)
+			mem->addChar2('{', ']');
 		else
 			mem->addChar2('[', ']');
 	}
@@ -3913,6 +3916,10 @@ static void luaext_string(lua_State *L)
 
 	lua_pushliteral(L, "JSON_SIMPLE_ESCAPE");		// 仅对\和"进行转义，其它的都忽略
 	lua_pushinteger(L, kJsonSimpleEscape);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "JSON_EMPTY_TOOBJECT");		// 当table为空时，编码出来的默认是{}而不是[]
+	lua_pushinteger(L, kJsonEmptyToObject);
 	lua_rawset(L, -3);
 
 	lua_pushliteral(L, "JSON_OBJECT_DROPNULL");	// 当不是Array而是Object且某个member为userdata:null时，不将这个member编码成name:null而是直接扔掉
