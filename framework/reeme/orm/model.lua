@@ -1,5 +1,6 @@
 local queryMeta = nil
 local resultPub = require('reeme.orm.result')
+local dbarrayMeta = require('reeme.orm.dbarray')
 local allConds = { ['AND'] = 2, ['OR'] = 3, ['XOR'] = 4, ['NOT'] = 5, ['and'] = 2, ['or'] = 3, ['xor'] = 4, ['not'] = 5 }
 
 local makeWhereByPrimaryCol = function(self, val)
@@ -538,15 +539,31 @@ queryMeta = {
 				setvnil = true
 			end
 			
-			local sqls = self.builder[self.op](self, db)
-			if sqls then
-				result = resultPub.init(result, self.m)
-				res = resultPub.query(result, db, sqls, self.limitTotal or 1)
-
-				if res then
-					logger.d(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
+			local sqls = self.builder[self.op](self)
+			if sqls then				
+				if getmetatable(db) == dbarrayMeta then
+					local resultArray = table.new(#db, 0)
+					for i = 1, #db do
+						result = resultPub.init(result, self.m)
+						res = resultPub.query(result, rawget(db, i), sqls, self.limitTotal or 1)
+						if res then
+							resultArray[i] = result
+							logger.d(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows, '[DBArray=', i, ']')
+						else
+							logger.d(sqls, ':error', '[DBArray=', i, ']')
+							break
+						end
+					end
+					
+					result = resultArray
 				else
-					logger.d(sqls, ':error')
+					result = resultPub.init(result, self.m)
+					res = resultPub.query(result, db, sqls, self.limitTotal or 1)
+					if res then
+						logger.d(sqls, ':insertid=', tostring(res.insert_id), ',affected=', res.affected_rows)
+					else
+						logger.d(sqls, ':error')
+					end
 				end
 			end
 			

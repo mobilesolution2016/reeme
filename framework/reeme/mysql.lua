@@ -5,6 +5,7 @@ local builder = require('reeme.orm.mysqlbuilder')
 local parseFields = require('reeme.orm.common').parseFields
 local rawsqlMeta = require('reeme.orm.rawsql')()
 local datetimeFrom = require('reeme.orm.datetime')
+local dbarrayMeta = require('reeme.orm.dbarray')
 
 local mysql = {
 	__index = {
@@ -129,6 +130,24 @@ local mysql = {
 					r[k] = self:use(k, db)
 				end
 				return r
+			end
+		end,
+		
+		--构造数据库数组
+		dbArray = function(self, count)
+			local a = table.new(count or 2, 0)
+			return setmetatable(a, dbarrayMeta)
+		end,
+		
+		--构造数据库数组
+		dbArrayFrom = function(self, reeme, arrayName, tableName)
+			local dbs = reeme(arrayName)
+			if type(dbs) == 'table' then
+				local count = #dbs
+				if count then
+					local a = setmetatable(table.new(count, 0), dbarrayMeta)
+					return a:from(reeme, tableName)
+				end
 			end
 		end,
 

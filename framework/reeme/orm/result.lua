@@ -206,7 +206,11 @@ resultMeta.__index = {
 		if r then
 			local ai = rawget(self, -10000):findAutoIncreasementField()
 			if ai then
-				self[ai.colname] = r.insertid
+				if r.insertid then
+					self[ai.colname] = r.insertid
+				elseif r[1] and r[1].insertid then
+					self[ai.colname] = r[1].insertid
+				end
 			end
 		end
 		return r

@@ -66,7 +66,7 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 			elseif mt == queryMeta then	
 				--子查询
 				v.limitStart, v.limitTotal = nil, nil
-				local subsql = builder.SELECT(v, v.m, self.db)
+				local subsql = builder.SELECT(v, v.m)
 				if subsql then				
 					v = table.concat({ '(', subsql, ')' }, '')
 				else
@@ -442,7 +442,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 --将query设置的条件合并为SQL语句
-builder.SELECT = function(self, db)
+builder.SELECT = function(self)
 	local sqls = {}
 	sqls[#sqls + 1] = 'SELECT'
 	
@@ -450,7 +450,6 @@ builder.SELECT = function(self, db)
 	local model = self.m
 	local alias, allJoins = '', table.new(4, 4)
 	
-	self.db = db
 	if self.joins and #self.joins > 0 then
 		if self.userAlias then
 			self._alias = self.userAlias
@@ -501,13 +500,12 @@ builder.SELECT = function(self, db)
 	builder.buildLimits(self, sqls)
 	
 	--end
-	self.db = nil
 	allJoins = nil
 	
 	return table.concat(sqls, ' ')
 end
 	
-builder.UPDATE = function(self, db)
+builder.UPDATE = function(self)
 	local sqls = {}
 	local model = self.m
 	
@@ -516,7 +514,6 @@ builder.UPDATE = function(self, db)
 	
 	--has join(s) then alias
 	local alias, allJoins = '', table.new(4, 4)
-	self.db = db
 	if self.joins and #self.joins > 0 then
 		if self.userAlias then
 			self._alias = self.userAlias
@@ -588,7 +585,7 @@ builder.UPDATE = function(self, db)
 	return table.concat(sqls, ' ')
 end
 
-builder.INSERT = function(self, db)
+builder.INSERT = function(self)
 	local sqls = {}
 	local model = self.m
 	
@@ -610,7 +607,7 @@ builder.INSERT = function(self, db)
 	return table.concat(sqls, ' ')
 end
 
-builder.REPLACE = function(self, db)
+builder.REPLACE = function(self)
 	local sqls = {}
 	local model = self.m
 	
@@ -927,7 +924,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				subq.limitStart, subq.limitTotal = nil, nil
 				
 				local expr = builder.processTokenedString(self, alias, one.n, false, allJoins)
-				local subsql = builder.SELECT(subq, subq.m, self.db)
+				local subsql = builder.SELECT(subq, subq.m)
 				
 				if subsql then
 					if one.purekn then
