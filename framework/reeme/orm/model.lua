@@ -790,9 +790,9 @@ local modelMeta = {
 			end
 
 			if where == false then
-				error('The must a primary key declared when call model.deleteBy')
+				error('The must a primary key declared when call model.findBy')
 			else
-				error('call model.deleteBy with error value type')
+				error('call model.findBy with error value type')
 			end
 		end,
 		

@@ -21,7 +21,7 @@ enum StringJsonFlags {
 	kJsonRetCData = 0x40000000,
 	kJsonLuaString = 0x20000000,
 	kJsonUnicodes = 0x10000000,
-	kJsonDropObjectNull = 0x08000000,
+	kJsonDropNull = 0x08000000,
 	kJsonSimpleEscape = 0x04000000,
 	kJsonEmptyToObject = 0x02000000
 };
@@ -3421,7 +3421,7 @@ public:
 		break;\
 	case LUA_TLIGHTUSERDATA:\
 	case LUA_TUSERDATA:\
-		if (lua_touserdata(L, -1) == NULL)\
+		if (!(flags & kJsonDropNull) && lua_touserdata(L, -1) == NULL)\
 			mem->addString("null", 4);\
 		break;\
 	}
@@ -3608,7 +3608,7 @@ static int lua_string_json(lua_State* L)
 		lua_newtable(L);
 		top = lua_gettop(L);
 
-		JSONFile f(L, flags & kJsonDropObjectNull);
+		JSONFile f(L, flags & kJsonDropNull);
 		size_t readlen = f.parse(str, len, copy, needSetMarker);
 		if (readlen == 0)
 		{
@@ -3898,19 +3898,19 @@ static void luaext_string(lua_State *L)
 	lua_rawset(L, -3);
 
 	// JSON编码时可用的标志位
-	lua_pushliteral(L, "JSON_NOCOPY");		// 解码时直接在原字符串上操作（原字符串内存将遭到破坏，但如果之后将不可能再使用的话，破坏也没关系了，又可以少一次copy）
+	lua_pushliteral(L, "JSON_NOCOPY");				// 解码时直接在原字符串上操作（原字符串内存将遭到破坏，但如果之后将不可能再使用的话，破坏也没关系了，又可以少一次copy）
 	lua_pushinteger(L, kJsonNoCopy);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "JSON_RETCDATA");	// 编码时返回uint8_t型的cdata数据而不是string
+	lua_pushliteral(L, "JSON_RETCDATA");			// 编码时返回uint8_t型的cdata数据而不是string
 	lua_pushinteger(L, kJsonRetCData);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "JSON_LUASTRING");	// 遇到字符串时直接使用本库支持的扩展 [[ ]] 来表示而不使用标准的json字符串表示法，因此也就没有escape和转义utf8/unicode的过程
+	lua_pushliteral(L, "JSON_LUASTRING");			// 遇到字符串时直接使用本库支持的扩展 [[ ]] 来表示而不使用标准的json字符串表示法，因此也就没有escape和转义utf8/unicode的过程
 	lua_pushinteger(L, kJsonLuaString);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "JSON_UNICODES");		// 字符串中的utf8/unicode不要转义，直接保留使用。上一个标志JSON_LUASTRING存在时，本标志被忽略
+	lua_pushliteral(L, "JSON_UNICODES");			// 字符串中的utf8/unicode不要转义，直接保留使用。上一个标志JSON_LUASTRING存在时，本标志被忽略
 	lua_pushinteger(L, kJsonUnicodes);
 	lua_rawset(L, -3);
 
@@ -3922,11 +3922,11 @@ static void luaext_string(lua_State *L)
 	lua_pushinteger(L, kJsonEmptyToObject);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "JSON_OBJECT_DROPNULL");	// 当不是Array而是Object且某个member为userdata:null时，不将这个member编码成name:null而是直接扔掉
-	lua_pushinteger(L, kJsonDropObjectNull);
+	lua_pushliteral(L, "JSON_DROPNULL");			// 本标志如果存在：编码时，如果碰到某个值为ngx.null，则忽略掉（即不输出null值）；解码时，如果有null值，则不输出lua ngx.null
+	lua_pushinteger(L, kJsonDropNull);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "HTML_RESERVED_ONLY");	// htmlentitiesenc函数仅处理HTML的预留实体符号，不处理ISO-XXXX系列的符号
+	lua_pushliteral(L, "HTML_RESERVED_ONLY");		// htmlentitiesenc函数仅处理HTML的预留实体符号，不处理ISO-XXXX系列的符号
 	lua_pushinteger(L, kHtmlEntReservedOnly);
 	lua_rawset(L, -3);
 
