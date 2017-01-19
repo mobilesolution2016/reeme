@@ -532,10 +532,11 @@ queryMeta = {
 					self.brackets = self.brackets - 1
 				until self.brackets == 0
 			end
-			
+
 			local setvnil = false
 			if not self.keyvals and result then
 				self.keyvals = result(false)
+				assert(type(self.keyvals) == 'table')
 				setvnil = true
 			end
 			

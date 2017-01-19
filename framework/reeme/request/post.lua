@@ -107,6 +107,15 @@ local function getPostArgsAndFiles(options)
 	function _del(self)
 		fd.deleteFile(self.temp)
 	end
+	function _full(self)
+		local t = nil
+		local f, err = io.open(self.temp, 'rb')
+		if f then
+			t = f:read("*all")
+			f:close()
+		end
+		return t
+	end
 								
     if sub(ct, 1, 19) == "multipart/form-data" then
         local chunk = options.chunk_size or 8192
@@ -135,6 +144,7 @@ local function getPostArgsAndFiles(options)
                                 temp = getTempFileName(),
 								moveFile = _move,
 								delFile = _del,
+								fullFile = _full,
                             }
                             o, e = open(f.temp, "wb")
                             if not o then return nil, e end

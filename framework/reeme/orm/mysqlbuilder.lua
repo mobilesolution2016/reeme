@@ -557,6 +557,7 @@ builder.UPDATE = function(self)
 					if v.type == 1 then
 						local v = vals[k]
 						if v and v ~= ngx.null then
+							--重新处理where条件
 							builder.processWhere(self, 1, k, v)
 							haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins)
 							break
