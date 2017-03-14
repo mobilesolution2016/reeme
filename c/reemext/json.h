@@ -58,7 +58,7 @@ struct initJsonEscapeChars
 		uint32_t i;
 
 		json_escape_chars['\\'] = 1;
-		json_escape_chars['/'] = 1;
+		//json_escape_chars['/'] = 1;
 		json_escape_chars['"'] = 1;
 		json_escape_chars['\\'] = 1;
 		json_escape_chars['\n'] = 'n';

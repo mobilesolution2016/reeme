@@ -315,7 +315,36 @@ local function doLazyLoader(self, key, ...)
 	return lazyLoader
 end
 
-local loadables = { cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, fd = 1, ffi_reflect = require('reeme.ffi_reflect') }
+local globalLoadables = { 
+	cookie = 1, mysql = 1, request = 1, response = 1, router = 1, utils = 1, validator = 1, deamon = 1, log = 1, fd = 1, ffi_reflect = require('reeme.ffi_reflect') 
+}
+
+local function checkLoadables(self, loadables, key, baseName)
+	local f = loadables[key]
+	if f == 1 then
+		f = require(baseName .. key)
+
+		local ft = type(f)
+		if ft == 'function' then
+			local r = f(self)
+
+			rawset(self, key, r)
+			loadables[key] = f
+
+			return r
+		end
+		if ft == 'table' then
+			rawset(self, key, f)
+			return f
+		end
+
+	elseif f then
+		local r = type(f) == 'function' and f(self) or f
+		rawset(self, key, r)
+		return r
+	end
+end
+
 local ctlMeta = {
 	__index = function(self, key)
 		local f = rawget(rawget(self, -10000), key) or
@@ -326,28 +355,14 @@ local ctlMeta = {
 			return f
 		end
 
-		f = loadables[key]
-		if f == 1 then
-			f = require('reeme.' .. key)
+		f = checkLoadables(self, globalLoadables, key, 'reeme.')
+		if f then
+			return f
+		end
 
-			local ft = type(f)
-			if ft == 'function' then
-				local r = f(self)
-
-				rawset(self, key, r)
-				loadables[key] = f
-
-				return r
-			end
-			if ft == 'table' then
-				rawset(self, key, f)
-				return f
-			end
-
-		elseif f then
-			local r = type(f) == 'function' and f(self) or f
-			rawset(self, key, r)
-			return r
+		local loadables = rawget(self, '__autoloads')
+		if loadables then
+			return checkLoadables(self, loadables, key, 'app.')
 		end
 	end,
 
@@ -373,28 +388,14 @@ local ctlMeta2 = {
 			return f
 		end
 
-		f = loadables[key]
-		if f == 1 then
-			f = require('reeme.' .. key)
+		f = checkLoadables(self, globalLoadables, key, 'reeme.')
+		if f then
+			return f
+		end
 
-			local ft = type(f)
-			if ft == 'function' then
-				local r = f(self)
-
-				rawset(self, key, r)
-				loadables[key] = f
-
-				return r
-			end
-			if ft == 'table' then
-				rawset(self, key, f)
-				return f
-			end
-
-		elseif f then
-			local r = type(f) == 'function' and f(self) or f
-			rawset(self, key, r)
-			return r
+		local loadables = rawget(self, '__autoloads')
+		if loadables then
+			return checkLoadables(self, loadables, key, 'app.')
 		end
 	end,
 
