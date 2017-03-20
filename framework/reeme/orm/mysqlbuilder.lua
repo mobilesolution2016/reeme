@@ -324,12 +324,21 @@ end
 
 --解析Where条件中的完整表达式，将表达式中用到的字段名字，按照表的alias名称来重新生成
 builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
-	local tokens, poses
+	local tokens, poses, lastField
+	local fields, aliasab = self.m.__fields, self.aliasAB
+	
 	if purekn then
+		--纯字段名就不需要再解析一次了
 		tokens = { expr }
 		poses = { 1 }
 		
 	elseif mysqlwords[expr] then
+		--这种情况下还需要考虑是不是可能是表的字段名
+		lastField = fields[expr] or fields[aliasab[expr]]
+		if lastField then
+			return expr, lastField, nil, '='
+		end
+		
 		return expr
 		
 	else
@@ -338,10 +347,9 @@ builder.processTokenedString = function(self, alias, expr, purekn, allJoins)
 	end
 
 	--逐个token的循环进行处理
-	local sql, adjust = expr, 0
-	local fields, aliasab = self.m.__fields, self.aliasAB
+	local sql, adjust = expr, 0	
 	local selfname = self.userAlias or self.m.__name
-	local lastField, lastToken, lastEq
+	local lastToken, lastEq
 
 	for i = 1, #tokens do
 		local newone
@@ -501,7 +509,7 @@ builder.SELECT = function(self)
 	
 	--end
 	allJoins = nil
-	
+
 	return table.concat(sqls, ' ')
 end
 	
@@ -923,7 +931,7 @@ builder.buildWheres = function(self, sqls, condPre, alias, condValues, allJoins)
 				--子查询
 				local subq = one.sub
 				subq.limitStart, subq.limitTotal = nil, nil
-				
+
 				local expr = builder.processTokenedString(self, alias, one.n, false, allJoins)
 				local subsql = builder.SELECT(subq, subq.m)
 				

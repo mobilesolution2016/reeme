@@ -120,13 +120,27 @@ local Utils = {
 		return ffi.string(buf, len)
 	end,
 	
-	--标准的日期格式花为unix时间戳。如 2012/09/03 12:59:01（数字里的前导0不影响结果）
+	--标准的日期时间格式花为unix时间戳。如 2012-09-03 12:59:01（数字里的前导0不影响结果）
 	datetimeToStamp = function(str)
 		assert(type(str) == 'string')
 		
 		local y, m, d, h, i, s = str:match('(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)')
-		if y then
+		if s then
 			return os.time({year = y, month = m, day = d, hour = h, min = i, sec = s})
+		end
+	end,
+	
+	--标准的日期格式花为unix时间戳。如 2012-09-03（数字里的前导0不影响结果）
+	dateToStamp = function(str, endOfDay)
+		assert(type(str) == 'string')
+		
+		local y, m, d = str:match('(%d+)-(%d+)-(%d+)')
+		if d then
+			if endOfDay then
+				return os.time({year = y, month = m, day = d, hour = 23, min = 59, sec = 59})
+			end
+			
+			return os.time({year = y, month = m, day = d, hour = 0, min = 0, sec = 0})
 		end
 	end,
 
@@ -157,6 +171,25 @@ local Utils = {
 	--获取文件扩展名对应的mimeType字符串，不传参数的话则返回整个mimeType映射表
 	mapMimeType = function(ext)
 		return ext and mimeTypesMap[ext] or mimeTypesMap
+	end,
+	
+	--生成26个字母+数字的随机串	
+	randomChars = function(leng, numbers, lowcases, upcases)
+		local code, seeds = '', ''
+		
+		if numbers then seeds = '0123456789' end
+		if lowcases then seeds = seeds .. 'abcdefghijklmnopqrstuvwxyz' end
+		if upcases then seeds = seeds .. 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' end
+		
+		if #seeds >0 then
+			math.randomseed(os.clock())
+			for i = 1, leng do
+				local pos = math.random(#seeds)
+				code = code .. seeds:sub(pos, pos)
+			end
+		end
+		
+		return code
 	end,
 
 	--HTTP上传

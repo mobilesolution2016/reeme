@@ -161,8 +161,16 @@ queryMeta = {
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列。同时会将只排除的列清空掉。列名只能使用数据库的原始列名来进行设置，不可以使用alias之后的名字
 		columns = function(self, names)
 			if not self.colSelects then
+				if not names then
+					return self
+				end
 				self.colSelects = table.new(0, 8)
+				
+			elseif not names then
+				self.colSelects = nil
+				return self
 			end
+			
 			self.colExcepts, self.colCache = nil, nil
 
 			local tp = type(names)
@@ -541,7 +549,7 @@ queryMeta = {
 			end
 			
 			local sqls = self.builder[self.op](self)
-			if sqls then				
+			if sqls then
 				if getmetatable(db) == dbarrayMeta then
 					local resultArray = table.new(#db, 0)
 					for i = 1, #db do

@@ -379,6 +379,60 @@ _lastseg:
 	return retAs == LUA_TTABLE ? 1 : cc;
 }
 
+// 对以某种符号分隔的字符串表示的ID数组进行切分，
+static int lua_string_idarray(lua_State* L)
+{
+	size_t len, splitByLen = 1;
+	const char* src = luaL_checklstring(L, 1, &len);
+	const char* splitBySrc = luaL_optlstring(L, 2, ",", &splitByLen);
+	lua_Integer asInteger = luaL_optinteger(L, 3, 0);
+
+	if (splitByLen != 1)
+	{
+		luaL_error(L, "the 2-th parameter for string.idarray must be a char");
+		return 0;
+	}
+	
+	if (len < 1)
+	{
+		lua_newtable(L);
+		return 1;
+	}
+	
+
+	int cc = 0;
+	char* endPtr = NULL;
+	const char* readPtr = src, *readEnd = src + len;
+
+	lua_createtable(L, 4, 0);
+	for( ; ; )
+	{
+		while((uint8_t)readPtr[0] <= 32 && readPtr < readEnd)
+			readPtr ++;	// skip invisible chars
+
+		if (asInteger)
+			lua_pushinteger(L, strtoll(readPtr, &endPtr, 10));
+		else
+			lua_pushnumber(L, strtod(readPtr, &endPtr));
+
+		if (endPtr == readPtr)
+			return 0;	// error formats
+
+		lua_rawseti(L, -2, ++ cc);
+
+		if (endPtr[0] == splitBySrc[0])
+			readPtr = endPtr + 1;
+		else
+			break;
+	}
+
+	if (endPtr - src == len)
+		return 1;
+
+	// error formats
+	return 0;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // 对字符串进行左右非可见符号去除，参数2和3如果存在且为true|false分别表示是否要处理左边|右边。如果没有参数2或3则默认左右都处理
 static int lua_string_trim(lua_State* L)
@@ -3824,6 +3878,8 @@ static void luaext_string(lua_State *L)
 	const luaL_Reg procs[] = {
 		// 字符串切分
 		{ "split", &lua_string_split },
+		// ID数组切分
+		{ "idarray", &lua_string_idarray },
 		// trim函数
 		{ "trim", &lua_string_trim },
 
