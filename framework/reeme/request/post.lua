@@ -64,7 +64,7 @@ end
 
 local function getTempFileName()
 	local ffi = require("ffi")
-	local tname = tempFolder or os.tmpname()
+	local tname = tempFolder and tempFolder .. os.tmpname() or os.tmpname()
 
 	local fpos = string.rfindchar(tname, '/')
 	if not fpos then
