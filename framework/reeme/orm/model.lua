@@ -162,12 +162,13 @@ queryMeta = {
 		columns = function(self, names)
 			if not self.colSelects then
 				if not names then
+					self.colSelects = {}
 					return self
 				end
 				self.colSelects = table.new(0, 8)
 				
 			elseif not names then
-				self.colSelects = nil
+				self.colSelects = {}
 				return self
 			end
 			
