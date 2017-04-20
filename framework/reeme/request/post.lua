@@ -57,9 +57,14 @@ local function parse(s)
     return r
 end
 
+local tempFolder = ngx.var.TEMPFOLDER
+if type(tempFolder) ~= 'string' or #tempFolder == 0 then
+    tempFolder = nil
+end
+
 local function getTempFileName()
 	local ffi = require("ffi")
-	local tname = os.tmpname()
+	local tname = tempFolder and tempFolder .. os.tmpname() or os.tmpname()
 
 	local fpos = string.rfindchar(tname, '/')
 	if not fpos then

@@ -909,36 +909,36 @@ sr.save_png = status_func(function(self, filename)
 	return C.cairo_surface_write_to_png(self, filename)
 end)
 sr.save_png_string = function(self)
-	local str = nil
+	local strs = {}
 	local recv = ffi.cast('cairo_write_func_t', function(closure, data, leng)
-		str = ffi.string(data, leng)
+		strs[#strs + 1] = ffi.string(data, leng)
 		return C.CAIRO_STATUS_SUCCESS
 	end)
 	
 	if not C.cairo_surface_write_to_png_stream(self, recv, nil) then
-		str = nil
+		strs = nil
 	end
 	
 	recv:free()
-	return str
+	return #strs > 0 and table.concat(strs, '') or nil
 end
 
 sr.save_jpg = status_func(function(self, quality, filename, ...)
 	return C.cairo_surface_write_to_jpg(self, quality, filename, ...)
 end)
 sr.save_jpg_string = function(self, quality)
-	local str = nil
+	local strs = {}
 	local recv = ffi.cast('cairo_write_func_t', function(closure, data, leng)
-		str = ffi.string(data, leng)
+		strs[#strs + 1] = ffi.string(data, leng)
 		return C.CAIRO_STATUS_SUCCESS
 	end)
 	
 	if not C.cairo_surface_write_to_jpg_stream(self, quality or 60, recv, nil) then
-		str = nil
+		strs = nil
 	end
 	
 	recv:free()
-	return str
+	return #strs > 0 and table.concat(strs, '') or nil
 end
 
 local data_buf = ffi.new'void*[1]'
