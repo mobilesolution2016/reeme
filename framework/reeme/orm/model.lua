@@ -4,6 +4,9 @@ local dbarrayMeta = require('reeme.orm.dbarray')
 local allConds = { ['AND'] = 2, ['OR'] = 3, ['XOR'] = 4, ['NOT'] = 5, ['and'] = 2, ['or'] = 3, ['xor'] = 4, ['not'] = 5 }
 
 local makeWhereByPrimaryCol = function(self, val)
+	if val == nil then
+		return false
+	end
 	for k,v in pairs(self.__fieldIndices) do
 		if v.type == 1 then
 			local tp, field = type(val), self.__fields[k]
@@ -159,15 +162,17 @@ queryMeta = {
 		end,
 		
 		--设置只操作哪些列，如果不设置，则会操作model里的所有列。同时会将只排除的列清空掉。列名只能使用数据库的原始列名来进行设置，不可以使用alias之后的名字
+		--如果不带任何参数调用，或给出空字符串那么columns
 		columns = function(self, names)
 			if not self.colSelects then
 				if not names then
+					self.colSelects = {}
 					return self
 				end
 				self.colSelects = table.new(0, 8)
 				
 			elseif not names then
-				self.colSelects = nil
+				self.colSelects = {}
 				return self
 			end
 			
@@ -180,23 +185,27 @@ queryMeta = {
 				if names == '*' then
 					self.colSelects = nil
 					
-				elseif #names > 0 then
-					local splits = string.split(names, ',', string.SPLIT_TRIM)
-					for i = 1, #splits do
-						--取出as重命名
-						local n, nto = string.cut(splits[i], ' ')
-						if nto and string.ncasecmp(nto, 'AS ', 3) then
-							nto = nto:sub(4)
-						end
+				elseif tp == 'string' then
+					if #names > 0 then
+						local splits = string.split(names, ',', string.SPLIT_TRIM)
+						for i = 1, #splits do
+							--取出as重命名
+							local n, nto = string.cut(splits[i], ' ')
+							if nto and string.ncasecmp(nto, 'AS ', 3) then
+								nto = nto:sub(4)
+							end
 
-						local f = fields[n]
-						assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
+							local f = fields[n]
+							assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
 
-						self.colSelects[n] = f
-						if nto then
-							--添加重命名
-							self:alias(n, nto)
+							self.colSelects[n] = f
+							if nto then
+								--添加重命名
+								self:alias(n, nto)
+							end
 						end
+					else
+						self.colSelects = {}
 					end
 				end
 				
@@ -933,11 +942,18 @@ local modelMeta = {
 				else
 					q.keyvals = a
 				end
-				q = q:exec()
 				
-				if q and q.rows == 1 then
-					return true
-				end	
+				--必须要有实际的字段才执行修改，否则不执行了
+				if type(q.keyvals) == 'table' then
+					for k,v in pairs(q.keyvals) do
+						q = q:exec()
+						if q and q.rows == 1 then
+							return true
+						end	
+					end
+				end
+				
+				return true
 			end
 
 			if where == false then

@@ -548,6 +548,9 @@ builder.UPDATE = function(self)
 	--all values
 	if builder.buildKeyValuesSet(self, sqls, alias, allJoins) > 0 then
 		table.insert(sqls, #sqls, 'SET')
+	else
+		--ø’÷µUPDATE≤ª÷¥––
+		return nil
 	end
 	
 	--where
@@ -560,7 +563,7 @@ builder.UPDATE = function(self)
 			local haveWheres = false
 			local idx, vals = model.__fieldIndices, self.keyvals
 
-			if vals then
+			if type(vals) == 'table' then
 				for k,v in pairs(idx) do
 					if v.type == 1 then
 						local v = vals[k]

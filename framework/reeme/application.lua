@@ -1,6 +1,7 @@
 --crt functions & ffi.load modify
 local ffi, reemext = require('ffi'), nil
 local ffiload = ffi.load
+ffi.oldload = ffiload
 
 local newffiload = function(name)
 	for path in string.gmatch(package.cpath, '([^;]+)') do
@@ -94,6 +95,9 @@ require(ffi.os == 'Windows' and 'reemext' or 'libreemext')
 local cExtLib = findmetatable('REEME_C_EXTLIB')
 
 ffi.cdef[[
+	void free(void*);
+	void* malloc(size_t s);
+	
 	int strcspn(const char*, const char*);
 	int strspn(const char*, const char*);
 
@@ -127,7 +131,8 @@ _G.table.unique = function(tbl)
 	end
 	return r
 end
---将A数组中的元素如果在B数组存在有的就移除，剩下的不存在于B数组中的构建出一个新的数组返回（A必须是顺序数组，B可以是顺序数组也可以不是顺序的）
+--将A数组中的元素如果在B数组存在有的就移除，剩下的不存在于B数组中的构建出一个新的数组返回
+--不支持key=>value型的Table
 _G.table.exclude = function(A, B)
 	if type(A) == 'table' and type(B) == 'table' then
 		local r, uniques = table.new(#A / 2, 0), B
@@ -139,15 +144,40 @@ _G.table.exclude = function(A, B)
 			end
 		end
 		
+		local n = 1
 		for i = 1, #A do
 			if not B[A[i]] then
-				r[#r + 1] = A[i]
+				r[n] = A[i]
+				n = n + 1
 			end
 		end
 		
 		return r
 	end
 end
+--将数组A和B中共有的元素拿出来组成一个新的数组返回
+--不支持key=>value型的Table
+_G.table.union = function(A, B)
+	if type(A) == 'table' and type(B) == 'table' then
+		local r, uniques = table.new(8, 0), table.new(0, 8)
+		
+		for i = 1, #A do
+			uniques[A[i]] = 1
+		end
+		for i = 1, #B do
+			uniques[B[i]] = 1
+		end
+		
+		local n = 1
+		for k,v in pairs(uniques) do
+			r[n] = k
+			n = n + 1
+		end
+		
+		return r
+	end
+end
+--在数组A后面追加任意多个数组，支持key=>value和数组型Table
 _G.table.append = function(A, ...)
 	if type(A) == 'table' then
 		for i = 1, select('#', ...) do
@@ -167,6 +197,25 @@ _G.table.append = function(A, ...)
 		end
 		
 		return A
+	end
+end
+--查找在self中v是否存在，存在的话返回k，否则返回nil。支持数组和key=>value型Table
+_G.table.exists = function(self, v)
+	if type(self) == 'table' then
+		local num = #self
+		if num > 0 then
+			for i = 1, num do
+				if self[i] == v then
+					return i
+				end
+			end
+		else
+			for k, cmp in pairs(self) do
+				if cmp == v then
+					return k
+				end
+			end
+		end	
 	end
 end
 

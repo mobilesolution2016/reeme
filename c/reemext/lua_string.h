@@ -2485,8 +2485,6 @@ static const char *lua_tpl_loader(lua_State *L, void *ud, size_t *size)
 		size_t left = ctx->srcLen - ctx->offset;
 		if (left)
 		{
-			left = std::min(left, (size_t)TP_FIXED - ctx->buf.size());
-
 			ctx->open();
 			ctx->buf.append(ctx->src + ctx->offset, left);
 
@@ -3306,6 +3304,15 @@ public:
 		while (i < len)
 		{
 			uint8_t ch = src[i];
+			if (ch == 0)
+			{
+				// 为什么会出现NULL字符呢????
+				if (i > spos)
+					addString(src + spos, i - spos);
+				spos = ++ i;
+				continue;
+			}
+
 			if (!(flags & kJsonSimpleEscape))
 				v = json_escape_chars[ch];
 			else if (ch == '\\' || ch == '"')
