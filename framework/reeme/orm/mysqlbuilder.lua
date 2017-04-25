@@ -8,6 +8,8 @@ local mysqlwords = require('reeme.orm.mysqlwords')
 local datetimeMeta = getmetatable(require('reeme.orm.datetime')())
 --原始表达式的原型
 local rawsqlMeta = require('reeme.orm.rawsql')(mysqlwords)
+--Json操作器原型
+local myjsonMeta = require('reeme.orm.mysqljson')()
 
 local queryMeta = require('reeme.orm.model').__index.__queryMetaTable
 local specialExprFunctions = { distinct = 1, count = 2, as = 3 }
@@ -24,6 +26,22 @@ builder.dbTypeName = 'mysql'
 builder.conds = { '', 'AND ', 'OR ', 'XOR ', 'NOT ' }
 --允许的联表方式
 builder.validJoins = { inner = 'INNER JOIN', left = 'LEFT JOIN', right = 'RIGHT JOIN', full = 'FULL JOIN', cross = 'CROSS JOIN' }
+
+local function autoConvertJson(j)
+	local jType = type(j)
+	
+	if jType == 'table' then
+		j = string.json(j, string.JSON_UNICODES)
+		assert(type(j) == 'string', 'Encode table to json string failed')
+		return j
+	end
+	
+	if jType == 'string' then
+		return j
+	end
+
+	assert(false, 'JSON value type checked error')
+end
 
 --处理一个SQL值（本值必须与字段相关，会根据字段的配置对值做出相应的处理）
 --第二返回值表示建议在这个值的基础上使用的运算符，这个运算符是否需要用上由外部自行决定。若返回为nil表示值为原值表达式
@@ -56,22 +74,41 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 				v = ngx.quote_sql_str(tostring(v))
 
 			elseif mt == rawsqlMeta then
-				--原值表达式
+				--原值表达式，0号是表达式字符串
 				assert(type(v[0]) == 'string')
 				
 				checkType = false
 				suggCon = nil
 				v = v[0]
 				
+			elseif mt == myjsonMeta then
+				--Json表达式。0号是doc值
+				local j = v[0] or v[1]
+				local jType = type(j)
+				
+				if jType == 'table' then
+					--doc是个Table，编码
+					v = string.json(j, string.JSON_UNICODES)
+					assert(type(v) == 'string', 'Encode table to json string failed')
+				elseif jType == 'string' then
+					--doc是个字符串，判断是否是个Json
+				else
+					assert(jType == 'nil', string.format('JSON value type "%s" is not allowed', jType))
+				end
+				
 			elseif mt == queryMeta then	
 				--子查询
 				v.limitStart, v.limitTotal = nil, nil
 				local subsql = builder.SELECT(v, v.m)
-				if subsql then				
+				if subsql then
 					v = table.concat({ '(', subsql, ')' }, '')
 				else
 					v = '(error build sql for sub-query)'
 				end
+
+			elseif cfg.type == 8 then
+				--Json类型+Table无Meta，直接转Json字符串
+				v = string.json(v, string.JSON_UNICODES)
 
 			elseif #v == 1 then		
 				v = v[1]
@@ -79,7 +116,7 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 				check()
 
 			elseif #v > 1 then
-				--表达式或多值			
+				--表达式或多值
 				multiVals, suggCon = true, ''
 			else
 				local vEnc = ''
@@ -98,8 +135,13 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 			end
 			tp = 'string'
 			
-		else
+		elseif tp == 'string' then
+			--字符串类型需要被引用
 			quoteIt = true
+			
+		elseif tp ~= 'number' and tp ~= 'boolean' then
+			--如果再不是数字或布尔型那么就要报错了
+			error('Illegal sql value type : ' .. tp)
 		end
 	end
 	
@@ -166,6 +208,14 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 				v = nil
 			end
 			
+		elseif cfg.type == 8 then
+			--Json类型
+			if type(v) == 'string' then
+				v = ngx.quote_sql_str(v)
+			else
+				v = nil
+			end
+			
 		elseif multiVals then
 			--整数型，多值
 			multiVals = table.new(#v, 0)
@@ -175,7 +225,7 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 			
 			v = string.format(' %s(%s)', spec, table.concat(multiVals, ','))
 			multiVals = nil
-			
+
 		elseif checkType then
 			--整数型的值
 			local reti, newv = string.checkinteger(v)
@@ -226,6 +276,28 @@ builder.parseWhere = function(self, condType, name, value)
 		if mt == queryMeta then
 			--子查询
 			return { purekn = purekn, n = name, sub = value, c = condType }
+		end
+		if mt == myjsonMeta then
+			--Json查询
+			local r, range, tp = { purekn = false, c = condType }, 'one', nil
+			
+			if value[0] or value[1] then
+				--使用Json查找
+				local v = autoConvertJson(value[0] or value[1])
+				r.expr = string.format("JSON_CONTAINS(%s, %s)", name, ngx.quote_sql_str(v))
+			else
+				--模糊查找
+				tp = type(value[1])
+				assert(tp == 'string', 'Error use JSON type for where condition')
+
+				if value._all then
+					range = 'all'
+				end
+
+				r.expr = string.format("JSON_SEARCH(%s, '%s', %s) %s", name, range, value[1], value._not and 'IS NULL' or 'IS NOT NULL')
+			end
+			
+			return r
 		end
 	end
 
@@ -471,7 +543,7 @@ builder.SELECT = function(self)
 
 	allJoins[self.m.__name] = self
 	allJoins[#allJoins + 1] = self
-		
+
 	local cols = builder.buildColumns(self, sqls, alias)
 	
 	--joins fields
@@ -871,17 +943,46 @@ builder.buildKeyValuesSet = function(self, sqls, alias, allJoins)
 					end
 
 				else
-					local suggConn
-					v, suggConn = buildSqlValue(self, cfg, v)
-					if v then
+					local strval, suggConn = buildSqlValue(self, cfg, v)				
+					if cfg.type == 8 then
+						--特殊的Json字段
+						if v._func then
+							local sql = { name, '=', v._func, '(', name, ',' }
+							
+							if v._path then
+								sql[#sql + 1] = ngx.quote_sql_str(v._path)
+								if strval then
+									sql[#sql + 1] = strval
+								end
+							else
+								sql[#sql + 1] = strval
+							end
+						
+							sql[#sql + 1] = ')'
+							strval = table.concat(sql, '')
+							
+						elseif strval then
+							strval = table.concat({ name, '=', strval }, '')
+						end
+						
+						if strval then
+							if alias and #alias > 0 then
+								keyvals[#keyvals + 1] = alias .. strval
+							else
+								keyvals[#keyvals + 1] = strval
+							end
+						end
+						
+					elseif strval then
+						--普通字段
 						if suggConn == nil then
-							v = builder.processTokenedString(self, alias, v, false, allJoins)
+							v = builder.processTokenedString(self, alias, strval, false, allJoins)
 						end
 
 						if alias and #alias > 0 then
-							keyvals[#keyvals + 1] = table.concat({ alias, name, '=', v }, '')
+							keyvals[#keyvals + 1] = table.concat({ alias, name, '=', strval }, '')
 						else
-							keyvals[#keyvals + 1] = table.concat({ name, '=', v }, '')
+							keyvals[#keyvals + 1] = table.concat({ name, '=', strval }, '')
 						end
 					end
 				end
@@ -1057,7 +1158,7 @@ builder.buildJoinsCols = function(self, sqls, indient, haveCols, allJoins)
 		allJoins[#allJoins + 1] = q
 
 		if sqls then
-			cols = builder.buildColumns(q, sqls, q._alias .. '.', true)
+			cols = builder.buildColumns(q, sqls, q._alias .. '.', true)			
 			if #cols > 0 then
 				if haveCols then
 					sqls[#sqls + 1] = ','

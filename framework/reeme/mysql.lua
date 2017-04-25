@@ -4,6 +4,7 @@ local modelmeta = require('reeme.orm.model')
 local builder = require('reeme.orm.mysqlbuilder')
 local parseFields = require('reeme.orm.common').parseFields
 local rawsqlMeta = require('reeme.orm.rawsql')()
+local myjsonMeta = require('reeme.orm.mysqljson')()
 local datetimeFrom = require('reeme.orm.datetime')
 local dbarrayMeta = require('reeme.orm.dbarray')
 
@@ -157,7 +158,14 @@ local mysql = {
 			r[0] = sql
 			return setmetatable(r, rawsqlMeta)
 		end,
-
+		
+		--返回Json操作器
+		json = function(self, doc)
+			local r = {}
+			r[0] = doc
+			return setmetatable(r, myjsonMeta)
+		end,
+		
 		--返回Date
 		date = function(self, dt)
 			local r

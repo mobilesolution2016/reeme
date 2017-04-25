@@ -1,4 +1,4 @@
-local validTypes = { s = 1, i = 2, n = 3, b = 4, d = 5, t = 6, e = 7 }
+local validTypes = { s = 1, i = 2, n = 3, b = 4, d = 5, t = 6, e = 7, j = 8 }
 local validIndex = { primary = 1, unique = 2, index = 3 }
 
 return {

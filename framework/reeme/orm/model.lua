@@ -261,14 +261,14 @@ queryMeta = {
 		end,
 		--使用列表达式。不带参数的调用就是清除表达式
 		expr = function(self, expr)
-			if expr then
+			if type(expr) == 'string' then
 				if self.expressions then
 					self.expressions[#self.expressions + 1] = expr
 				else
 					self.expressions = { expr }
-				end
-				
+				end				
 			else
+				assert(expr == nil, "error type of model:expr() 2-th parameter")
 				self.expressions = nil
 			end
 			self.colCache = nil
@@ -294,7 +294,7 @@ queryMeta = {
 			
 			if not noJoins and self.joins then
 				for i = 1, #self.joins do
-					self.joins[i].q:saveColumns(self)
+					self.joins[i].q:saveColumns(noJoins)
 				end
 			end
 			return self
@@ -307,7 +307,7 @@ queryMeta = {
 			
 			if not noJoins and self.joins then
 				for i = 1, #self.joins do
-					self.joins[i].q:restoreColumns(self)
+					self.joins[i].q:restoreColumns(noJoins)
 				end
 			end
 			return self
