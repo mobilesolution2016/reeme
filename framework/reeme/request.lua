@@ -18,7 +18,7 @@ local readables = {
 		return args
 	end,
 	argsArray = function(reeme)
-		local args = table.new(12, 0)
+		local args = table.new(0, 16)
 		local get, post = reeme.request.get, reeme.request.post
 		
 		if get then

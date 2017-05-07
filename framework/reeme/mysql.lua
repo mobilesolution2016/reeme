@@ -242,6 +242,23 @@ local mysql = {
 			
 			return self
 		end,
+		
+		--表锁
+		lock = function(self, lockRead, lockWrite, db)
+			if db then
+				local locks = {}
+				if lockRead then locks[1] = 'READ' end
+				if lockWrite then locks[#locks + 1] = 'WRITE' end
+				
+				if #locks > 0 then
+					db:query(string.format('LOCK TABLES %s %s', names, table.concat(locks, '|')))
+				else
+					db:query('UNLOCK TABLES')
+				end
+			end
+			
+			return self
+		end,
 
 		--使用回调的方式执行事务，当事务函数返回true时就会提交，否则就会回滚
 		autocommit = function(self, func, ...)
