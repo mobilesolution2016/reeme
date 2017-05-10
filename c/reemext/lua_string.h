@@ -3181,6 +3181,7 @@ static int lua_string_stripslashes(lua_State* L)
 				if (addlen)
 					lua_string_addbuf(pBuf, s + prevpos, addlen);
 				prevpos = i + 2;
+				i = prevpos;
 
 				luaL_addchar(pBuf, ch);
 			}
@@ -3880,6 +3881,159 @@ static int lua_string_merge(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+static inline bool _isTagEnd(const uint8_t* code, const uint8_t* codeEnd, const uint8_t** outPtr)
+{
+	if (code[0] == '>')
+	{
+		*outPtr = code + 1;
+		return true;
+	}
+	if (code[0] == '/')
+	{
+		code ++;
+		while (code < codeEnd)
+		{
+			if (code[0] == '>')
+			{
+				*outPtr = code + 1;
+				return true;
+			}
+			else if (code[0] > 32)
+				break;
+			code ++;
+		}
+	}
+	return false;
+}
+static inline bool _isCommentEnd(const uint8_t* code, const uint8_t* codeEnd, const uint8_t** outPtr)
+{
+	if (code[0] == '-' && code[1] == '-' && code[2] == '>')
+	{
+		*outPtr = code + 4;
+		return true;
+	}
+	return false;
+}
+
+static bool _findEnd(const uint8_t* code, const uint8_t* codeEnd, const uint8_t** outPtr)
+{
+	uint8_t quoteIn = 0;
+	while (code < codeEnd)
+	{
+		if (quoteIn)
+		{
+			if (code[0] == quoteIn)
+				quoteIn = 0;
+			else if (code[0] == '\\')
+				code ++;
+		}
+		else if (code[0] == '\'' || code[0] == '"')
+		{
+			quoteIn = code[0];
+		}
+		else if (_isTagEnd(code, codeEnd, outPtr))
+		{
+
+			return true;
+		}
+
+		code ++;
+	}
+
+	return false;
+}
+static bool _findCommentEnd(const uint8_t* code, const uint8_t* codeEnd, const uint8_t** outPtr)
+{
+	uint8_t quoteIn = 0;
+	while (code < codeEnd)
+	{
+		if (quoteIn)
+		{
+			if (code[0] == quoteIn)
+				quoteIn = 0;
+			else if (code[0] == '\\')
+				code ++;
+		}
+		else if (code[0] == '\'' || code[0] == '"')
+		{
+			quoteIn = code[0];
+		}
+		else if (_isCommentEnd(code, codeEnd, outPtr))
+		{
+			return true;
+		}
+
+		code ++;
+	}
+
+	return false;
+}
+
+static int lua_string_removemarkups(lua_State* L)
+{
+	size_t len = 0;
+	std::string strResult;
+	const uint8_t* code = (const uint8_t*)luaL_checklstring(L, 1, &len);
+	const uint8_t* codeEnd = code + len, *testPtr;
+	uint8_t flag = 0;
+
+	strResult.reserve(len / 2);
+	while (code < codeEnd)
+	{
+		if (code[0] == '<')
+		{
+			testPtr = code + 1;
+			if (testPtr[0] == '!' && testPtr[1] == '-' && testPtr[2] == '-')
+			{
+				// 注释
+				if (_findCommentEnd(testPtr + 3, codeEnd, &code))
+					continue;
+			}
+			else
+			{
+				while (testPtr < codeEnd)
+				{
+					flag = json_value_char_tbl[testPtr[0]];
+					if (flag) break;
+					testPtr ++;
+				}
+
+				if (testPtr[0] == '/' || (flag >= 4 && flag <= 7))
+				{
+					// 标签开始，继续向后测试
+					testPtr ++;
+					while (testPtr < codeEnd)
+					{
+						flag = json_value_char_tbl[testPtr[0]];
+						if (flag < 4 || flag > 7)
+							break;
+						testPtr ++;
+					}
+
+					if (flag == 0)
+					{
+						// 找到结束位置						
+						if (_findEnd(testPtr, codeEnd, &code))
+							continue;
+					}
+					else if (_isTagEnd(testPtr, codeEnd, &code))
+					{
+						// 这个标签结束了
+						continue;
+					}
+				}
+			}
+		}
+
+		strResult += code[0];
+		code ++;
+	}
+
+	lua_pushlstring(L, strResult.c_str(), strResult.length());
+	return 1;
+}
+
+//////////////////////////////////////////////////////////////////////////
 static void luaext_string(lua_State *L)
 {
 	const luaL_Reg procs[] = {
@@ -3944,6 +4098,9 @@ static void luaext_string(lua_State *L)
 
 		// 从任意参数组合出字符串
 		{ "merge", &lua_string_merge },
+
+		// 移除MarkupLanguage式的标签代码
+		{ "removemarkups", &lua_string_removemarkups },
 
 		{ NULL, NULL }
 	};

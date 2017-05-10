@@ -244,7 +244,16 @@ local mysql = {
 		end,
 		
 		--表锁
-		lock = function(self, lockRead, lockWrite, db)
+		lock = function(self, names, lockRead, lockWrite, db)
+			if type(db) == 'string' then
+				db = self.R(db)
+				if not db then
+					return self
+				end
+			elseif not db then
+				db = self._defdb
+			end
+			
 			if db then
 				local locks = {}
 				if lockRead then locks[1] = 'READ' end

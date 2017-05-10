@@ -212,7 +212,30 @@ local Utils = {
 
 		if posts then
 			data.method = 'POST'
-			data.body = posts
+			if type(posts) == 'table' then
+				data.body = string.json(posts, string.JSON_UNICODES)
+				
+				local exists = false
+				if data.headers then
+					for k,v in pairs(data.headers) do
+						if string.lower(k) == 'content-type' then
+							exists = true
+							break
+						end
+					end
+				end
+				
+				if not exists then
+					if data.headers then
+						data.headers['Content-Type'] = 'application/json; charset=utf-8'
+					else
+						data.headers = { ['Content-Type'] = 'application/json; charset=utf-8' }
+					end
+				end
+				
+			else
+				data.body = posts
+			end
 		end
 
 		local res, err = require("resty.http").new():request_uri(url, data)

@@ -7,6 +7,10 @@ local makeWhereByPrimaryCol = function(self, val)
 	if val == nil then
 		return false
 	end
+
+	val = tonumber(val)
+	assert(type(val) == 'number')
+	
 	for k,v in pairs(self.__fieldIndices) do
 		if v.type == 1 then
 			local tp, field = type(val), self.__fields[k]
