@@ -3,30 +3,36 @@ local resultPub = require('reeme.orm.result')
 local dbarrayMeta = require('reeme.orm.dbarray')
 local allConds = { ['AND'] = 2, ['OR'] = 3, ['XOR'] = 4, ['NOT'] = 5, ['and'] = 2, ['or'] = 3, ['xor'] = 4, ['not'] = 5 }
 
-local makeWhereByPrimaryCol = function(self, val)
-	if val == nil then
+local makeWhereByPrimaryCol = function(self, sourceIds)
+	if sourceIds == nil then
 		return false
 	end
-
-	val = tonumber(val)
-	assert(type(val) == 'number')
 	
 	for k,v in pairs(self.__fieldIndices) do
 		if v.type == 1 then
-			local tp, field = type(val), self.__fields[k]
-				
-			if tp == 'cdata' then
-				local newv 
-				val, newv = string.checkinteger(val)
-				if newv and field.type >= 2 then
-					return string.merge(field.colname, '=', newv)
+			local field = self.__fields[k]
+
+			if field.type == 1 then
+				--字符串型
+				if type(sourceIds) == 'table' then
+					for i = 1, #sourceIds do
+						sourceIds[i] = string.format('%s=%s', field.colname, ngx.quote_sql_str(sourceIds[i]))
+					end
+					
+					return sourceIds
+				else
+					return string.format('%s=%s', field.colname, ngx.quote_sql_str(sourceIds))
+				end	
+
+			elseif string.checkinteger(sourceIds) then
+				--数值型
+				if type(sourceIds) == 'table' then
+					for i = 1, #sourceIds do
+						sourceIds[i] = string.format('%s=%s', field.colname, tostring(sourceIds[i]))
+					end
+				else
+					return string.format('%s=%s', field.colname, tostring(sourceIds))
 				end
-
-			elseif field.type == 1 then
-				return string.merge(field.colname, '=', ngx.quote_sql_str(tostring(val)))
-
-			elseif string.checkinteger(val) then
-				return string.merge(field.colname, '=', val)
 			end
 			
 			return nil
@@ -199,13 +205,18 @@ queryMeta = {
 								nto = nto:sub(4)
 							end
 
-							local f = fields[n]
-							assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
+							if string.find(n, '(', 1, true) then
+								--带函数调用的列
+								self.colSelects[n] = nto or 1
+							else
+								local f = fields[n]
+								assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
 
-							self.colSelects[n] = f
-							if nto then
-								--添加重命名
-								self:alias(n, nto)
+								self.colSelects[n] = f
+								if nto then
+									--添加重命名
+									self:alias(n, nto)
+								end
 							end
 						end
 					else
@@ -221,13 +232,18 @@ queryMeta = {
 						nto = nto:sub(4)
 					end
 					
-					local f = fields[n]
-					assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
+					if string.find(n, '(', 1, true) then
+						--带函数调用的列
+						self.colSelects[n] = nto or 1
+					else
+						local f = fields[n]
+						assert(f ~= nil, string.format('model.columns function set a not exists field "%s" on table "%s"', n, self:sourceName()))
 
-					self.colSelects[n] = f
-					if nto then
-						--添加重命名
-						self:alias(str, nto)
+						self.colSelects[n] = f
+						if nto then
+							--添加重命名
+							self:alias(str, nto)
+						end
 					end
 				end
 			end
@@ -903,7 +919,7 @@ local modelMeta = {
 		end,
 		--建立一个delete查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键或给出的值类型不对，直接报错
 		deleteBy = function(self, val)
-			assert(val ~= nil, 'call model.deleteBy with nil value')
+			assert(type(val) == 'number' or type(val) == 'string', 'call model.deleteBy with nil value')
 			
 			local where = makeWhereByPrimaryCol(self, val)
 			if where then
@@ -936,34 +952,53 @@ local modelMeta = {
 		end,
 		--建立一个update查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键或给出的值类型不对，直接报错
 		updateBy = function(self, a, b, val)
-			local where = makeWhereByPrimaryCol(self, val or b)
-			if where then
-				local q = self:query('UPDATE'):limit(1)
-				q.__where = where
+			local uniqueId = val or b
+			local wheres = makeWhereByPrimaryCol(self, uniqueId)
+			if wheres then
+				local q = self:query('UPDATE')
 				if val then
 					q.keyvals = {}
 					q.keyvals[a] = b
 				else
-					q.keyvals = a
+					if type(a) == 'string' then
+						q.keyvals = { a }
+					elseif type(a) == 'table' then
+						q.keyvals = a
+					end
 				end
-				
+
 				--必须要有实际的字段才执行修改，否则不执行了
-				if type(q.keyvals) == 'table' then
-					for k,v in pairs(q.keyvals) do
+				if type(q.keyvals) == 'table' then				
+					if type(wheres) == 'string' then
+						--单一次更新
+						q.__where = wheres
 						q = q:exec()
 						if q and q.rows == 1 then
 							return true
-						end	
+						end
+						
+					elseif type(wheres) == 'table' then
+						--多次同值不同条件连续更新
+						local cc = 0
+						for i = 1, #wheres do
+							q.__where = wheres[i]
+							q = q:exec()
+							if q and q.rows == 1 then
+								cc = cc + 1
+							end
+						end
+						
+						return cc
 					end
-				end
-				
-				return true
+					
+					return true
+				end						
 			end
 
-			if where == false then
+			if wheres == false then
 				error('The must a primary key declared when call model.updateBy')
 			else
-				error('call model.updateBy with error value type')
+				error('call model.updateBy with incorrected parameter(s)')
 			end
 
 			return false

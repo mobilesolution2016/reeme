@@ -118,11 +118,18 @@ setglobal('setglobal', setglobal)
 
 --lua standard library extends
 --将tbl中的元素构造成一个全新的唯一值的数组返回
-_G.table.unique = function(tbl)
+_G.table.unique = function(tbl, key)
 	local cc = #tbl
 	local s, r = table.new(0, cc), table.new(cc, 0)
-	for i = 1, cc do
-		s[tbl[i]] = true
+	if key then
+		assert(type(tbl[1]) == 'table' and tbl[1][key] ~= nil)
+		for i = 1, cc do
+			s[tbl[i][key]] = true
+		end
+	else
+		for i = 1, cc do
+			s[tbl[i]] = true
+		end
 	end
 	local i = 1
 	for k,_ in pairs(s) do
@@ -217,6 +224,32 @@ _G.table.exists = function(self, v)
 			end
 		end	
 	end
+end
+--合并Table中某个指定的Key值为一个新的数组
+_G.table.implode = function(self, key, needUnique)
+	local r = {}
+	if type(self) == 'table' then
+		if needUnique then
+			if #self > 1 then
+				local uni = table.new(0, 8)
+				for i = 1, #self do
+					local id = self[i][key]
+					uni[id] = id
+				end
+				
+				for _,id in pairs(uni) do
+					r[#r + 1] = id
+				end
+			else
+				r[1] = self[1][key]
+			end
+		else
+			for i = 1, #self do
+				r[i] = self[i][key]
+			end
+		end
+	end
+	return r
 end
 
 _G.io.exists = function(name)

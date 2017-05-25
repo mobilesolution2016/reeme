@@ -1,37 +1,45 @@
 local readables = {
 	get = function(reeme) return ngx.req.get_uri_args() end,
 	args = function(reeme, asArray) 
-		local args = table.new(0, 12)
-		local get, post = reeme.request.get, reeme.request.post
-		
-		if get then
-			for k, v in pairs(get) do
-				args[k] = v
+		local args = rawget(reeme.request, '__args')
+		if not args then
+			args = table.new(0, 12)
+			local get, post = reeme.request.get, reeme.request.post
+			
+			if get then
+				for k, v in pairs(get) do
+					args[k] = v
+				end
+			end			
+			if post.__post then
+				for k, v in pairs(post.__post) do
+					args[k] = v
+				end
 			end
-		end			
-		if post.__post then
-			for k, v in pairs(post.__post) do
-				args[k] = v
-			end
+			
+			rawset(reeme.request, '__args', args)
 		end
-
 		return args
 	end,
 	argsArray = function(reeme)
-		local args = table.new(0, 16)
-		local get, post = reeme.request.get, reeme.request.post
-		
-		if get then
-			for k, v in pairs(get) do
-				args[#args + 1] = string.format('%s=%s', k, v)
+		local args = rawget(reeme.request, '__args2')
+		if not args then
+			args = table.new(0, 16)
+			local get, post = reeme.request.get, reeme.request.post
+			
+			if get then
+				for k, v in pairs(get) do
+					args[#args + 1] = string.format('%s=%s', k, v)
+				end
 			end
-		end
-		if post.__post then
-			for k, v in pairs(post.__post) do
-				args[#args + 1] = string.format('%s=%s', k, v)
+			if post.__post then
+				for k, v in pairs(post.__post) do
+					args[#args + 1] = string.format('%s=%s', k, v)
+				end
 			end
+			
+			rawset(reeme.request, '__args2', args)
 		end
-		
 		return args
 	end,
 	post = function(reeme) return require("reeme.request.post")(reeme) end,

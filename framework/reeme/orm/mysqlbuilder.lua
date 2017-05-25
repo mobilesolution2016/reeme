@@ -626,33 +626,31 @@ builder.UPDATE = function(self)
 	end
 	
 	--where
+	local function _tryBuildWheres(that, keyType)
+		local idx, vals = model.__fieldIndices, that.keyvals
+		if type(vals) == 'table' then
+			for k,v in pairs(idx) do
+				if v.type == keyType then
+					local v = vals[k]
+					if v and v ~= ngx.null then
+						--重新处理where条件
+						builder.processWhere(that, 1, k, v)
+						return builder.buildWheres(that, sqls, 'WHERE', alias, nil, allJoins)
+					end
+				end
+			end
+		end
+	end
+	
 	if not builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins) then
 		if type(self.__where) == 'string' then
 			sqls[#sqls + 1] = 'WHERE'
 			sqls[#sqls + 1] = builder.processTokenedString(self, alias, self.__where, false, allJoins)
-		else
+			
+		elseif not _tryBuildWheres(self, 1) and not _tryBuildWheres(self, 2) then
 			--find primary key
-			local haveWheres = false
-			local idx, vals = model.__fieldIndices, self.keyvals
-
-			if type(vals) == 'table' then
-				for k,v in pairs(idx) do
-					if v.type == 1 then
-						local v = vals[k]
-						if v and v ~= ngx.null then
-							--重新处理where条件
-							builder.processWhere(self, 1, k, v)
-							haveWheres = builder.buildWheres(self, sqls, 'WHERE', alias, nil, allJoins)
-							break
-						end
-					end
-				end
-			end
-
-			if not haveWheres then
-				error("Cannot do model update without condition(s)")
-				return false
-			end
+			error("Cannot do model update without condition(s)")
+			return false
 		end
 	end
 	
