@@ -1869,7 +1869,7 @@ typedef MAP_CLASS_NAME<StringPtrKeyL, StringIndex> StringsPckMap;
 static const char templReturnCode[] = { "\nreturn __segcc__ > 0 and __segs__ or table.concat(__ret__, '')\nend" };
 static const char tenplSetvarCode[] = { "__ret__[#__ret__+1]=" };
 static const char templSubtemplCode[] = { "subtemplate(self, __env__, " };
-static const char templErrTipCode[] = { "the full template parsed result: <br/><br/>\r\n\r\n" };
+static const char templErrTipCode[] = { "the vffull template parsed result: <br/><br/>\r\n\r\n" };
 static const char templSegDecl[] = { "__ret__, __segcc__, __segs__['" };
 static const char templSegAdd[] = { "'] = table.new(32, 0), __segcc__ + 1, table.concat(__ret__, '')\n" };
 static const char templInitCode[] = { 

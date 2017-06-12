@@ -241,13 +241,70 @@ local TestController = {
 				for i = 1, #lines do
 					local line = lines[i]
 					if not string.find(line, '幼儿园') and not string.find(line, "小学'") then
-						line = readOne(line)
 						outfp:write(line)
 						outfp:write('\n')
 					end
 				end
 			end
 			outfp:close()
+		end,
+		
+		
+		ocrAction = function(self)
+			local function requestOCR(self, action, get, post)
+				local svr = {
+					key = 'i78Uskkv02884iFHssh9284',
+					--ip = '192.168.70.30',
+					ip = '192.168.137.128',
+					port = 5800,
+				}
+				local data = { method = 'GET' }		
+				local url = string.format('http://%s:%u/%s?key=%s', svr.ip, svr.port, action, svr.key)
+				
+				if get then
+					local urls
+					if type(get) == 'table' then
+						urls = { url, '&' }
+						for k,v in pairs(get) do
+							local i = #urls
+							urls[i + 1] = k
+							urls[i + 2] = '='
+							urls[i + 3] = ngx.escape_uri(v)							
+						end							
+					else
+						urls = { url, '&', get }
+					end
+
+					url = table.concat(urls, '')
+				end
+				
+				if post then
+					data.method = 'POST'
+					if type(post) == 'string' then
+						data.body = post
+					elseif type(post) == 'table' then
+						data.body = string.json(post, string.JSON_UNICODES)
+					end
+				end
+				
+				ngx.say('Request send')
+				local res, err = require("resty.http").new():request_uri(url, data, true)
+				if res and not err then
+					res.status = tonumber(res.status)
+					ngx.say('Status:', res.status)
+					return res
+				end
+				
+				ngx.say('Error:', err)
+				return false, err
+			end
+
+			requestOCR(self, 'recog.blankpaper', { uploadid = 9913 }, {
+				{
+					id = 1,
+					path = '/home/lyz/Downloads/2.jpg'
+				}
+			})
 		end,
 	}
 }

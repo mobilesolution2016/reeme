@@ -3,13 +3,14 @@ local resultPub = require('reeme.orm.result')
 local dbarrayMeta = require('reeme.orm.dbarray')
 local allConds = { ['AND'] = 2, ['OR'] = 3, ['XOR'] = 4, ['NOT'] = 5, ['and'] = 2, ['or'] = 3, ['xor'] = 4, ['not'] = 5 }
 
-local makeWhereByPrimaryCol = function(self, sourceIds)
+local makeWhereByPrimaryCol = function(self, sourceIds, limitType)
 	if sourceIds == nil then
 		return false
 	end
-	
+
+	local tests = 0
 	for k,v in pairs(self.__fieldIndices) do
-		if v.type == 1 then
+		if v.type == limitType then
 			local field = self.__fields[k]
 
 			if field.type == 1 then
@@ -20,26 +21,32 @@ local makeWhereByPrimaryCol = function(self, sourceIds)
 					end
 					
 					return sourceIds
-				else
-					return string.format('%s=%s', field.colname, ngx.quote_sql_str(sourceIds))
-				end	
+				end
+				return string.format('%s=%s', field.colname, ngx.quote_sql_str(sourceIds))
 
-			elseif string.checkinteger(sourceIds) then
+			elseif field.type == 2 then
 				--数值型
 				if type(sourceIds) == 'table' then
 					for i = 1, #sourceIds do
-						sourceIds[i] = string.format('%s=%s', field.colname, tostring(sourceIds[i]))
+						if string.checkinteger(sourceIds[i]) then
+							sourceIds[i] = string.format('%s=%s', field.colname, sourceIds[i])
+						else
+							return nil
+						end
 					end
-				else
-					return string.format('%s=%s', field.colname, tostring(sourceIds))
+					
+					return sourceIds
 				end
+				return string.format('%s=%s', field.colname, tostring(sourceIds))
 			end
 			
-			return nil
+			tests = tests + 1
 		end
 	end
-	
-	return false
+
+	if tests == 0 then
+		return false
+	end
 end
 
 --query的原型类
@@ -820,7 +827,10 @@ local modelMeta = {
 		findBy = function(self, val)
 			assert(val ~= nil, 'call model.findBy with nil value')
 
-			local where = makeWhereByPrimaryCol(self, val)
+			local where = makeWhereByPrimaryCol(self, val, 1)
+			if where == nil then
+				where = makeWhereByPrimaryCol(self, val, 2)
+			end
 			if where then
 				local q = self:query()
 				q.__where = where
@@ -921,7 +931,10 @@ local modelMeta = {
 		deleteBy = function(self, val)
 			assert(type(val) == 'number' or type(val) == 'string', 'call model.deleteBy with nil value')
 			
-			local where = makeWhereByPrimaryCol(self, val)
+			local where = makeWhereByPrimaryCol(self, val, 1)
+			if where == nil then
+				where = makeWhereByPrimaryCol(self, val, 2)
+			end
 			if where then
 				local q = self:query('DELETE'):limit(1)
 				q.__where = where
@@ -953,7 +966,11 @@ local modelMeta = {
 		--建立一个update查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键或给出的值类型不对，直接报错
 		updateBy = function(self, a, b, val)
 			local uniqueId = val or b
-			local wheres = makeWhereByPrimaryCol(self, uniqueId)
+			local wheres = makeWhereByPrimaryCol(self, uniqueId, 1)
+			
+			if where == nil then
+				where = makeWhereByPrimaryCol(self, val, 2)
+			end
 			if wheres then
 				local q = self:query('UPDATE')
 				if val then
@@ -982,8 +999,9 @@ local modelMeta = {
 						local cc = 0
 						for i = 1, #wheres do
 							q.__where = wheres[i]
-							q = q:exec()
-							if q and q.rows == 1 then
+							
+							local r = q:exec()
+							if r and r.rows == 1 then
 								cc = cc + 1
 							end
 						end
@@ -992,7 +1010,7 @@ local modelMeta = {
 					end
 					
 					return true
-				end						
+				end				
 			end
 
 			if wheres == false then
