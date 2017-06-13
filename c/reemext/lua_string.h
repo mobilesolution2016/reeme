@@ -1697,7 +1697,7 @@ static int lua_string_fmt(lua_State* L)
 			{
 				val = lua_tolstring(L, cc, &valLen);
 				dv = strtod(val, &endpos);
-				if (isnan(dv) || endpos - val != valLen)
+				if (std::isnan(dv) || endpos - val != valLen)
 					return luaL_error(L, "string.fmt #%d expet number but got not number", cc - 1);
 			}
 			else if (tp == LUA_TBOOLEAN)
