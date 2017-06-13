@@ -16,6 +16,9 @@
     <Filter Include="源文件\zlib">
       <UniqueIdentifier>{df064f31-3370-4ff9-930a-60371a0ec0f6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\qrcode">
+      <UniqueIdentifier>{6f3d56d2-2493-4114-bc84-aea0dbcd8337}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="preheader.h">
@@ -47,9 +50,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="reeme.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="zlib\adler32.c">
       <Filter>源文件\zlib</Filter>
     </ClCompile>
@@ -88,6 +88,12 @@
     </ClCompile>
     <ClCompile Include="crtopt.cpp">
       <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="reeme.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="qrcode\qrcode_aio.c">
+      <Filter>源文件\qrcode</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -255,6 +255,14 @@ end
 _G.io.exists = function(name)
 	return ffi.C.access(name, 0) == 0
 end
+_G.io.dump = function(name, data)
+	local fp = io.open(name, 'wb')
+	if fp then
+		fp:write(data)
+		fp:close()
+		return true
+	end
+end
 
 local strlib = _G.string
 strlib.cut = function(str, p)

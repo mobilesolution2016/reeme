@@ -23,6 +23,8 @@
 #include "commonlib.h"
 #include "packets.h"
 
+#include "qrcode/qrencode.h"
+
 static int lua_findmetatable(lua_State* L)
 {
 	int r = 0;
@@ -811,6 +813,132 @@ static void initCommonLib(lua_State* L)
 }
 
 //////////////////////////////////////////////////////////////////////////
+#ifdef __QRENCODE_H__
+int lua_qrcode_gen(lua_State* L)
+{
+	const char szKeys[][12] =
+	{
+		{ "code" },
+		{ "blocksize" },
+		{ "margin" },
+		{ "level" },
+		{ "fgcolor" },
+		{ "bgcolor" },
+	};
+
+	luaL_checktype(L, 1, LUA_TTABLE);
+	luaL_checktype(L, 2, LUA_TFUNCTION);
+
+	bool bOk = false;
+	const char* code = 0;
+	int version = 0, dpi = 0, blockSize = 1, margins = 0, level = QR_ECLEVEL_L;
+	uint32_t fgcolor = 0xff000000, bgcolor = 0xffffffff;
+
+	lua_pushnil(L);
+	while (lua_next(L, 1))
+	{
+		const char* name = lua_tostring(L, -2);
+		uint32_t nNameId = *(uint32_t*)name;
+
+		if (nNameId == *(const uint32_t*)szKeys[0] && strcmp(name, szKeys[0]) == 0)
+			code = lua_tostring(L, -1);
+		else if (nNameId == *(const uint32_t*)szKeys[1] && strcmp(name, szKeys[1]) == 0)
+			blockSize = std::max(1, (int)lua_tointeger(L, -1));
+		else if (nNameId == *(const uint32_t*)szKeys[2] && strcmp(name, szKeys[2]) == 0)
+			margins = std::max(0, (int)lua_tointeger(L, -1));
+		else if (nNameId == *(const uint32_t*)szKeys[3] && strcmp(name, szKeys[3]) == 0)
+			level = std::max(0, (int)lua_tointeger(L, -1));
+		else if (nNameId == *(const uint32_t*)szKeys[4] && strcmp(name, szKeys[4]) == 0)
+			fgcolor = lua_tointeger(L, -1);
+		else if (nNameId == *(const uint32_t*)szKeys[5] && strcmp(name, szKeys[5]) == 0)
+			bgcolor = lua_tointeger(L, -1);
+
+		lua_pop(L, 1);
+	}
+
+	if (level > QR_ECLEVEL_H)
+		level = QR_ECLEVEL_H;
+
+	if (!code)
+	{
+		luaL_error(L, "Call QRCodeEncode function without set \"code\" string", 0);
+		return 0;
+	}
+
+	QRcode *qrcode = QRcode_encodeString(code, version, (QRecLevel)level, QR_MODE_8, 1);
+	if (qrcode)
+	{
+		bool bHas = false;		
+		uint8_t* p = qrcode->data, *row;
+		uint32_t *bmpMem = 0, *bmpMemPtr, *bmpRow, *writePtr, setColor;
+		int x = 0, y = 0, rx = 0, ry = 0, r, realwidth = (qrcode->width + margins * 2) * blockSize;
+
+		// 若有函数，则使用该函数创建出Bitmap，bitmap会有一个成员名为data
+		lua_pushinteger(L, realwidth);
+		lua_pushinteger(L, realwidth);
+		lua_pushliteral(L, "bgra8");
+		lua_pcall(L, 3, 1, 0);
+		r = lua_gettop(L);
+
+		lua_getfield(L, -1, "data");
+		bmpMem = const_cast<uint32_t*>((const uint32_t*)lua_topointer(L, -1));
+		if (!bmpMem)
+		{
+			QRcode_free(qrcode);
+			return 0;
+		}
+
+		// 填充像素数据
+		bmpMemPtr = bmpMem + realwidth * margins * blockSize;
+		if (blockSize == 1)
+		{
+			for (y = 0; y < qrcode->width; y ++)
+			{
+				row = p + y * qrcode->width;
+
+				bmpRow = bmpMemPtr + margins;
+				bmpMemPtr += realwidth;
+
+				for (x = 0; x < qrcode->width; x ++)
+					bmpRow[x] = (row[x] & 0x1) ? fgcolor : bgcolor;
+			}
+		}
+		else
+		{
+			for (y = 0; y < qrcode->width; y ++)
+			{
+				row = p + y * qrcode->width;
+
+				bmpRow = bmpMemPtr + margins * blockSize;
+				bmpMemPtr += realwidth * blockSize;
+
+				for (x = 0; x < qrcode->width; x ++)
+				{
+					writePtr = bmpRow;
+					setColor = (row[x] & 0x1) ? fgcolor : bgcolor;
+					for (ry = 0; ry < blockSize; ry ++)
+					{
+						for (rx = 0; rx < blockSize; rx ++)
+							writePtr[rx] = setColor;
+						writePtr += realwidth;
+					}
+					bmpRow += blockSize;
+				}
+			}
+		}
+
+		QRcode_free(qrcode);
+
+		lua_pushvalue(L, r);
+		lua_pushinteger(L, blockSize);
+		return 2;
+	}
+
+	return 0;
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////////
 #ifdef _WINDOWS
 REEME_API int luaopen_reemext(lua_State* L)
 #else
@@ -837,6 +965,11 @@ REEME_API int luaopen_libreemext(lua_State* L)
 	luaL_register(L, NULL, cExtProcs);
 
 	lua_pop(L, 1);
+
+#ifdef __QRENCODE_H__
+	lua_pushcfunction(L, &lua_qrcode_gen);
+	lua_setglobal(L, "QRCodeEncode");
+#endif
 
 	return 1;
 }
