@@ -4,6 +4,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+
+#ifdef _WINDOWS
+#else
+#	include <errno.h>
+#	define _strdup strdup
+#	define HAVE_STRDUP 1
+#endif
 
 #include "bitstream.h"
 #include "qrencode.h"

@@ -193,7 +193,7 @@ local Utils = {
 	end,
 
 	--HTTP上传
-	http = function(url, posts, method, headers)
+	http = function(url, posts, method, headers, noResponse)
 		local data = {
 			ssl_verify = false,
 	        method = method or 'GET',
@@ -238,9 +238,17 @@ local Utils = {
 			end
 		end
 
-		local res, err = require("resty.http").new():request_uri(url, data)
+		local res, err = require("resty.http").new():request_uri(url, data, noResponse)
+		if noResponse then
+			return not err and true or false, err
+		end
+		
 		if res and not err then
 			res.status = tonumber(res.status)
+			if res.has_body and res.headers and res.headers['Content-Type'] == 'application/json' then
+				res.body = string.json(res.body)
+			end
+			
 			return res
 		end
 
@@ -335,6 +343,9 @@ local Utils = {
 		data.body, data.headers = nil, nil
 		if res and not err then
 			res.status = tonumber(res.status)
+			if res.has_body and res.headers and res.headers['Content-Type'] == 'application/json' then
+				res.body = string.json(res.body)
+			end
 			return res
 		end
 
