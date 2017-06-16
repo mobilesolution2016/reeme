@@ -14,6 +14,8 @@ require'reeme.cairo.cairo_h'
 local C = ffi.load'cairo'
 local M = {C = C}
 
+assert(C)
+
 local function pargs(func)
 	return function(...)
 		logger.e(func, ...)

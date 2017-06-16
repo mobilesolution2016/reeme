@@ -207,13 +207,28 @@ _G.table.append = function(A, ...)
 	end
 end
 --查找在self中v是否存在，存在的话返回k，否则返回nil。支持数组和key=>value型Table
-_G.table.exists = function(self, v)
+_G.table.exists = function(self, v, key)
 	if type(self) == 'table' then
 		local num = #self
 		if num > 0 then
-			for i = 1, num do
-				if self[i] == v then
-					return i
+			if key then
+				for i = 1, num do
+					if self[i][key] == v then
+						return i
+					end
+				end
+			else
+				for i = 1, num do
+					if self[i] == v then
+						return i
+					end
+				end
+			end
+			
+		elseif key then
+			for k, cmp in pairs(self) do
+				if cmp[key] == v then
+					return k
 				end
 			end
 		else
