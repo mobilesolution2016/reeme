@@ -117,6 +117,14 @@ setglobal('libreemext', reemext)
 setglobal('setglobal', setglobal)
 
 --lua standard library extends
+--数组复制
+_G.table.clone = function(src)
+	local dst = table.new(#src, 4)
+	for k,v in pairs(src) do
+		dst[k] = v
+	end
+	return dst
+end
 --将tbl中的元素构造成一个全新的唯一值的数组返回
 _G.table.unique = function(tbl, key)
 	local cc = #tbl

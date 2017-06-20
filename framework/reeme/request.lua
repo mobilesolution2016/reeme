@@ -11,7 +11,7 @@ local readables = {
 					args[k] = v
 				end
 			end			
-			if post.__post then
+			if type(post.__post) == 'table' then
 				for k, v in pairs(post.__post) do
 					args[k] = v
 				end
@@ -32,7 +32,7 @@ local readables = {
 					args[#args + 1] = string.format('%s=%s', k, v)
 				end
 			end
-			if post.__post then
+			if type(post.__post) == 'table' then
 				for k, v in pairs(post.__post) do
 					args[#args + 1] = string.format('%s=%s', k, v)
 				end

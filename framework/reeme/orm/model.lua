@@ -17,10 +17,10 @@ local makeWhereByPrimaryCol = function(self, sourceIds, limitType)
 				--字符串型
 				if type(sourceIds) == 'table' then
 					for i = 1, #sourceIds do
-						sourceIds[i] = string.format('%s=%s', field.colname, ngx.quote_sql_str(sourceIds[i]))
+						sourceIds[i] = ngx.quote_sql_str(sourceIds[i])
 					end
 					
-					return sourceIds
+					return string.format("%s IN(%s)", field.colname, table.concat(sourceIds, ','))
 				end
 				return string.format('%s=%s', field.colname, ngx.quote_sql_str(sourceIds))
 
@@ -28,14 +28,12 @@ local makeWhereByPrimaryCol = function(self, sourceIds, limitType)
 				--数值型
 				if type(sourceIds) == 'table' then
 					for i = 1, #sourceIds do
-						if string.checkinteger(sourceIds[i]) then
-							sourceIds[i] = string.format('%s=%s', field.colname, sourceIds[i])
-						else
+						if not string.checkinteger(sourceIds[i]) then
 							return nil
 						end
 					end
 					
-					return sourceIds
+					return string.format("%s IN(%s)", field.colname, table.concat(sourceIds, ','))
 				end
 				return string.format('%s=%s', field.colname, tostring(sourceIds))
 			end
@@ -929,20 +927,35 @@ local modelMeta = {
 		end,
 		--建立一个delete查询器，只需要给出主键值。返回true表示操作成功，否则返回false。如果模型没有定义主键或给出的值类型不对，直接报错
 		deleteBy = function(self, val)
-			assert(type(val) == 'number' or type(val) == 'string', 'call model.deleteBy with nil value')
-			
 			local where = makeWhereByPrimaryCol(self, val, 1)
 			if where == nil then
 				where = makeWhereByPrimaryCol(self, val, 2)
 			end
 			if where then
-				local q = self:query('DELETE'):limit(1)
-				q.__where = where
-				q = q:exec()
+				local q = self:query('DELETE')
+				if type(where) == 'table' then
+					local cc = 0
+					for i = 1, #where do
+						q.__where = where
+						q = q:exec()
+						
+						if q and q.rows >= 1 then
+							cc = cc + q.rows
+						end
+					end
+					
+					return cc
+					
+				elseif type(where) == 'string' then
+					q.__where = where
+					q = q:exec()
+					
+					if q then
+						return q.rows >= 1 and true or false
+					end
+				end
 				
-				if q and q.rows == 1 then
-					return true
-				end	
+				return true
 			end
 
 			if where == false then
@@ -990,8 +1003,8 @@ local modelMeta = {
 						--单一次更新
 						q.__where = wheres
 						q = q:exec()
-						if q and q.rows == 1 then
-							return true
+						if q then
+							return q.rows >= 1 and true or false
 						end
 						
 					elseif type(wheres) == 'table' then
@@ -1001,14 +1014,14 @@ local modelMeta = {
 							q.__where = wheres[i]
 							
 							local r = q:exec()
-							if r and r.rows == 1 then
-								cc = cc + 1
+							if r and r.rows >= 1 then
+								cc = cc + r.rows
 							end
 						end
 						
 						return cc
 					end
-					
+
 					return true
 				end				
 			end
