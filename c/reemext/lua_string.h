@@ -383,22 +383,23 @@ _lastseg:
 static int lua_string_idarray(lua_State* L)
 {
 	size_t len, splitByLen = 1;
-	const char* src = luaL_checklstring(L, 1, &len);
+	const char* src = luaL_optlstring(L, 1, NULL, &len);
 	const char* splitBySrc = luaL_optlstring(L, 2, ",", &splitByLen);
 	lua_Integer asInteger = luaL_optinteger(L, 3, 0);
 
+	if (src == NULL)
+		return 0;
+	
 	if (splitByLen != 1)
 	{
 		luaL_error(L, "the 2-th parameter for string.idarray must be a char");
 		return 0;
 	}
-	
 	if (len < 1)
 	{
 		lua_newtable(L);
 		return 1;
 	}
-	
 
 	int cc = 0;
 	char* endPtr = NULL;
