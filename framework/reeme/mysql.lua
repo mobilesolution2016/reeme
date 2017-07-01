@@ -22,6 +22,8 @@ local mysql = {
 		--不能使用require直接引用一个模型定义的Lua文件来进行使用，必须通过本函数来引用
 		--可以使用.号表示多级目录，名称的最后使用@符号可以表示真实的表名，这样可以同模型多表，比如: msgs@msgs_1
 		use = function(self, srcname, db)
+			assert(type(srcname) == 'string')
+			
 			--将真实表名和模型名分离
 			local name, truename = string.cut(srcname, '@')
 			--库名和表名分离

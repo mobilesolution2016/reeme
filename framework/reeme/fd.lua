@@ -199,7 +199,10 @@ if ffi.os == 'Windows' then
 	}
 
 	_createDir = function(path, mode)
-		return kernel32.CreateDirectoryA(path, nil) ~= 0
+		if shlwapi.PathIsDirectoryA(path) == 0 then
+			return kernel32.CreateDirectoryA(path, nil) ~= 0
+		end
+		return true
 	end
 
 else
@@ -331,7 +334,10 @@ else
 	}
 
 	_createDir = function(path, mode)
-		return createdir(path, mode2n(mode) or 0)
+		if not _isDir(path) then
+			return createdir(path, mode2n(mode) or 0)
+		end
+		return true
 	end
 end
 

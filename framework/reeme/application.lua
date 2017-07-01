@@ -289,7 +289,7 @@ end
 
 local strlib = _G.string
 strlib.cut = function(str, p)
-	if str then
+	if type(str) == 'string' then
 		local pos = string.find(str, p, 1, true)
 		if pos then
 			return string.sub(str, 1, pos - 1), string.sub(str, pos + 1)
