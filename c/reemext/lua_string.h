@@ -357,26 +357,22 @@ _lastseg:
 	if (cc == 0)
 	{
 		// no one
-		lua_pushvalue(L, 1);
 		if (tblVal)
 		{
-			if (nFlags & kSplitAsKey)
-			{
-				// as key
-				lua_pushboolean(L, 1);
-				lua_rawset(L, tblVal);
-			}
-			else
-			{
-				// as array element
-				lua_rawseti(L, tblVal, cc + 1);
-			}
+			lua_pushinteger(L, 0);
+			return 2;
 		}
-
-		return 1;
+		
+		return 0;
 	}
 
-	return retAs == LUA_TTABLE ? 1 : cc;
+	if (retAs == LUA_TTABLE)
+	{
+		lua_pushinteger(L, cc)
+		return 2;
+	}
+	
+	return cc;
 }
 
 // 对以某种符号分隔的字符串表示的ID数组进行切分，

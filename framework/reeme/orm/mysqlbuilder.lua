@@ -649,7 +649,7 @@ builder.UPDATE = function(self)
 			
 		elseif not _tryBuildWheres(self, 1) and not _tryBuildWheres(self, 2) then
 			--find primary key
-			error("Cannot do model update without condition(s)")
+			error(string.format("Cannot do model(%s) update without condition(s)", model.__name))
 			return false
 		end
 	end
