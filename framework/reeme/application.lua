@@ -776,15 +776,22 @@ local appMeta = {
 			end
 			c = nil
 
+			--错误处理
 			if err then
-				local out = self.outputProc or outputRedirect
 				local errtp = type(err)
-
+				local errstr
 				if errtp == "string" then
-					out(self, err)
+					errstr = err
 				elseif errtp == "table" then
 					local tblfmt = self.tblfmtProc or defTblfmt
-					out(self, tblfmt(self, err))
+					errstr = tblfmt(self, err)
+				end
+				
+				if self.errProc then
+					self.errProc(self, path, act, errstr)
+				else
+					local out = self.errProc or outputRedirect
+					out(self, errstr)
 				end
 
 				ngx.eof()
