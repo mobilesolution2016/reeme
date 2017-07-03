@@ -2963,6 +2963,12 @@ static int lua_string_htmlentitiesenc(lua_State* L)
 		lua_pushlstring(L, "", 0);
 		return 1;
 	}
+	
+	if (!strchr(s, '<'))
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
 
 	uint8_t v, pos = 0;
 	luaL_buffinit(L, &buf);
@@ -3035,7 +3041,7 @@ static int lua_string_htmlentitiesdec(lua_State* L)
 	luaL_Buffer buf, *pBuf = &buf;
 	size_t i, len, bufLen, v, prevpos = 0;
 	HtmlEntStringsMap::iterator ite, iEnd = gHtmlEntStrings.end();
-	const char* s = luaL_checklstring(L, 1, &len);
+	const char* s = luaL_optlstring(L, 1, NULL, &len);
 
 	if (!s || len == 0)
 	{
@@ -3043,6 +3049,12 @@ static int lua_string_htmlentitiesdec(lua_State* L)
 		return 1;
 	}
 
+	if (!strchr(s, '&'))
+	{
+		lua_pushvalue(L, 1);
+		return 1;
+	}
+	
 	luaL_buffinit(L, pBuf);
 	for(i = 0; i < len; ++ i)
 	{

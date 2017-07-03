@@ -436,25 +436,34 @@ local function checkLoadables(self, loadables, key, baseName)
 	local f = loadables[key]
 	if f == 1 then
 		f = require(baseName .. key)
+		if f then
+			local ft = type(f)
+			if ft == 'function' then
+				local r = f(self)
 
-		local ft = type(f)
-		if ft == 'function' then
-			local r = f(self)
+				rawset(self, key, r)
+				loadables[key] = f
 
-			rawset(self, key, r)
-			loadables[key] = f
-
-			return r
-		end
-		if ft == 'table' then
-			rawset(self, key, f)
-			return f
+				return r
+			end
+			if ft == 'table' then
+				rawset(self, key, f)
+				return f
+			end
 		end
 
 	elseif f then
-		local r = type(f) == 'function' and f(self) or f
-		rawset(self, key, r)
-		return r
+		local r
+		if type(f) == 'function' then
+			r = f(self)
+		else
+			r = f
+		end
+
+		if r ~= nil then
+			rawset(self, key, r)
+			return r
+		end
 	end
 end
 
@@ -650,10 +659,10 @@ local appMeta = {
 				return
 			end
 
-			self.currentControllerName = path
-			self.currentRequestAction = act
-
-			local _, err = xpcall(function()
+			local function protectedCall()
+				self.currentControllerName = path
+				self.currentRequestAction = act
+				
 				if self.preProc then
 					--执行动作前响应函数
 					r = self.preProc(self, c, path, act, actionMethod)
@@ -663,10 +672,27 @@ local appMeta = {
 						if r.response then
 							actionMethod = nil
 							r = r.response
+							
 						elseif r.controller then
-							c, actionMethod = r.controller, r.method
+							assert(type(r.controller) == 'string' and type(r.method) == 'string')
+
+							if r.controller ~= path then
+								path, act = r.controller, r.method
+								c, actionMethod, r = self:loadController(path, act)
+								if r == true then
+									--halt it
+									return
+								end
+
+								protectedCall()
+								return 
+							else
+								
+							end
+							
 						elseif r.method then
 							actionMethod = r.method
+							--actionMethod = c[actionMethod]
 						end
 
 					elseif tp == 'string' then
@@ -737,8 +763,9 @@ local appMeta = {
 						end
 					end
 				end
-
-			end, debug.traceback)
+			end
+			
+			local _, err = xpcall(protectedCall, debug.traceback)
 
 			--清理
 			if c then
