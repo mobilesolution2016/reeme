@@ -884,8 +884,8 @@ inline int Prettify(char* buffer, int length, int k) {
 extern "C" size_t opt_dtoa(double value, char* dst)
 {
 	// Not handling NaN and inf
-	assert(!isnan(value));
-	assert(!isinf(value));
+	assert(!std::isnan(value));
+	assert(!std::isinf(value));
 
 	char* buffer = dst;
 	if (value == 0) {
