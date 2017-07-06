@@ -164,7 +164,11 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 					multiVals[i] = buildSqlValue(self, cfg, v[i]) or "''"
 				end
 
-				v = string.format(" %s(%s)", spec, table.concat(multiVals, ','))
+				if #multiVals > 0 then
+					v = string.format(" %s(%s)", spec, table.concat(multiVals, ','))
+				else
+					v = string.format(" %s('')", spec)
+				end
 				multiVals = nil
 			else
 				v = tostring(v)
@@ -186,7 +190,11 @@ local function buildSqlValue(self, cfg, v, limitByField, usedEq)
 					multiVals[i] = buildSqlValue(self, cfg, v[i]) or '0'
 				end
 				
-				v = string.format(' %s(%s)', spec, table.concat(multiVals, ','))
+				if #multiVals > 0 then
+					v = string.format(' %s(%s)', spec, table.concat(multiVals, ','))
+				else
+					v = string.format(' %s(0)', spec)
+				end
 				multiVals = nil
 			else
 				v = toboolean(v) and '1' or '0'

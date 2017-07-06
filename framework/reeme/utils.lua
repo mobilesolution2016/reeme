@@ -237,7 +237,8 @@ local Utils = {
 				data.body = posts
 			end
 		end
-
+-- logger.d(url)
+-- logger.d(data)
 		local res, err = require("resty.http").new():request_uri(url, data, noResponse)
 		if noResponse then
 			return not err and true or false, err

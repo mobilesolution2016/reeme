@@ -368,7 +368,7 @@ _lastseg:
 
 	if (retAs == LUA_TTABLE)
 	{
-		lua_pushinteger(L, cc)
+		lua_pushinteger(L, cc);
 		return 2;
 	}
 	
@@ -378,6 +378,9 @@ _lastseg:
 // 对以某种符号分隔的字符串表示的ID数组进行切分，
 static int lua_string_idarray(lua_State* L)
 {
+	if (!lua_isstring(L, 1))
+		return 0;
+
 	size_t len, splitByLen = 1;
 	const char* src = luaL_optlstring(L, 1, NULL, &len);
 	const char* splitBySrc = luaL_optlstring(L, 2, ",", &splitByLen);

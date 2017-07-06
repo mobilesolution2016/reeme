@@ -511,16 +511,16 @@ int deleteFile(const char* fname)
 #endif
 }
 
-bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update)
+bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* write, LocalDateTime* access, bool bToLocalTime)
 {
 #ifdef _WINDOWS
 	HANDLE hFile = CreateFileA(fname, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 	if (hFile != INVALID_HANDLE_VALUE)
 	{
 		SYSTEMTIME sys;
-		FILETIME c, u, l;
+		FILETIME c, u, a, l;
 
-		BOOL ret = GetFileTime(hFile, &c, 0, &u);
+		BOOL ret = GetFileTime(hFile, &c, &a, &u);
 		CloseHandle(hFile);
 
 		if (!ret)
@@ -528,11 +528,19 @@ bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update
 
 		if (create)
 		{
-			FileTimeToLocalFileTime(&c, &l);
-			FileTimeToSystemTime(&l, &sys);
+			if (bToLocalTime)
+			{
+				FileTimeToLocalFileTime(&c, &l);
+				FileTimeToSystemTime(&l, &sys);
+			}
+			else
+			{
+				FileTimeToSystemTime(&c, &sys);
+			}
+
 			create->year = sys.wYear;
 			create->month = sys.wMonth;
-			create->day = sys.wDay;			
+			create->day = sys.wDay;	
 			create->dayofweek = sys.wDayOfWeek;
 			create->hour = sys.wHour;
 			create->minute = sys.wMinute;
@@ -540,18 +548,48 @@ bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update
 			create->millisecond = sys.wMilliseconds;
 		}
 
-		if (update)
+		if (write)
 		{
-			FileTimeToLocalFileTime(&u, &l);
-			FileTimeToSystemTime(&l, &sys);
-			update->year = sys.wYear;
-			update->month = sys.wMonth;
-			update->day = sys.wDay;			
-			update->dayofweek = sys.wDayOfWeek;
-			update->hour = sys.wHour;
-			update->minute = sys.wMinute;
-			update->second = sys.wSecond;
-			update->millisecond = sys.wMilliseconds;
+			if (bToLocalTime)
+			{
+				FileTimeToLocalFileTime(&u, &l);
+				FileTimeToSystemTime(&l, &sys);
+			}
+			else
+			{
+				FileTimeToSystemTime(&u, &sys);
+			}
+
+			write->year = sys.wYear;
+			write->month = sys.wMonth;
+			write->day = sys.wDay;			
+			write->dayofweek = sys.wDayOfWeek;
+			write->hour = sys.wHour;
+			write->minute = sys.wMinute;
+			write->second = sys.wSecond;
+			write->millisecond = sys.wMilliseconds;
+		}
+
+		if (access)
+		{
+			if (bToLocalTime)
+			{
+				FileTimeToLocalFileTime(&a, &l);
+				FileTimeToSystemTime(&l, &sys);
+			}
+			else
+			{
+				FileTimeToSystemTime(&a, &sys);
+			}
+
+			access->year = sys.wYear;
+			access->month = sys.wMonth;
+			access->day = sys.wDay;
+			access->dayofweek = sys.wDayOfWeek;
+			access->hour = sys.wHour;
+			access->minute = sys.wMinute;
+			access->second = sys.wSecond;
+			access->millisecond = sys.wMilliseconds;
 		}
 
 		return true;
@@ -569,7 +607,7 @@ bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update
 
 		if (create)
 		{
-			tm* ctm = localtime(&c);
+			tm* ctm = bToLocalTime ? localtime(&c) : gmtime(&c);
 			create->year = 1900 + ctm->tm_year;
 			create->month = ctm->tm_mon;
 			create->day = ctm->tm_mday;
@@ -580,17 +618,30 @@ bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update
 			create->millisecond = 0;
 		}
 
-		if (update)
+		if (write)
 		{
-			tm* utm = localtime((const time_t *)&statbuf.st_mtime);
-			update->year = 1900 + utm->tm_year;
-			update->month = utm->tm_mon;
-			update->day = utm->tm_mday;
-			update->dayofweek = utm->tm_wday;
-			update->hour = utm->tm_hour;
-			update->minute = utm->tm_min;
-			update->second = utm->tm_sec;
-			update->millisecond = 0;
+			tm* utm = bToLocalTime ? localtime((const time_t *)&statbuf.st_mtime) : gmtime((const time_t *)&statbuf.st_mtime);
+			write->year = 1900 + utm->tm_year;
+			write->month = utm->tm_mon;
+			write->day = utm->tm_mday;
+			write->dayofweek = utm->tm_wday;
+			write->hour = utm->tm_hour;
+			write->minute = utm->tm_min;
+			write->second = utm->tm_sec;
+			write->millisecond = 0;
+		}
+
+		if (access)
+		{
+			tm* utm = bToLocalTime ? localtime((const time_t *)&statbuf.st_atime) : gmtime((const time_t *)&statbuf.st_atime);
+			write->year = 1900 + utm->tm_year;
+			write->month = utm->tm_mon;
+			write->day = utm->tm_mday;
+			write->dayofweek = utm->tm_wday;
+			write->hour = utm->tm_hour;
+			write->minute = utm->tm_min;
+			write->second = utm->tm_sec;
+			write->millisecond = 0;
 		}
 
 		return true;
@@ -744,6 +795,41 @@ bool createdir(const char* path, int mode)
 	}
 
 	return (S_ISDIR(buf.st_mode)) ? true : false;
+}
+
+double copyfile(const char* src, const char* dst, bool failIsExists)
+{
+	if (failIsExists)
+	{
+		struct stat buf;
+		if (stat(path, &buf) != 0)
+			return 0;
+	}
+
+	int s = open(src, O_RDONLY), d = fopen(dst, O_WRONLY);
+	if (!s || !d)
+		return -1;
+
+	char buf[16384];
+	long long total = 0, n, v;
+
+	while((n = fread(buf, sizeof(buf), s)) > 0)
+	{
+		v = fwrite(buf, n, d);
+		if (v != n)
+		{
+			close(s);
+			close(d);
+			return -total;
+		}
+
+		total += v;
+	}
+
+	close(s);
+	close(d);
+
+	return total;
 }
 #endif
 

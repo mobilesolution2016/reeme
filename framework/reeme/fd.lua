@@ -2,6 +2,7 @@ local ffi = require('ffi')
 local _isFile = 0
 local _isDir = 0
 local _isExists = 0
+local _copyFile = 0
 local _openDir = 0
 local _createDir = 0
 local _getAttr = 0
@@ -37,7 +38,7 @@ ffi.cdef[[
 	int deleteDirectory(const char* path);
 	int deleteFile(const char* fname);
 	
-	bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* update);
+	bool getFileTime(const char* fname, LocalDateTime* create, LocalDateTime* write, LocalDateTime* access, bool toLocalTime);
 	double getFileSize(const char* fname);
 ]]
 
@@ -54,7 +55,7 @@ if ffi.os == 'Windows' then
 		typedef struct _WIN32_FIND_DATA {
 			unsigned	dwFileAttributes;
 			FILETIME	ftCreationTime;
-			FILETIME	ftLastAccessTime;
+			FILETIME	ftLastReadTime;
 			FILETIME	ftLastWriteTime;
 			unsigned	nFileSizeHigh;
 			unsigned	nFileSizeLow;
@@ -64,16 +65,19 @@ if ffi.os == 'Windows' then
 			char		cAlternateFileName[14];
 		} WIN32_FIND_DATAA;
 
+		unsigned __stdcall GetFileAttributesA(const char*);
 		void* __stdcall FindFirstFileA(const char*, WIN32_FIND_DATAA*);
 		int __stdcall FindNextFileA(void*, WIN32_FIND_DATAA*);
 		int __stdcall FindClose(void* hFindFile);
 		int __stdcall CreateDirectoryA(const char*, void*);
-		unsigned __stdcall GetFileAttributesA(const char*);
+		int __stdcall CopyFileA(const char* lpExistingFileName, const char* lpNewFileName, int bFailIfExists);
+		void* __stdcall CreateFileA(const char* lpFileName, unsigned dwDesiredAccess, unsigned dwShareMode, void* lpSecurityAttributes, unsigned dwCreationDisposition, unsigned dwFlagsAndAttributes, void* hTemplateFile);
+		void __stdcall CloseHandle(void* handle);
 	]]
 
 	local kernel32 = ffi.load('kernel32.dll')
-	local shlwapi = ffi.load('shlwapi.dll')
-	
+	local shlwapi = ffi.load('shlwapi.dll')	
+
 	local FILE_ATTRIBUTE_TEMPORARY = 0x100
 	local FILE_ATTRIBUTE_ARCHIVE = 0x20
 	local FILE_ATTRIBUTE_DIRECTORY = 0x10
@@ -117,6 +121,10 @@ if ffi.os == 'Windows' then
 		if shlwapi.PathIsDirectoryA(path) ~= 0 then
 			return 2
 		end
+	end
+	
+	_copyFile = function(src, dst, failIfExists)
+		return kernel32.CopyFileA(src, dst, failIfExists or 0) ~= 0
 	end
 	
 	_getAttr = function(path)
@@ -204,6 +212,8 @@ if ffi.os == 'Windows' then
 		end
 		return true
 	end
+	
+
 
 else
 	ffi.cdef[[
@@ -216,6 +226,7 @@ else
 		unsigned pathisexists(const char* path);
 		bool createdir(const char* path, int mode);
 		unsigned getpathattrs(const char* path);
+		double copyfile(const char* src, const char* dst, bool failIsExists);
 	]]
 
 	local readdirinfo = _G.libreemext.readdirinfo
@@ -260,6 +271,10 @@ else
 		if r ~= 0 then
 			return r
 		end
+	end
+	
+	_copyFile = function(src, dst, failIfExists)
+		return _G.libreemext.createdir(src, dst, failIfExists)
 	end
 
 	_getAttr = function(path)
@@ -342,8 +357,7 @@ else
 end
 
 local _getFileSize = _G.libreemext.getFileSize
-local _getFileTime = _G.libreemext.getFileTime
-local createTime, updateTime = ffi.new('LocalDateTime'), ffi.new('LocalDateTime')
+local ftCreation, ftLastRead, ftLastWrite = ffi.new('LocalDateTime'), ffi.new('LocalDateTime'), ffi.new('LocalDateTime')
 
 local fsysPub = {
 	--检测路径是否是个文件
@@ -418,32 +432,34 @@ local fsysPub = {
 		if s ~= -1 then return s end
 	end,
 	
-	--根据路径取文件创建与最后修改时间，返回创建和更新时间，失败返回两个nil
-	filetime = function(path)
-		local c, u = ffi.new('LocalDateTime'), ffi.new('LocalDateTime')
-		if _getFileTime(path, c, u) then
-			return c, u
+	--获取文件的时间描述。c/w/r必须要是ffi.new('LocalDateTime')得到的
+	filetsobj = function(filename, c, w, r, toLocalTime)
+		return _G.libreemext.getFileTime(filename, c, w, r, toLocalTime or true)
+	end,
+	--根据路径取文件的创建、最后读、最后写这3个时间的时间戳
+	filets = function(filename, toLocalTime)
+		if _G.libreemext.getFileTime(filename, ftCreation, ftLastWrite, ftLastRead, toLocalTime or true) then
+			return os.time({year = ftCreation.year, month = ftCreation.month, day = ftCreation.day, hour = ftCreation.hour, min = ftCreation.minute, sec = ftCreation.second}),
+				   os.time({year = ftLastWrite.year, month = ftLastWrite.month, day = ftLastWrite.day, hour = ftLastWrite.hour, min = ftLastWrite.minute, sec = ftLastWrite.second}),
+				   os.time({year = ftLastRead.year, month = ftLastRead.month, day = ftLastRead.day, hour = ftLastRead.hour, min = ftLastRead.minute, sec = ftLastRead.second})
 		end
 	end,
-	--仅获取文件的更新时间
-	fileutime = function(path)
-		local u = ffi.new('LocalDateTime')
-		if _getFileTime(path, nil, u) then
-			return u
+	--仅获取文件的创建时间的时间戳
+	filects = function(filename, toLocalTime)
+		if _G.libreemext.getFileTime(filename, ftCreation, nil, nil, toLocalTime or true) then
+			return os.time({year = ftCreation.year, month = ftCreation.month, day = ftCreation.day, hour = ftCreation.hour, min = ftCreation.minute, sec = ftCreation.second})
 		end
 	end,
-	
-	--根据路径取文件创建与最后修改时间，返回创建和更新时间戳，失败返回两个nil
-	filets = function(path)
-		if _getFileTime(path, createTime, updateTime) then
-			return os.time({year = createTime.year, month = createTime.month, day = createTime.day, hour = createTime.hour, min = createTime.minute, sec = createTime.second}),
-				   os.time({year = updateTime.year, month = updateTime.month, day = updateTime.day, hour = updateTime.hour, min = updateTime.minute, sec = updateTime.second})
+	--仅获取文件的最后写入时间的时间戳
+	filewts = function(filename, toLocalTime)
+		if _G.libreemext.getFileTime(filename,  nil, ftLastWrite, nil, toLocalTime or true) then
+			return os.time({year = ftLastWrite.year, month = ftLastWrite.month, day = ftLastWrite.day, hour = ftLastWrite.hour, min = ftLastWrite.minute, sec = ftLastWrite.second})
 		end
 	end,
-	--仅获取文件的更新时间的时间戳
-	fileuts = function(path)
-		if _getFileTime(path, nil, updateTime) then
-			return os.time({year = updateTime.year, month = updateTime.month, day = updateTime.day, hour = updateTime.hour, min = updateTime.minute, sec = updateTime.second})
+	--仅获取文件的最后读取时间的时间戳
+	filerts = function(filename, toLocalTime)
+		if _G.libreemext.getFileTime(filename, nil, nil, ftLastRead, toLocalTime or true) then
+			return os.time({year = ftLastRead.year, month = ftLastRead.month, day = ftLastRead.day, hour = ftLastRead.hour, min = ftLastRead.minute, sec = ftLastRead.second})
 		end
 	end,
 	
