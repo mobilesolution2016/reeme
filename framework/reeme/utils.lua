@@ -237,13 +237,14 @@ local Utils = {
 				data.body = posts
 			end
 		end
--- logger.d(url)
--- logger.d(data)
+--logger.d(url)
+--logger.d(data)
 		local res, err = require("resty.http").new():request_uri(url, data, noResponse)
 		if noResponse then
 			return not err and true or false, err
 		end
-		
+--logger.d(res)
+--logger.d(err)
 		if res and not err then
 			res.status = tonumber(res.status)
 			if res.has_body and res.headers and res.headers['Content-Type'] == 'application/json' then

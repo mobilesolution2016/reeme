@@ -274,7 +274,7 @@ else
 	end
 	
 	_copyFile = function(src, dst, failIfExists)
-		return _G.libreemext.createdir(src, dst, failIfExists)
+		return _G.libreemext.copyfile(src, dst, failIfExists)
 	end
 
 	_getAttr = function(path)

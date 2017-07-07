@@ -56,6 +56,7 @@
 #   include <netdb.h>
 #	include <dirent.h>
 #	include <errno.h>
+#	include <fcntl.h>
 
 #   define SOCKET int
 #   define SD_BOTH 2

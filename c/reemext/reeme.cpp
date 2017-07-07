@@ -802,20 +802,20 @@ double copyfile(const char* src, const char* dst, bool failIsExists)
 	if (failIsExists)
 	{
 		struct stat buf;
-		if (stat(path, &buf) != 0)
+		if (stat(dst, &buf) != 0)
 			return 0;
 	}
 
-	int s = open(src, O_RDONLY), d = fopen(dst, O_WRONLY);
+	int s = open(src, O_RDONLY), d = open(dst, O_WRONLY);
 	if (!s || !d)
 		return -1;
 
 	char buf[16384];
 	long long total = 0, n, v;
 
-	while((n = fread(buf, sizeof(buf), s)) > 0)
+	while((n = read(s, buf, sizeof(buf))) > 0)
 	{
-		v = fwrite(buf, n, d);
+		v = write(s, buf, n);
 		if (v != n)
 		{
 			close(s);
