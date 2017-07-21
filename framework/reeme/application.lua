@@ -573,6 +573,10 @@ local appMeta = {
 
 		--添加控制器外部用户变量
 		addUsers = function(self, n, v)
+			if not self.user then
+				self.users = { }
+			end
+			
 			local u = self.users
 			if type(n) == 'table' then
 				for k,v in pairs(n) do
