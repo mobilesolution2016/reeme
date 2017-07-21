@@ -604,7 +604,7 @@ local appMeta = {
 				end)
 
 				if controlNew then
-					assert(type(controlNew) == 'function', string.format('Controller "%s" must return a function that can be create controller instance', path))
+					assert(type(controlNew) == 'function', string.format('Controller "%s" must return a function (%s) that can be create controller instance', path, type(controlNew)))
 					break
 				end
 

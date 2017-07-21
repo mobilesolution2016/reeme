@@ -109,6 +109,19 @@ local mysql = {
 			return r
 		end,
 		
+		--本函数是use函数+model.query函数的组合
+		query = function(self, srcname, db)
+			return self:use(srcname, db):query()
+		end,
+		--本函数是use函数+model.update函数的组合
+		update = function(self, srcname, vals, db)
+			return self:use(srcname, db):update(vals)
+		end,
+		--本函数是use函数+model.query函数的组合而已
+		delete = function(self, srcname, db)
+			return self:use(srcname, db):delete()
+		end,
+		
 		--使用多个，并以table返回所有被使用的
 		uses = function(self, names, db)
 			local tp = type(names)

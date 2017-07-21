@@ -86,7 +86,7 @@ return {
 				
 				if newf.maxlen == nil then
 					--指定了有效的长度
-					newf.maxlen = string.checkinteger(decl) or 0
+					newf.maxlen = #decl > 0 and tonumber(decl) or 0
 				end
 				
 				--如果是数值型并且maxl超过11位，就认为是64位整数
