@@ -42,12 +42,25 @@ function cipher.new(config)
     }, cipher)
 end
 
+local function salt(s)
+    if s then
+        local z = #s
+        if z < 8 then
+            return sub(rep(s, ceil(8 / z), 1, 8))
+        end
+        if z > 8 then
+            return sub(s, 1, 8)
+        end
+        return s
+    end
+end
+
 function cipher:encrypt(d, k, s)
-    return aes:new(k, s, cip(self.size, self.mode), self.hash, self.rounds):encrypt(d)
+    return aes:new(k, salt(s), cip(self.size, self.mode), self.hash, self.rounds):encrypt(d)
 end
 
 function cipher:decrypt(d, k, s)
-    return aes:new(k, s, cip(self.size, self.mode), self.hash, self.rounds):decrypt(d)
+    return aes:new(k, salt(s), cip(self.size, self.mode), self.hash, self.rounds):decrypt(d)
 end
 
 return cipher
