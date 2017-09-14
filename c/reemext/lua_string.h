@@ -14,6 +14,7 @@ static uint8_t sql_where_splits[128] =
 enum StringSplitFlags {
 	kSplitAsKey = 0x40000000,
 	kSplitTrim = 0x20000000,
+	kSplitUseFullString = 0x10000000,
 };
 
 enum StringJsonFlags {
@@ -23,7 +24,8 @@ enum StringJsonFlags {
 	kJsonUnicodes = 0x10000000,
 	kJsonDropNull = 0x08000000,
 	kJsonSimpleEscape = 0x04000000,
-	kJsonEmptyToObject = 0x02000000
+	kJsonEmptyToObject = 0x02000000,
+	kJsonSetMarker = 0x01000000
 };
 
 enum StringHtmlEntFlags {
@@ -295,14 +297,25 @@ static int lua_string_split(lua_State* L)
 
 	// 设置标记
 	size_t i, endpos;
-	for(i = 0; i < byLen; ++ i)
-		checker[by[i]] = 1;
+	if (!(nFlags & kSplitUseFullString))
+	{
+		for (i = 0; i < byLen; ++ i)
+			checker[by[i]] = 1;
+	}
 	
 	// 逐个字符的检测	
 	for (i = endpos = 0; i < srcLen; ++ i)
 	{
 		ch = src[i];
-		if (!checker[ch])
+		if (nFlags & kSplitUseFullString)
+		{
+			const char* foundPos = strstr((const char*)src + i, (const char*)by);
+			if (!foundPos)
+				break;
+
+			i = foundPos - (const char*)src;
+		}
+		else if (!checker[src[i]])
 			continue;
 
 		endpos = i;
@@ -315,7 +328,7 @@ static int lua_string_split(lua_State* L)
 				endpos --;
 		}
 
-		if (start < endpos)
+		if (start <= endpos)
 		{
 _lastseg:
 			// push result
@@ -344,7 +357,15 @@ _lastseg:
 				break;
 		}
 
-		start = i + 1;
+		if (nFlags & kSplitUseFullString)
+		{
+			start = i + byLen;
+			i += byLen - 1;
+		}
+		else
+		{
+			start = i + 1;
+		}
 	}
 
 	if (maxSplits && start < srcLen)
@@ -3370,6 +3391,7 @@ public:
 
 				// check utf8
 				uint8_t* utf8src = (uint8_t*)src + i;
+				ch  = utf8src[0];
 				if ((ch & 0xE0) == 0xC0)
 				{
 					//2 bit count
@@ -3396,19 +3418,21 @@ public:
 				}
 				else
 				{
-					unicode = '?';
+					unicode = 0;
 					i ++;
-					assert(0);
 				}
 
-				char* utf8dst = reserve(6);
-				utf8dst[0] = '\\';
-				utf8dst[1] = 'u';
+				if (unicode)
+				{
+					char* utf8dst = reserve(6);
+					utf8dst[0] = '\\';
+					utf8dst[1] = 'u';
 
-				utf8dst[2] = upperChars[(unicode >> 12) & 0xF];
-				utf8dst[3] = upperChars[(unicode >> 8) & 0xF];
-				utf8dst[4] = upperChars[(unicode >> 4) & 0xF];
-				utf8dst[5] = upperChars[unicode & 0xF];
+					utf8dst[2] = upperChars[(unicode >> 12) & 0xF];
+					utf8dst[3] = upperChars[(unicode >> 8) & 0xF];
+					utf8dst[4] = upperChars[(unicode >> 4) & 0xF];
+					utf8dst[5] = upperChars[unicode & 0xF];
+				}
 
 				spos = i;
 			}
@@ -3638,6 +3662,10 @@ static int pushJsonString(lua_State* L, JsonMemList& mems, size_t total, uint32_
 // 参数1是JSON字符串，返回值有两个，一个是解出来的Table，另外一个是用掉的字符串的长度。如果第2个返回值为nil则表示解析JSON的时候出错了
 // 参数2可以在当{}或[]为空的时候，标识出这是一个Object还是一个Array
 // 如果用到了cdata类型（包括boxed 64bit integer），那么必须在调用之前require('ffi')
+
+/* 关于解码时的路径控制字符串。该字符串如果使用，则必须位于解码时的第2个参数（原第2参数的标志位，请放入第3参数）
+
+*/
 static int lua_string_json(lua_State* L)
 {
 	int top = lua_gettop(L);
@@ -3646,11 +3674,9 @@ static int lua_string_json(lua_State* L)
 	if (tp == LUA_TSTRING || tp == LUA_TCDATA)
 	{
 		// json string to lua table
-		size_t len = 0;
-		bool copy = true;
-		const char* str;
+		size_t len = 0;		
 		lua_Integer flags = 0;
-		int needSetMarker = 0;
+		const char* str, *pathCtl = NULL;
 		
 		if (tp == LUA_TSTRING)
 		{
@@ -3670,20 +3696,26 @@ static int lua_string_json(lua_State* L)
 		if (!str || len < 2)
 			return 0;
 
-		if (top >= 2 && !lua_isnil(L, 2))
-			needSetMarker = 2;
-		if (top >= 3)
+		if (top >= 2)
 		{
-			flags = luaL_optinteger(L, 3, 0);
-			if (flags & kJsonNoCopy)
-				copy = false;
+			if (lua_type(L, 2) == LUA_TSTRING)
+			{
+				pathCtl = lua_tostring(L, 2);
+				if (top >= 3)
+					flags = luaL_optinteger(L, 3, 0);
+			}
+			else
+				flags = luaL_optinteger(L, 3, 0);
 		}
 
 		lua_newtable(L);
 		top = lua_gettop(L);
 
-		JSONFile f(L, flags & kJsonDropNull);
-		size_t readlen = f.parse(str, len, copy, needSetMarker);
+		JSONFile f(L, flags & kJsonDropNull, flags & kJsonSetMarker);
+		if (pathCtl)
+			f.initPath(pathCtl);
+
+		size_t readlen = f.parse(str, len, (flags & kJsonNoCopy) ? false : true);
 		if (readlen == 0)
 		{
 			// error
@@ -3754,6 +3786,216 @@ static int lua_string_json(lua_State* L)
 
 	return 0;
 }
+
+
+/* 按照path来搜索Json
+
+Path的语法如下：
+{xxx}或{"xxx"} 表示搜索一个Object中的某个Key，双引号可以没有
+{"A"|"B"|"C"} 表示搜索一个Object中的第一个遇到的Key，中间的坚线表示分隔多个Key，此时双引号必须要有，否则会出错
+[N]表示获取数组的第N个元素，此值符合Lua习惯从1开始计数
+[N-M]表示获取数组的第N至M个元素，M必须大于等于N（此时，后面不能再有其它的Path，就算有，也会被忽略）
+以上可以组合使用，如：{pages}[1]{"name"|"realname"}。请不要有任何多余的空格！！
+
+另外，在最前面还可以加上#符号，如上例：#{pages}[1]{"name"|"realname"}，表示函数将返回一个长度，即realname这个对象的长度（如果realname是一个Object，则返回该Object里有多少个keys）
+除了#之外，最前面还可以加上$符号，表示返回的不要是字符串，而是找到的部分的Json解码后的Table。如果没有这个$符号，则返回的是找到部分的字符串
+这个#和$只能写在最前面，写在其它位置均无效
+
+本函数直接报错时，表示控制符语法或Json语法可能存在错误
+本函数返回值为nil时，表示控制符与Json不匹配，比如使用[3]，但是Json却以是{开头的，此时就会返回nil
+返回false时，表示没有能够找到符合控制符条件的Json（即控制符和Json都没问题，但是符合条件的不存在）
+其它情况则会直接返回找到的位置的Json字符串（或找到位置的Json解码后的LuaTable）
+*/
+static int lua_string_searchjson(lua_State* L)
+{
+	bool bHasError = false;
+	size_t srclen, pathlen;
+	const char* src = luaL_checklstring(L, 1, &srclen);
+	const char* path = luaL_checklstring(L, 2, &pathlen);
+
+	if (!src || srclen == 0 || !path || pathlen == 0)
+		return 0;
+		
+	char *endPtr;
+	std::string strPath, strName;
+	int r, times = 0, finalAction = 0;	
+
+	switch(path[0])
+	{
+	case '#':
+		finalAction = 1;
+		pathlen --;
+		path ++;
+		break;
+
+	case '$':
+		finalAction = 2;
+		pathlen --;
+		path ++;
+		break;
+	}
+	
+	JsonSearcher searcher(const_cast<char*>(src), srclen);
+	const char* pathPtr = path, *pathEnd = path + pathlen;
+
+	while (pathPtr[0])
+	{
+		if (pathPtr[0] == '[')
+		{
+			// 取数组的某级
+			long index = strtol(pathPtr + 1, &endPtr, 10), indexEnd = -1;
+			if (endPtr[0] != ']' && endPtr[0] != '-')
+				return luaL_error(L, "call string.searchjson error with invalid path syntax start at: %s", pathPtr);
+			if (index < 1)
+				return luaL_error(L, "call string.searchjson error with invalid index [%d] that less than 1", index);
+
+			pathPtr = endPtr + 1;
+			if (endPtr[0] == '-')
+			{
+				indexEnd = strtol(pathPtr, &endPtr, 10);
+				if (endPtr[0] != ']')
+					return luaL_error(L, "call string.searchjson error with invalid path syntax start at: %s", pathPtr);
+				if (indexEnd < 1)
+					return luaL_error(L, "call string.searchjson error with invalid index [%d] that less than 1", indexEnd);
+
+				pathPtr = endPtr + 1;
+			}
+
+			r = searcher.findIndex(L, index - 1, indexEnd, pathPtr[0] == 0);
+			if (r) 
+			{
+				if (r == -1)
+				{
+					lua_pushboolean(L, 0);
+					return 1;
+				}
+				return r;
+			}
+
+			searcher.reduceJson();
+			times ++;
+
+			if (indexEnd != -1)
+				break;
+		}
+		else if (pathPtr[0] == '{')
+		{
+			// 取对象的某个Key
+			pathPtr ++;
+			bool bMultiValues = false;
+			if (pathPtr[0] == '"')
+			{
+				// 可能是多值同时查找
+				const char* pathStart = pathPtr ++;
+				while (pathPtr < pathEnd)
+				{
+					if (pathPtr[0] == '"') 
+					{ 
+						pathPtr ++; 
+						if (pathPtr[0] == '|' && pathPtr[1] == '"')
+						{
+							bMultiValues = true;
+							pathPtr += 2;
+						}
+						else if (pathPtr[0] == '}')
+							break;
+						else
+							return luaL_error(L, "string.searchjson: Unknown char in path string at %u", pathPtr - path + 1); 
+					}
+					else if (pathPtr[0] == '\\') 
+						pathPtr += 2; 
+					else
+						pathPtr ++;
+				}
+
+				if (pathPtr[0] != '}')
+					return luaL_error(L, "string.searchjson: Error end path at %u", pathPtr - path + 1);
+
+				strName.clear();
+				strName.append(pathStart, pathPtr - pathStart);
+
+				pathPtr ++;
+			}
+			else
+			{
+				// 单个Key值，无须双引号包围
+				endPtr = const_cast<char*>(strchr(pathPtr, '}'));
+				if (!endPtr)
+					return luaL_error(L, "call string.searchjson error with invalid path syntax start at: %s", pathPtr);
+
+				strName.clear();
+				strName += '"';
+				strName.append(pathPtr, endPtr - pathPtr);
+				strName += '"';
+
+				pathPtr = endPtr + 1;
+			}
+
+			r = searcher.findKey(L, strName, bMultiValues, finalAction != 2 && pathPtr[0] == 0);
+			if (r) return r;
+
+			searcher.reduceJson();
+			times ++;
+		}
+		else if (pathPtr[0] == '.')
+		{
+			pathPtr ++;
+			continue;
+		}
+		else
+			return luaL_error(L, "call string.searchjson error with unknown path char started at: %s", pathPtr);
+
+		if (searcher.isEnded() || !searcher.haveResult)
+		{
+			lua_pushboolean(L, 0);
+			return 1;
+		}
+	}
+
+	switch(finalAction)
+	{
+	case 1:	// 最后测长度
+		if (times)
+		{
+			lua_pushinteger(L, searcher.memberCount);
+			return 1;
+		}
+
+		return searcher.testLen(L);
+		break;
+
+	case 2: // 最后解码
+	{
+		int flags = luaL_optinteger(L, 3, 0);		
+
+		lua_newtable(L);
+		int top = lua_gettop(L);
+
+		JSONFile f(L, flags & kJsonDropNull, 0);
+		size_t readlen = f.parse(searcher.src, searcher.srcEnd - searcher.src, false);
+		if (readlen == 0)
+		{
+			// error
+			char err[512], summary[64] = { 0 };
+
+			f.summary(summary, 63);
+			size_t errl = snprintf(err, 512, "JSON parse error: %s, position is approximately at: %s", f.getError(), summary);
+
+			lua_settop(L, top);
+			lua_pushlstring(L, err, errl);
+		}
+		else
+		{
+			lua_settop(L, top);
+		}
+	}
+	return 1;
+	}
+
+	// 将找出来的字符串Push到返回结果
+	return searcher.pushResult(L);
+}
+
 
 //////////////////////////////////////////////////////////////////////////
 static int lua_string_merge(lua_State* L)
@@ -4105,8 +4347,10 @@ static void luaext_string(lua_State *L)
 		// 用编译好的BM字符串进行查找（适合于一次编译，然后在大量的文本中快速的查找一个子串，子串和源字符串越长性能越优）
 		{ "bmfind", &lua_string_bmfind },
 
-		// Json解码（dec时2~4倍性能于ngx所采用的cjson，enc时随table的复杂度1.5~4.5倍性能于cjson，不过这不是关键，关键是本json encode支持boxed 64bit integer以及cdata自动编码为base64等本库才有的扩展能力）
+		// Json解码（dec时2~4倍性能于ngx所采用的cjson，enc时随table的复杂度1.5~4.5倍性能于cjson，不过这不是关键，关键是本json encode支持boxed 64bit integer以及cdata自动编码为base64等本库才有的扩展能力，另外还有一个更重要的能力就是解码是可以使用路径控制，具体请看本函数的注释）
 		{ "json", &lua_string_json },
+		// Json搜索
+		{ "searchjson", &lua_string_searchjson },
 
 		// 从任意参数组合出字符串
 		{ "merge", &lua_string_merge },
@@ -4121,12 +4365,16 @@ static void luaext_string(lua_State *L)
 	lua_getglobal(L, "string");
 
 	// 字符串切分时可用的标志位
-	lua_pushliteral(L, "SPLIT_ASKEY");		// 用切出来的值做为key
+	lua_pushliteral(L, "SPLIT_ASKEY");				// 用切出来的值做为key
 	lua_pushinteger(L, kSplitAsKey);
 	lua_rawset(L, -3);
 
-	lua_pushliteral(L, "SPLIT_TRIM");		// 每一个切出来的值先做左右trim
+	lua_pushliteral(L, "SPLIT_TRIM");				// 每一个切出来的值先做左右trim
 	lua_pushinteger(L, kSplitTrim);
+	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "SPLIT_USEFULLSTRING");		// 使用整个字符串来做为搜索目标去切分源字符串
+	lua_pushinteger(L, kSplitUseFullString);
 	lua_rawset(L, -3);
 
 	// JSON编码时可用的标志位
@@ -4153,6 +4401,10 @@ static void luaext_string(lua_State *L)
 	lua_pushliteral(L, "JSON_EMPTY_TOOBJECT");		// 当table为空时，编码出来的默认是{}而不是[]
 	lua_pushinteger(L, kJsonEmptyToObject);
 	lua_rawset(L, -3);
+
+	lua_pushliteral(L, "JSON_SET_MARKER");			// 设置标识表示一个空的Table是Array还是Object
+	lua_pushinteger(L, kJsonSetMarker);
+	lua_rawset(L, -3);	
 
 	lua_pushliteral(L, "JSON_DROPNULL");			// 本标志如果存在：编码时，如果碰到某个值为ngx.null，则忽略掉（即不输出null值）；解码时，如果有null值，则不输出lua ngx.null
 	lua_pushinteger(L, kJsonDropNull);

@@ -359,6 +359,7 @@ queryMeta = {
 			local tbname = query.m.__name
 			local j = { q = query, type = jt, on = self.joinOn, cond = cond or 'AND' }
 
+			j._alias = nil
 			if not self.joins then
 				self.joins = { j }
 			else

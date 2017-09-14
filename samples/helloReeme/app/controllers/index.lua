@@ -55,7 +55,8 @@ local IndexController = {
 		end,
 		
 		testAction = function(self)
-			self.fd.createDir('d:/123/456', '777', true)
+			local j = string.json('{ "error": { "code": 400, "message": "Invalid JSON payload received. Expected , or } after key:value pair.\n\u0000\u0001\u0000\u0000\u0003\u0016 \u0000\u0005\u0000\u0000\u0000\u0001\u0000\u0000\u0003\u001e \"\u0000\u0003\u0000\u0000\u0000\u0001\u0000\u0002\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0001\u0000", "status": "INVALID_ARGUMENT" } }')
+			ngx.say(string.json(j))
 		end,
 		
 		--http://helloreeme.reeme.com/index.gettoken，获取环信的SDK Token
