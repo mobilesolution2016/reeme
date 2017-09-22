@@ -198,6 +198,340 @@ public:
 	}
 } ;
 
+
+//////////////////////////////////////////////////////////////////////////
+// 搜索Json
+#define SEARCH_SKIP_WHITES() while(readPtr < srcEnd)\
+	{\
+		uint8_t ch = readPtr[0];\
+		if (ch > 32)\
+			break;\
+		if (json_invisibles_allowed[ch] != 1)\
+			return luaL_error(L, "string.searchjson: Unknown invisible char at %u", readPtr - src + 1);\
+		readPtr ++;\
+	}
+
+#define SEARCH_SKIP_STRING() while(readPtr < srcEnd)\
+	{\
+		if (readPtr[0] == '"') { readPtr ++; break; }\
+		if (readPtr[0] == 0) return luaL_error(L, "string.searchjson: Error end json at %u", readPtr - src + 1);\
+		if (readPtr[0] == '\\') { readPtr += 2; }\
+		else readPtr ++;\
+	}
+
+class JsonSearcher
+{
+public:
+	JsonSearcher(char* s, size_t srcLen)
+		: src(s), readPtr(s), srcEnd(s + srcLen)
+		, beginPos(0), endPos(0)
+		, haveResult(false)
+	{
+
+	}
+
+	JsonSearcher(char* s, char* se)
+		: src(s), readPtr(s), srcEnd(se)
+		, beginPos(0), endPos(0)
+		, haveResult(false)
+	{
+
+	}
+
+	~JsonSearcher()
+	{
+
+	}
+
+	inline bool isEnded() const { return readPtr >= srcEnd; }
+	inline int pushResult(lua_State* L)
+	{
+		if (beginPos)
+			lua_pushlstring(L, beginPos, (endPos ? endPos : srcEnd) - beginPos);
+		else if (haveResult)
+			lua_pushlstring(L, src, srcEnd - src);
+		else
+			lua_pushboolean(L, 0);
+		return 1;
+	}
+	inline void reduceJson()
+	{
+		src = readPtr = beginPos;
+		if (endPos)
+			srcEnd = endPos;
+		beginPos = endPos = 0;
+	}
+
+	int skipWhites(lua_State* L)
+	{
+		SEARCH_SKIP_WHITES();
+
+		return 0;
+	}
+
+	int skipTo(lua_State* L, uint8_t toChar1, uint8_t toChar2 = 0, int* piMembersCount = NULL)
+	{
+		int cc = -1, valueChars = 0;
+		while (readPtr < srcEnd)
+		{
+			SEARCH_SKIP_WHITES();
+
+			uint8_t ch = readPtr[0];
+			if (ch == toChar1 || ch == toChar2)
+			{
+				if (valueChars)
+					cc ++;
+				if (piMembersCount)
+					*piMembersCount = cc + 1;
+				return 0;
+			}
+
+			readPtr ++;
+			valueChars ++;
+
+			if (ch == '"')
+			{
+				SEARCH_SKIP_STRING();
+				SEARCH_SKIP_WHITES();
+
+				if (readPtr[0] == ':')
+				{
+					readPtr ++;
+					SEARCH_SKIP_WHITES();
+				}
+				else
+				{
+					assert(readPtr[0] == ',' || readPtr[0] == ']' || readPtr[0] == '}');
+				}
+			}
+			else if (ch == '{')
+			{
+				int r = skipTo(L, '}');
+				if (r) return r;
+				readPtr ++;
+			}
+			else if (ch == '[')
+			{
+				int r = skipTo(L, ']');
+				if (r) return r;
+				readPtr ++;
+			}
+			else if (ch == ',')
+			{
+				valueChars = 0;
+				cc ++;
+			}
+			else if (!(json_value_char_tbl[ch] || json_escape_chars[ch]))
+				break;
+		}
+
+		return 0;
+	}
+
+	int findEnd(lua_State* L, int maxMembersCount = 1)
+	{
+		int r;
+		for (int i = 0; i < maxMembersCount; ++ i)
+		{
+			if (i > 0 && readPtr[0] != ',')
+				return -1;
+
+			readPtr ++;
+			memberCount = 0;
+			switch (beginPos[0])
+			{
+			case '[':
+				// 这个Key的值是一个数组
+				r = skipTo(L, ']', 0, &memberCount);
+				readPtr ++;
+				break;
+
+			case '{':
+				// 这个Key的值是一个对象
+				r = skipTo(L, '}', 0, &memberCount);
+				readPtr ++;
+				break;
+
+			case '"':
+				// 这个Key的值是一个字符串，跳到字符串尾
+				SEARCH_SKIP_STRING();
+				break;
+
+			default:
+				// 这个Key的值是一个值，于是到对象结束，或者到下一个值时停止
+				r = skipTo(L, '}', ',');
+				if (readPtr[0] == '}')
+					readPtr ++;
+				break;
+			}
+
+			if (r) return r;
+		}
+
+		if (maxMembersCount > 1)
+			memberCount = maxMembersCount;
+
+		// 找到了结束位置
+		endPos = readPtr;
+		return 0;
+	}
+
+	int testLen(lua_State* L)
+	{
+		SEARCH_SKIP_WHITES();
+
+		int cc = -1;
+		char indexChar = *readPtr ++, endChar;
+
+		if (indexChar == '[')
+			endChar = ']';
+		else if (indexChar == '{')
+			endChar = '}';
+		else
+			return 0;
+
+		while (readPtr != srcEnd)
+		{
+			memberCount = 0;
+			int r = skipTo(L, endChar, ',', &memberCount);
+			if (r) return r;
+
+			if (memberCount)
+				cc ++;
+
+			if (readPtr[0] == endChar)
+				break;
+
+			if (isEnded() || readPtr[0] != ',')
+				return 0;
+
+			readPtr ++;
+		}
+
+		lua_pushinteger(L, cc + 1);
+		return 1;
+	}
+
+	int findIndex(lua_State* L, long index, long indexEnd, bool findTheEnd)
+	{
+		haveResult = false;
+		SEARCH_SKIP_WHITES();
+
+		if (readPtr[0] != '[')
+			return 0;
+
+		readPtr ++;
+		for (long i = 0; i < index; ++ i)
+		{
+			int r = skipTo(L, ',', ']');
+			if (r) return r;
+
+			if (isEnded())
+				return luaL_error(L, "string.searchjson meet not closed json", 0);
+
+			if (readPtr[0] == ']')
+			{
+				lua_pushboolean(L, 0);
+				return 1;
+			}
+
+			readPtr ++;
+		}
+
+		int r;
+		beginPos = readPtr;
+		if (findTheEnd)
+		{
+			// 找到结束处
+			r = findEnd(L);
+		}
+		else if (indexEnd >= index)
+		{
+			// 找到指定元素个数的结束处
+			r = findEnd(L, indexEnd - index + 1);
+		}
+
+		if (r) return r;
+
+		haveResult = true;
+		return 0;
+	}
+
+	int findKey(lua_State* L, const std::string& strKey, bool bIsMultiKeys, bool findTheEnd)
+	{
+		haveResult = false;
+		SEARCH_SKIP_WHITES();
+
+		if (readPtr[0] != '{')
+			return 0;
+
+		readPtr ++;
+		for (int r; readPtr < srcEnd; )
+		{
+			SEARCH_SKIP_WHITES();
+			if (readPtr[0] != '"')
+				return luaL_error(L, "string.searchjson meet not a string", 0);
+
+			char* nameEnd = strchr(readPtr + 1, '"');
+			if (!nameEnd)
+				return luaL_error(L, "string.searchjson meet a string not end", 0);
+
+			char* nameKey = readPtr;
+			readPtr = nameEnd + 1;
+
+			strNameKey.clear();
+			strNameKey.append(nameKey, readPtr - nameKey);
+
+			SEARCH_SKIP_WHITES();
+			if (readPtr[0] != ':')
+				return luaL_error(L, "string.searchjson meet a key have not value", 0);
+
+			readPtr ++;
+			SEARCH_SKIP_WHITES();
+
+			if ((bIsMultiKeys && strstr(strKey.c_str(), strNameKey.c_str())) ||
+				(!bIsMultiKeys && strcmp(strKey.c_str(), strNameKey.c_str()) == 0))
+			{
+				// 这是值的开始位置，判断值的类型
+				beginPos = readPtr;
+				if (findTheEnd)
+				{
+					r = findEnd(L);
+					if (r) return r;
+				}
+
+				haveResult = true;
+				break;
+			}
+
+			r = skipTo(L, ',', '}');
+			if (r) return r;
+
+			if (isEnded())
+				return luaL_error(L, "string.searchjson meet not closed json", 0);
+
+			if (readPtr[0] == '}')
+			{
+				lua_pushboolean(L, 0);
+				return 1;
+			}
+
+			readPtr ++;
+		}
+
+		return 0;
+	}
+
+public:
+	std::string			strNameKey;
+	char				*src, *readPtr;
+	char				*srcEnd;
+	char				*beginPos, *endPos;
+	bool				haveResult;
+	int					memberCount;
+};
+
+
 //////////////////////////////////////////////////////////////////////////
 // JSON的解析深度如果超过这个值，则会被报错
 #define MAX_PARSE_LEVEL		200
@@ -250,15 +584,26 @@ public:
 		kErrorValue
 	} ;
 
+	struct CtlPath
+	{
+		bool	started;
+		char	*path, *readPtr;
+	};
+	
+	typedef std::vector<CtlPath> MultiPaths;
+
 	char				*m_pMemory, *m_pMemEnd;
 	char				*m_pLastPos;
 	size_t				m_nMemSize;
-	int					m_iErr, m_iNeedSetMarker, m_iTableIndex;
+	int					m_iErr;
 	bool				m_bFreeMem, m_bQuoteStart, m_bNegativeVal, m_bDropObjNull;
+	bool				m_bNeedSetMarker, m_bHavePath;
 	JSONValueType		m_kValType;
 
 	uint32_t			m_nOpens;
-	JSONAttrType		m_opens[MAX_PARSE_LEVEL];
+	std::string			m_strPath;
+	MultiPaths			m_paths;
+	size_t				m_opens[MAX_PARSE_LEVEL];
 	JSONAttribute		m_commonAttr;
 
 	lua_State*			L;
@@ -459,14 +804,16 @@ protected:
 	}
 
 public:
-	inline JSONFile(lua_State* p, int dropObjNull)
-		: m_pMemory		(0)
+	inline JSONFile(lua_State* p, int dropObjNull, int needSetMarker)
+		: m_pMemory		(NULL)
 		, m_nMemSize	(0)
-		, m_pLastPos	(0)
+		, m_pLastPos	(NULL)
 		, m_iErr		(0)
 		, m_bFreeMem	(true)
+		, m_bHavePath	(false)
 		, m_nOpens		(0)
 		, m_bDropObjNull(dropObjNull != 0)
+		, m_bNeedSetMarker(needSetMarker != 0)
 		, L				(p)
 	{
 	}
@@ -476,12 +823,79 @@ public:
 			free(m_pMemory);
 	}
 
-	size_t parse(const char* mem, size_t nSize, bool copyIt, int needSetMarker)
+	bool initPath(const char* pathCtl)
+	{
+		m_bHavePath = true;
+
+		CtlPath cp;
+		std::string strPathTmp = pathCtl;
+		m_strPath.reserve(std::max((size_t)256, strPathTmp.length() * 2));
+
+		char* s;
+		char* next = strtok_s(const_cast<char*>(strPathTmp.c_str()), "\r\n", &s);
+
+		m_paths.reserve(8);
+		while (next)
+		{
+			// 将所有的[]中的数字取出来
+			size_t nPos = m_strPath.length();
+
+			char* endPtr;
+			const char* pathMBracket = strchr(next, '[');
+			if (pathMBracket)
+			{
+				if (pathMBracket > next)
+					m_strPath.append(next, pathMBracket - next + 1);
+
+				while (true)
+				{
+					long v1 = strtol(pathMBracket, &endPtr, 10), v2 = 0;
+					if (endPtr[0] == '-')
+						v2 = strtol(endPtr + 1, &endPtr, 10);
+
+					if (v1 <= 1 || (v2 && v2 < v1))
+						return false;
+					if (endPtr[0] != ']')
+						return false;
+
+					if (v1)
+					{
+						uint32_t v = v1;
+						m_strPath.append((char*)&v, sizeof(v));
+					}
+					if (v2)
+					{
+						uint32_t v = v2;
+						m_strPath += '-';
+						m_strPath.append((char*)&v, sizeof(v));
+					}
+					m_strPath += ']';
+
+					next = endPtr + 1;
+					pathMBracket = strchr(next, '[');
+				}
+			}
+			else
+			{
+				m_strPath += next;
+			}
+
+			m_strPath += '\0';
+
+			cp.path = const_cast<char*>(m_strPath.c_str()) + nPos;
+			cp.readPtr = cp.path;
+			cp.started = true;
+
+			m_paths.push_back(cp);
+			next = strtok_s(NULL, "\r\n", &s);
+		}
+
+		return true;
+	}
+
+	size_t parse(const char* mem, size_t nSize, bool copyIt)
 	{
 		m_iErr = 0;
-		m_iTableIndex = lua_gettop(L);
-		m_iNeedSetMarker = needSetMarker;
-
 		if (copyIt)
 		{
 			m_pMemory = (char*)malloc(nSize + 1);
@@ -586,7 +1000,96 @@ public:
 	}
 
 private:
-private:
+	uint32_t checkPath(bool bCurrentInArray, uint32_t curIndex = 0, JSONString* pCurKey = NULL)
+	{
+		uint32_t rOk = 0;
+		if (bCurrentInArray)
+		{
+			if (curIndex)
+			{
+				// 判断这个索引位置的是否要
+				for (MultiPaths::iterator ite = m_paths.begin(), iEnd = m_paths.end(); ite != iEnd; ++ ite)
+				{
+					CtlPath& cp = *ite;
+					if (cp.started && cp.readPtr[0] == '[')
+					{
+						char* ptr = cp.readPtr + 1;
+						uint32_t v = *(uint32_t*)ptr;
+						ptr += sizeof(v);
+
+						if (ptr[0] == '-')
+						{
+							uint32_t v2 = *(uint32_t*)(ptr + 1);
+							ptr += sizeof(v);
+
+							if (v >= curIndex && curIndex <= v2)
+							{
+								cp.readPtr = ptr + 1;
+								rOk = 1;
+
+								return v2 - v;
+							}
+						}
+						else if (v == curIndex)
+						{
+							cp.readPtr = ptr + 1;
+							rOk = 1;
+
+							break;
+						}
+					}
+				}
+			}
+			else
+			{
+				// 数据开始，判断是否有Path从数组开始
+				for (MultiPaths::iterator ite = m_paths.begin(), iEnd = m_paths.end(); ite != iEnd; ++ ite)
+				{
+					CtlPath& cp = *ite;
+					if (!cp.started && cp.readPtr[0] == '[')
+					{
+						cp.started = true;
+						rOk = 1;
+					}
+					else if (cp.started)
+					{
+						if (cp.readPtr[0] == '[')
+							rOk = 1;
+						else
+							ite = m_paths.erase(ite);
+					}
+				}
+			}
+		}
+		else
+		{
+			if (pCurKey)
+			{
+
+			}
+			else
+			{
+
+			}
+		}
+
+		return rOk;
+	}
+
+	char* keepToEnd(char* pReadPos)
+	{
+		if (m_paths.size() == 0)
+			return m_pMemEnd;
+
+		JsonSearcher s(pReadPos, m_pMemEnd);
+		s.beginPos = pReadPos;
+
+		int r = s.findEnd(L);
+		if (r) return NULL;
+
+		return s.endPos - 1;
+	}
+
 	char* parseRoot(char* pReadPos)
 	{
 		SKIP_WHITES();
@@ -597,7 +1100,7 @@ private:
 		}
 		else if (pReadPos[0] == '{')
 		{
-			pReadPos = parseReadNode(pReadPos + 1);
+			pReadPos = parseObject(pReadPos + 1);
 		}
 		else
 		{
@@ -608,17 +1111,152 @@ private:
 		return pReadPos;
 	}
 
-	char* parseReadNode(char* pReadPos)
-	{		
+	//读取数组
+	char* parseArray(char* pReadPos)
+	{
+		uint32_t cc = 0, maxDecodeCC = UINT_MAX;
+		size_t pathCurLen = m_strPath.length();
+		bool bHavePath = m_bHavePath;
+
 		if (m_nOpens == MAX_PARSE_LEVEL)
 		{
 			m_iErr = kErrorMaxDeeps;
 			return 0;
 		}
 
-		m_opens[m_nOpens ++] = JATObject;
+		m_pLastPos = pReadPos;
+		m_opens[m_nOpens ++] = JATArray | (pathCurLen << 4);
+		
+		if (bHavePath && !checkPath(true))
+			return keepToEnd(pReadPos - 1);
 
-		SKIP_WHITES();
+		while (pReadPos != m_pMemEnd)
+		{
+			SKIP_WHITES();
+
+			if (bHavePath)
+			{
+				uint32_t keepCC = checkPath(true, cc + 1);
+				if (keepCC)
+				{
+					// 按照元素索引，路径检测未通过，修改最大解码数量
+					maxDecodeCC = keepCC;
+					bHavePath = false;
+				}
+				else
+				{
+					// 按照元素索引，路径检测未通过，所以跳过这个元素
+					pReadPos = keepToEnd(pReadPos);
+					if (!pReadPos)
+						break;
+
+					if (pReadPos[0] == ',')
+					{
+						//还有值，可以继续测试
+						pReadPos ++;
+						continue;
+					}
+					else if (pReadPos[0] == ']')
+					{
+						// 这个数组已经结束了
+						if (m_nOpens == 0 || (m_opens[m_nOpens - 1] & 0xF) != JATArray)
+							return 0;
+
+						m_nOpens --;
+						pReadPos ++;
+						break;
+					}
+					else
+					{
+						// 不应该出现的符号
+						m_pLastPos = pReadPos;
+						m_iErr = kErrorSymbol;
+						pReadPos = 0;
+						break;
+					}
+				}
+			}
+
+			uint8_t ch = pReadPos[0];
+			if (ch == '{')
+			{
+				//一个新的节点的开始
+				JSONAttribute* attr = getTmpAttr();
+				attr->kType = JATObject;
+
+				onAddAttr(attr, cc);
+				pReadPos = parseObject(pReadPos + 1);
+			}
+			else if (ch == '[')
+			{
+				//一个新的节点的开始
+				JSONAttribute* attr = getTmpAttr();
+				attr->kType = JATArray;
+
+				onAddAttr(attr, cc);
+				pReadPos = parseArray(pReadPos + 1);
+			}
+			else if (ch == ',')
+			{
+				//还有值
+				pReadPos ++;
+				continue;
+			}
+			else if (ch == ']')
+			{
+				//结束
+			_end_array:
+				if (m_nOpens == 0 || (m_opens[m_nOpens - 1] & 0xF) != JATArray)
+					return 0;
+
+				m_nOpens --;
+				pReadPos ++;
+
+				onNodeEnd(true);
+				break;
+			}
+			else if (ch == '"' || json_value_char_tbl[ch] <= 2 || json_value_char_tbl[ch] >= 4)
+			{
+				//数值类
+				JSONAttribute* attr = getTmpAttr();
+
+				pReadPos = fetchString(pReadPos, attr->value);
+				if (!pReadPos)
+					break;
+
+				attr->kType = m_bQuoteStart ? JATString : JATValue;
+
+				onAddAttr(attr, cc);
+			}
+			else
+			{
+				m_iErr = kErrorSymbol;
+				pReadPos = 0;
+			}
+
+			if (!pReadPos)
+				break;
+
+			if (-- maxDecodeCC == 0)
+			{
+				// 数量
+			}
+
+			cc ++;
+		}
+
+		return pReadPos;
+	}
+
+	char* parseObject(char* pReadPos)
+	{
+		if (m_nOpens == MAX_PARSE_LEVEL)
+		{
+			m_iErr = kErrorMaxDeeps;
+			return 0;
+		}
+
+		m_opens[m_nOpens ++] = JATObject | (m_strPath.length() << 4);
 
 		// 解析属性		
 		char endChar = 0;
@@ -633,7 +1271,7 @@ private:
 			if (pReadPos[0] == '"')
 			{
 				JSONAttribute* attr = getTmpAttr();
-				pReadPos = parseFetchString(pReadPos, attr->name);
+				pReadPos = fetchString(pReadPos, attr->name);
 				if (!pReadPos)
 					return 0;
 
@@ -643,102 +1281,117 @@ private:
 				pReadPos ++;
 				SKIP_WHITES();
 
-				//判断是数组还是单值
-				if (pReadPos[0] == '[')
+				if (m_bHavePath && !checkPath(true, cc + 1))
 				{
-					for (eqSyms = 1; ; ++ eqSyms)
-					{
-						char ch = pReadPos[eqSyms];
-						if (ch != '=')
-							break;
-						if (!ch)
-						{
-							m_iErr = kErrorSymbol;
-							return 0;
-						}
-					}
-
-					//if (pReadPos[eqSyms] == '[')
-					//{
-					//	// Lua多行字符串
-					//	attr->kType = JATString;
-
-					//	pReadPos = parseFetchLuaString(pReadPos + eqSyms + 1, eqSyms - 1, attr->value);
-
-					//	onAddAttr(attr, 0);
-					//}
-					//else
-					//{
-						//处理数组
-						attr->kType = JATArray;
-
-						onAddAttr(attr, 0);
-
-						pReadPos = parseArray(pReadPos + 1);
-					//}
-
+					// 按照元素索引，路径检测未通过，所以跳过这个元素
+					pReadPos = keepToEnd(pReadPos);
 					if (!pReadPos)
 						return 0;
-				}
-				else if (pReadPos[0] == '{')
-				{
-					//递归子节点
-					attr->kType = JATObject;
 
-					onAddAttr(attr, 0);
-
-					pReadPos = parseReadNode(pReadPos + 1);
-					if (!pReadPos)
-						return 0;
+					if (pReadPos[0] == ',')
+						pReadPos ++;
+					else if (pReadPos[0] == '}')
+						goto _obj_end;
 				}
 				else
 				{
-					//取值
-					pReadPos = parseFetchString(pReadPos, attr->value);
-					if (!pReadPos)
-						return 0;
+					//判断是数组还是单值
+					if (pReadPos[0] == '[')
+					{
+						//for (eqSyms = 1; ; ++ eqSyms)
+						//{
+						//	char ch = pReadPos[eqSyms];
+						//	if (ch != '=')
+						//		break;
+						//	if (!ch)
+						//	{
+						//		m_iErr = kErrorSymbol;
+						//		return 0;
+						//	}
+						//}
 
-					attr->kType = m_bQuoteStart ? JATString : JATValue;					
-					onAddAttr(attr, 0);
+						//if (pReadPos[eqSyms] == '[')
+						//{
+						//	// Lua多行字符串
+						//	attr->kType = JATString;
+
+						//	pReadPos = fetchLuaString(pReadPos + eqSyms + 1, eqSyms - 1, attr->value);
+
+						//	onAddAttr(attr, 0);
+						//}
+						//else
+						//{
+							//处理数组
+							attr->kType = JATArray;
+
+							onAddAttr(attr, 0);
+
+							pReadPos = parseArray(pReadPos + 1);
+						//}
+
+						if (!pReadPos)
+							return 0;
+					}
+					else if (pReadPos[0] == '{')
+					{
+						//递归子节点
+						attr->kType = JATObject;
+
+						onAddAttr(attr, 0);
+
+						pReadPos = parseObject(pReadPos + 1);
+						if (!pReadPos)
+							return 0;
+					}
+					else
+					{
+						//取值
+						pReadPos = fetchString(pReadPos, attr->value);
+						if (!pReadPos)
+							return 0;
+
+						attr->kType = m_bQuoteStart ? JATString : JATValue;					
+						onAddAttr(attr, 0);
+					}
+
+					SKIP_WHITES();
+					endChar = pReadPos[0];
+
+					cc ++;
 				}
-
-				SKIP_WHITES();
-				endChar = pReadPos[0];
-
-				cc ++;
 			}
-			else if (pReadPos[0] == '[')
-			{
-				// 一个新的数组
-				JSONAttribute* attr = getTmpAttr();
-				attr->kType = JATArray;
+			//else if (pReadPos[0] == '[')
+			//{
+			//	// 一个新的数组
+			//	JSONAttribute* attr = getTmpAttr();
+			//	attr->kType = JATArray;
 
-				onAddAttr(attr, cc);
+			//	onAddAttr(attr, cc);
 
-				pReadPos = parseArray(pReadPos + 1);
-				if (!pReadPos)
-					return 0;
-			}
-			else if (pReadPos[0] == '{')
-			{
-				// 一个对象
-				JSONAttribute* attr = getTmpAttr();
-				attr->kType = JATObject;
+			//	pReadPos = parseArray(pReadPos + 1);
+			//	if (!pReadPos)
+			//		return 0;
+			//}
+			//else if (pReadPos[0] == '{')
+			//{
+			//	// 一个对象
+			//	JSONAttribute* attr = getTmpAttr();
+			//	attr->kType = JATObject;
 
-				onAddAttr(attr, cc);
+			//	onAddAttr(attr, cc);
 
-				pReadPos = parseReadNode(pReadPos + 1);
-				if (!pReadPos)
-					return 0;
-			}
+			//	pReadPos = parseObject(pReadPos + 1);
+			//	if (!pReadPos)
+			//		return 0;
+			//}
 			else if (cc == 0 && pReadPos[0] == '}')
 			{
 				//空的大括号
 				endChar = '}';
 
-				if (m_iNeedSetMarker)
+				if (m_bNeedSetMarker)
 				{
-					lua_pushvalue(L, m_iNeedSetMarker);
+					lua_pushvalue(L, m_bNeedSetMarker ? 1 : 0);
 					lua_pushboolean(L, 1);
 					lua_rawset(L, -3);
 				}
@@ -749,10 +1402,11 @@ private:
 				return 0;
 			}
 
-			//取下一个符号，只能是逗号或者}号
+			//取下一个符号
 			if (endChar == '}')
 			{
-				if (m_nOpens == 0 || m_opens[m_nOpens - 1] != JATObject)
+			_obj_end:
+				if (m_nOpens == 0 || (m_opens[m_nOpens - 1] & 0xF) != JATObject)
 					return 0;
 
 				m_nOpens --;
@@ -775,7 +1429,7 @@ private:
 	}
 
 	//从给定位置开始取一个字符串，直到空格或结束符为止。支持双引号字符串和非双引号字符串
-	char* parseFetchString(char* pReadPos, JSONString& str)
+	char* fetchString(char* pReadPos, JSONString& str)
 	{
 		char* pStart = str.pString = pReadPos, *pEndPos = 0;
 
@@ -968,7 +1622,7 @@ private:
 	}
 
 	//读取Lua多行字符串
-	char* parseFetchLuaString(char* pReadPos, uint32_t eqSyms, JSONString& str)
+	char* fetchLuaString(char* pReadPos, uint32_t eqSyms, JSONString& str)
 	{
 		m_pLastPos = pReadPos;
 
@@ -996,89 +1650,6 @@ private:
 
 		m_iErr = kErrorEnd;
 		return 0;
-	}
-
-	//读取数组
-	char* parseArray(char* pReadPos)
-	{
-		uint32_t cc = 0;
-
-		if (m_nOpens == MAX_PARSE_LEVEL)
-		{
-			m_iErr = kErrorMaxDeeps;
-			return 0;
-		}
-
-		m_pLastPos = pReadPos;
-		m_opens[m_nOpens ++] = JATArray;
-
-		while(pReadPos != m_pMemEnd)
-		{
-			SKIP_WHITES();
-
-			uint8_t ch = pReadPos[0];
-			if (ch == '{')
-			{
-				//一个新的节点的开始
-				JSONAttribute* attr = getTmpAttr();
-				attr->kType = JATObject;
-
-				onAddAttr(attr, cc);
-				pReadPos = parseReadNode(pReadPos + 1);
-			}
-			else if (ch == '[')
-			{
-				//一个新的节点的开始
-				JSONAttribute* attr = getTmpAttr();
-				attr->kType = JATArray;
-
-				onAddAttr(attr, cc);
-				pReadPos = parseArray(pReadPos + 1);
-			}
-			else if (ch == ',')
-			{
-				//还有值
-				pReadPos ++;
-				continue;
-			}
-			else if (ch == ']')
-			{
-				//结束
-				if (m_nOpens == 0 || m_opens[m_nOpens - 1] != JATArray)
-					return 0;
-
-				m_nOpens --;
-				pReadPos ++;
-
-				onNodeEnd(true);				
-				break;
-			}
-			else if (ch == '"' || json_value_char_tbl[ch] <= 2 || json_value_char_tbl[ch] >= 4)
-			{
-				//数值类
-				JSONAttribute* attr = getTmpAttr();
-
-				pReadPos = parseFetchString(pReadPos, attr->value);
-				if (!pReadPos)
-					break;
-
-				attr->kType = m_bQuoteStart ? JATString : JATValue;
-
-				onAddAttr(attr, cc);
-			}
-			else
-			{
-				m_iErr = kErrorSymbol;
-				pReadPos = 0;
-			}
-
-			if (!pReadPos)
-				break;
-
-			cc ++;
-		}
-
-		return pReadPos;
 	}
 } ;
 

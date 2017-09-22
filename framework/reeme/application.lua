@@ -253,7 +253,8 @@ _G.table.implode = function(self, key, needUnique)
 	local r = {}
 	if type(self) == 'table' then
 		if needUnique then
-			if #self > 1 then
+			local cc = #self
+			if cc > 1 then
 				local uni = table.new(0, 8)
 				for i = 1, #self do
 					local id = self[i][key]
@@ -263,7 +264,8 @@ _G.table.implode = function(self, key, needUnique)
 				for _,id in pairs(uni) do
 					r[#r + 1] = id
 				end
-			else
+				
+			elseif cc == 1 then
 				r[1] = self[1][key]
 			end
 		else
@@ -659,7 +661,7 @@ local appMeta = {
 			--载入控制器
 			c, actionMethod, r = self:loadController(path, act)
 			if r == true then
-				--halt it
+				--halt it				
 				return
 			end
 
