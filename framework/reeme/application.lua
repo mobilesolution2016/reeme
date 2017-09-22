@@ -573,7 +573,7 @@ local appMeta = {
 
 		--添加控制器外部用户变量
 		addUsers = function(self, n, v)
-			if not self.user then
+			if not self.users then
 				self.users = { }
 			end
 			
