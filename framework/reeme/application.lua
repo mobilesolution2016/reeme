@@ -656,10 +656,10 @@ local appMeta = {
 
 		run = function(self)
 			local r, c, actionMethod
-			local path, act = (self.routeProc or defRouter)(ngx.var.uri)
+			local path, act = (self.routeProc or defRouter)(self, ngx.var.uri)
             if not path and self.routeProc then
                 --使用默认路由
-                path, act = defRouter(ngx.var.uri)
+                path, act = defRouter(self, ngx.var.uri)
             end
             
 			--载入控制器
