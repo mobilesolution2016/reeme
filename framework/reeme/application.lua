@@ -538,7 +538,7 @@ local defTblfmt = function(app, tbl)
 	return string.json(tbl, string.JSON_UNICODES)
 end
 
-local defRouter = function(uri)
+local defRouter = function(app, uri)
     if uri == '/' then
         return 'index', 'index'
     end
