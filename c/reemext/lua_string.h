@@ -368,7 +368,7 @@ _lastseg:
 		}
 	}
 
-	if (maxSplits && start < srcLen)
+	if (maxSplits)
 	{
 		endpos = srcLen;
 		maxSplits = 0;
@@ -3146,6 +3146,55 @@ static int lua_string_htmlentitiesdec(lua_State* L)
 	return 1;
 }
 
+static int lua_string_htmltagsremove(lua_State* L)
+{
+	size_t len = 0;
+	std::string strOut;
+	const char* code = luaL_checklstring(L, 1, &len);
+	const char* codeEnd = code + len, *copyOffset = code;
+
+	strOut.reserve(len);
+
+	while (code < codeEnd)
+	{
+		if (code[0] == '<')
+		{
+			if (copyOffset < code)
+				strOut.append(copyOffset, code - copyOffset);			
+
+			++ code;
+			char inQuote = 0;
+			while (code < codeEnd)
+			{				
+				char ch = *code ++;
+				if (inQuote)
+				{
+					if (ch == '\\')
+						code ++;
+					else if (ch == inQuote)
+						inQuote = 0;
+				}
+				else if (ch == '>')
+				{
+					break;
+				}
+			}
+
+			copyOffset = code;
+		}
+		else
+		{
+			code ++;
+		}
+	}
+
+	if (copyOffset < codeEnd)
+		strOut.append(copyOffset, codeEnd - copyOffset);
+
+	lua_pushlstring(L, strOut.c_str(), strOut.length());
+	return 1;
+}
+
 static int lua_string_addslashes(lua_State* L)
 {
 	char ch;	
@@ -4337,6 +4386,7 @@ static void luaext_string(lua_State *L)
 		// HTML实体转换
 		{ "htmlentitiesenc", &lua_string_htmlentitiesenc },
 		{ "htmlentitiesdec", &lua_string_htmlentitiesdec },
+		{ "htmltagsremove", &lua_string_htmltagsremove },
 
 		// 为单双引号添加反斜杠/去除反斜杠
 		{ "addslashes", &lua_string_addslashes },
