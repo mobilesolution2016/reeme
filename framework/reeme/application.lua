@@ -544,6 +544,10 @@ local defRouter = function(app, uri)
     end
 
 	local segs = string.split(uri, './')
+    if #segs[1] == 0 then
+        table.remove(segs, 1)
+    end
+    
     if #segs == 1 then
 		return segs[1], 'index'
     end
