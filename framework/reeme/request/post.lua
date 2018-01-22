@@ -109,6 +109,13 @@ local function getPostArgsAndFiles(options)
 		end	
 		return os.rename(self.temp, dstFilename)
 	end
+    function _append(self, dstFilename)
+        local dstFile = io.open(dstFilename, "ab")
+        local srcFile = io.open(self.temp, "rb")
+        dstFile:write(srcFile:read("*all"))
+        dstFile:close()
+        srcFile:close()
+    end
 	function _del(self)
 		fd.deleteFile(self.temp)
 	end
@@ -148,6 +155,7 @@ local function getPostArgsAndFiles(options)
                                 file = basename(d.filename),
                                 temp = getTempFileName(),
 								moveFile = _move,
+                                appendFile = _append,
 								delFile = _del,
 								fullFile = _full,
                             }
