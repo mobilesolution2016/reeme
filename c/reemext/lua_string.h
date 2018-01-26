@@ -3611,7 +3611,7 @@ static int recursionJsonEncode(lua_State* L, JsonMemList* mem, int tblIdx, uint3
 		if (cc)
 			mem->addChar('}');
 		else if (flags & kJsonEmptyToObject)
-			mem->addChar2('{', ']');
+			mem->addChar2('{', '}');
 		else
 			mem->addChar2('[', ']');
 	}

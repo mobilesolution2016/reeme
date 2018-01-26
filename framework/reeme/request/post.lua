@@ -110,7 +110,7 @@ local function getPostArgsAndFiles(options)
 		return os.rename(self.temp, dstFilename)
 	end
     function _append(self, dstFilename)
-        local dstFile = io.open(dstFilename, "ab")
+        local dstFile = io.open(dstFilename, "ab+")
         local srcFile = io.open(self.temp, "rb")
         dstFile:write(srcFile:read("*all"))
         dstFile:close()
