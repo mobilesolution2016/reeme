@@ -14,7 +14,7 @@ local newffiload = function(name)
 			end
 		end
 	end
-	error(err)
+    return err
 end
 
 --find the real _G table
@@ -51,11 +51,13 @@ if ffi.os == 'Windows' then
 		local ok, err = pcall(function()
 			h = ffiload(name)
 		end)
+        
+        local newerr
 		if not h and not (string.byte(name, 1) == 47 or (string.byte(name, 2) == 58 and string.byte(name, 3) == 47)) then
-			h = newffiload(name)
+			h, newerr = newffiload(name)
 		end
-		if err then
-			error(err)
+		if not h then
+			error(newerr or err or string.format('load module %s failed', name))
 		end
 		return h
 	end
@@ -81,11 +83,13 @@ else
 		local ok, err = pcall(function()
 			h = ffiload(name)
 		end)
+        
+        local newerr
 		if not h and string.byte(name, 1) ~= 47 then
-			return newffiload('lib' .. name)
+            h, newerr = newffiload('lib' .. name)
 		end
-		if err then
-			error(err)
+		if not h then
+			error(newerr or err or string.format('load module %s failed', name))
 		end
 		return h
 	end
