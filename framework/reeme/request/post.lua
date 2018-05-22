@@ -220,24 +220,29 @@ local function getPostArgsAndFiles(options)
         body()
         post = string.json(data()) or {}
     else
-        body()
-        post, err = pargs()
-		if err then
-			--can also set client_body_buffer_size 128k; in http part
-			local data = ngx.req.get_body_data() or ''
-			local file = ngx.req.get_body_file()
-			if file then
-				local f, e = io.open(file, "rb")
-				if f then
-					local req = f:read('*a')
-					f:close()
-					post = ngx.decode_args(data .. req)
+		if request_method == 'POST' then
+			body()
+			local data = ngx.req.get_body_data()
+			post, err = pargs()
+			if err then
+				--can also set client_body_buffer_size 128k; in http part
+				local file = ngx.req.get_body_file()
+				if file then
+					local f, e = io.open(file, "rb")
+					if f then
+						local req = f:read('*a')
+						f:close()
+						
+						if not data then
+							data = ''
+						end
+						data = data .. req
+						post = ngx.decode_args(data)
+					end
 				end
 			end
-		end
 		
-		if request_method == 'POST' then
-			bodydata = data()
+			bodydata = data
 		end
     end
     return post, files, bodydata
