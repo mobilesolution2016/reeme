@@ -958,6 +958,7 @@ builder.buildKeyValuesSet = function(self, sqls, alias, allJoins)
 							if v._path then
 								sql[#sql + 1] = ngx.quote_sql_str(v._path)
 								if strval then
+									sql[#sql + 1] = ','
 									sql[#sql + 1] = strval
 								end
 							else
