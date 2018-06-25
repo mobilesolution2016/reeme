@@ -146,7 +146,7 @@ local function getPostArgsAndFiles(options)
                 end
             elseif t == "body" then
                 if h then
-                    local d = h["Content-Disposition"]
+                    local d = h["Content-Disposition"] or h["content-disposition"]
                     if d then
                         if d.filename then
                             f = {
